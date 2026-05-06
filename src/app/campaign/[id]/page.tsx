@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
 import Image from 'next/image';
+import { supabase } from '../../../lib/supabaseClient';
 import '../../globals.css';
 import DiceRoller from '../../../components/DiceRoller';
-
-// Initialize socket outside component
-let socket: any;
 
 export default function CampaignSession({ params }: { params: { id: string } }) {
   const [messages, setMessages] = useState<{role: 'dm' | 'player' | 'system', content: string, sender?: string}[]>([
@@ -18,26 +15,40 @@ export default function CampaignSession({ params }: { params: { id: string } }) 
   const [isTyping, setIsTyping] = useState(false);
   const [showDice, setShowDice] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Keep track of the active channel
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
-    socket = io();
-    socket.emit('join_campaign', params.id);
+    // 1. Initialize the Supabase Channel for this specific campaign ID
+    const channel = supabase.channel(`campaign_${params.id}`);
+    channelRef.current = channel;
 
-    socket.on('action_received', (data: any) => {
-      setMessages(prev => [...prev, { role: 'player', content: data.action, sender: data.player }]);
-      setIsTyping(true);
-      
-      fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: data.action })
+    // 2. Listen for broadcast messages from other players/the DM
+    channel
+      .on('broadcast', { event: 'action_received' }, (payload) => {
+        const data = payload.payload;
+        setMessages(prev => [...prev, { role: 'player', content: data.action, sender: data.player }]);
+        
+        // If this client is the designated DM host (for simplicity, everyone requests the AI right now to sync)
+        setIsTyping(true);
+        
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: data.action })
+        })
+        .then(res => res.json())
+        .then(resData => {
+          setIsTyping(false);
+          setMessages(prev => [...prev, { role: 'dm', content: resData.reply }]);
+        });
       })
-      .then(res => res.json())
-      .then(resData => {
-        setIsTyping(false);
-        setMessages(prev => [...prev, { role: 'dm', content: resData.reply }]);
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Joined Supabase Realtime Channel: campaign_${params.id}`);
+        }
       });
-    });
 
     // Start Ambient Soundscape
     let audioCtx: any, osc: any, gain: any;
@@ -58,7 +69,9 @@ export default function CampaignSession({ params }: { params: { id: string } }) 
     } catch(e) { console.error(e); }
 
     return () => {
-      socket.disconnect();
+      // Cleanup Supabase subscription
+      supabase.removeChannel(channel);
+      
       if (osc) osc.stop();
       if (audioCtx) audioCtx.close();
     }
@@ -70,13 +83,56 @@ export default function CampaignSession({ params }: { params: { id: string } }) 
 
   const handleSend = () => {
     if (!input.trim()) return;
-    socket.emit('player_action', { campaignId: params.id, player: 'Thorin', action: input });
+    
+    const payload = { campaignId: params.id, player: 'Thorin', action: input };
+    
+    // Broadcast to other players
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'action_received',
+      payload: payload
+    });
+    
+    // Optimistic UI update for the sender
+    setMessages(prev => [...prev, { role: 'player', content: input, sender: 'Thorin' }]);
+    setIsTyping(true);
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: input })
+    })
+    .then(res => res.json())
+    .then(resData => {
+      setIsTyping(false);
+      setMessages(prev => [...prev, { role: 'dm', content: resData.reply }]);
+    });
+
     setInput('');
   };
 
   const handleDiceResult = (result: number) => {
     setShowDice(false);
-    socket.emit('player_action', { campaignId: params.id, player: 'Thorin', action: `[Rolled a ${result}]` });
+    const actionText = `[Rolled a ${result}]`;
+    const payload = { campaignId: params.id, player: 'Thorin', action: actionText };
+    
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'action_received',
+      payload: payload
+    });
+    
+    setMessages(prev => [...prev, { role: 'player', content: actionText, sender: 'Thorin' }]);
+    setIsTyping(true);
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: actionText })
+    })
+    .then(res => res.json())
+    .then(resData => {
+      setIsTyping(false);
+      setMessages(prev => [...prev, { role: 'dm', content: resData.reply }]);
+    });
   };
 
   return (
