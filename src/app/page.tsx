@@ -1,65 +1,71 @@
 import Image from "next/image";
+import Link from "next/link";
+import "./globals.css";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Navigation */}
+      <nav className="glass-panel" style={{ margin: '20px', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: 'var(--primary)' }}>⬡</span> D&D Legends
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <Link href="/dashboard"><button className="btn-secondary">Login</button></Link>
+          <Link href="/create-character"><button className="btn-primary">Start Free Trial</button></Link>
         </div>
-      </main>
-    </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 20px', position: 'relative' }}>
+        
+        {/* Background Image Overlay */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: -2 }}>
+          <Image src="/hero_bg.png" alt="Hero Background" layout="fill" objectFit="cover" style={{ opacity: 0.15, mixBlendMode: 'screen' }} priority />
+        </div>
+
+        {/* Decorative glows */}
+        <div style={{ position: 'absolute', top: '10%', left: '15%', width: '300px', height: '300px', background: 'var(--primary)', filter: 'blur(150px)', opacity: 0.2, zIndex: -1, borderRadius: '50%' }}></div>
+        <div style={{ position: 'absolute', bottom: '10%', right: '15%', width: '300px', height: '300px', background: 'var(--secondary)', filter: 'blur(150px)', opacity: 0.1, zIndex: -1, borderRadius: '50%' }}></div>
+
+        <div className="animate-fade-in">
+          <span style={{ padding: '6px 16px', background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600, border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+            The Ultimate AI Dungeon Master
+          </span>
+        </div>
+
+        <h1 className="animate-fade-in delay-100" style={{ fontSize: '4.5rem', fontWeight: 800, maxWidth: '800px', margin: '24px 0', lineHeight: 1.1, background: 'linear-gradient(to right, #fff, #cbd5e1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          Your Next Great Adventure Awaits
+        </h1>
+        
+        <p className="animate-fade-in delay-200" style={{ fontSize: '1.25rem', color: '#94a3b8', maxWidth: '600px', marginBottom: '40px', lineHeight: 1.6 }}>
+          Experience a premium, fully-voiced, AI-curated Dungeons & Dragons campaign. Roll 3D dice, see your world generated in real-time, and play seamlessly with up to 10 friends.
+        </p>
+
+        <div className="animate-fade-in delay-300" style={{ display: 'flex', gap: '16px' }}>
+          <Link href="/create-character"><button className="btn-primary" style={{ fontSize: '1.125rem', padding: '16px 32px' }}>Forge Your Legend</button></Link>
+          <Link href="/pricing"><button className="btn-secondary" style={{ fontSize: '1.125rem', padding: '16px 32px' }}>View Pricing</button></Link>
+        </div>
+
+        {/* Feature Cards */}
+        <div className="animate-fade-in delay-300" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '80px', maxWidth: '1000px', width: '100%' }}>
+          <div className="glass-panel" style={{ padding: '24px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>🧙‍♂️</div>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>Expert AI DM</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5 }}>Our AI knows every rule, monster, and spell. It crafts dynamic, unforgettable narratives on the fly.</p>
+          </div>
+          <div className="glass-panel animate-float" style={{ padding: '24px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>🎲</div>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>Premium 3D Dice</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5 }}>Feel every roll with our physics-based 3D dice engine, complete with satisfying soundscapes.</p>
+          </div>
+          <div className="glass-panel" style={{ padding: '24px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>🎨</div>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>Visual Storytelling</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5 }}>Immerse yourself with real-time generated scenes, character portraits, and ambient music.</p>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
