@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 
 // Initialize Stripe with a dummy key if env var is missing, to ensure the app doesn't crash during UI evaluation.
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
-  apiVersion: '2025-02-24.acacia',
+  apiVersion: '2026-04-22.dahlia',
 });
 
 export async function POST(request: Request) {
@@ -34,14 +34,14 @@ export async function POST(request: Request) {
           },
         ],
         mode: 'subscription',
-        success_url: \`\${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/dashboard?session_id={CHECKOUT_SESSION_ID}\`,
-        cancel_url: \`\${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/pricing\`,
+        success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/pricing`,
       });
 
       return NextResponse.json({ url: session.url });
     } else {
       // For demonstration, just return a mock success URL
-      return NextResponse.json({ url: \`http://localhost:3001/dashboard?mock_success=true&tier=\${encodeURIComponent(tier)}\` });
+      return NextResponse.json({ url: `http://localhost:3001/dashboard?mock_success=true&tier=${encodeURIComponent(tier)}` });
     }
 
   } catch (error: any) {
