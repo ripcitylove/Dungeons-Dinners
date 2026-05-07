@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import Image from 'next/image';
 import { supabase } from '../../../lib/supabaseClient';
 import '../../globals.css';
 import DiceRoller from '../../../components/DiceRoller';
 
-export default function CampaignSession({ params }: { params: { id: string } }) {
+export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
+  
   const [messages, setMessages] = useState<{role: 'dm' | 'player' | 'system', content: string, sender?: string}[]>([
     { role: 'system', content: 'Welcome to the Curse of the Shadow King. The tavern is loud, but a hooded figure approaches your table...' },
     { role: 'dm', content: '"Ah, brave adventurers. I have a task for you, if you possess the courage," the hooded figure rasps.' }
