@@ -9,10 +9,10 @@ import { supabase } from '../../lib/supabaseClient';
 export default function CreateCharacter() {
   const router = useRouter();
   const [step, setStep] = useState(1);
-  const [character, setCharacter] = useState({ name: '', race: '', class: '', background: '' });
+  const [character, setCharacter] = useState({ name: '', race: '', class: '', background: '', weapon: '', trinket: '' });
   const [rollingStats, setRollingStats] = useState(false);
 
-  const nextStep = () => setStep(s => Math.min(s + 1, 3));
+  const nextStep = () => setStep(s => Math.min(s + 1, 4));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
   const handleFinish = async () => {
@@ -24,6 +24,13 @@ export default function CreateCharacter() {
         return;
       }
 
+      // Format the starting inventory
+      const startingInventory = {
+        gold: 50,
+        weapons: character.weapon ? [character.weapon] : ['Iron Dagger'],
+        items: ['Bedroll', 'Rations (5 days)', character.trinket || 'Mysterious Coin']
+      };
+
       const { error } = await supabase.from('characters').insert([
         {
           user_id: user.id,
@@ -31,13 +38,15 @@ export default function CreateCharacter() {
           race: character.race || 'Human',
           class: character.class || 'Fighter',
           level: 1,
+          max_hp: 10,
           hp: 10,
           strength: 15,
           dexterity: 14,
           constitution: 13,
           intelligence: 12,
           wisdom: 10,
-          charisma: 8
+          charisma: 8,
+          inventory: startingInventory
         }
       ]);
       
@@ -56,7 +65,7 @@ export default function CreateCharacter() {
         {/* Progress Bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', position: 'relative' }}>
           <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '2px', background: 'var(--border)', zIndex: 0 }}></div>
-          {[1, 2, 3].map(i => (
+          {[1, 2, 3, 4].map(i => (
             <div key={i} style={{ 
               width: '32px', height: '32px', borderRadius: '50%', 
               background: step >= i ? 'var(--primary)' : 'var(--card-bg)',
@@ -73,6 +82,7 @@ export default function CreateCharacter() {
           {step === 1 && "Identity & Origins"}
           {step === 2 && "Class & Vocation"}
           {step === 3 && "Roll for Stats"}
+          {step === 4 && "Starting Equipment"}
         </h1>
 
         <div style={{ minHeight: '300px' }}>
@@ -161,6 +171,40 @@ export default function CreateCharacter() {
               )}
             </div>
           )}
+
+          {step === 4 && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Primary Weapon</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  {['Longsword', 'Shortbow', 'Staff', 'Daggers (x2)', 'Warhammer', 'Crossbow'].map(w => (
+                    <div 
+                      key={w}
+                      onClick={() => setCharacter({...character, weapon: w})}
+                      style={{ 
+                        padding: '16px', borderRadius: '8px', border: `1px solid ${character.weapon === w ? 'var(--primary)' : 'var(--border)'}`, 
+                        background: character.weapon === w ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                        cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
+                      }}
+                    >
+                      {w}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Starting Trinket (Flavor)</label>
+                <input 
+                  type="text" 
+                  value={character.trinket}
+                  onChange={e => setCharacter({...character, trinket: e.target.value})}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }} 
+                  placeholder="e.g. A silver locket with a faded portrait"
+                />
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* Footer Navigation */}
@@ -169,10 +213,10 @@ export default function CreateCharacter() {
             {step === 1 ? 'Cancel' : 'Back'}
           </button>
           
-          {step < 3 ? (
-            <button className="btn-primary" onClick={nextStep} disabled={step === 1 && !character.race || step === 2 && !character.class}>Next Step</button>
+          {step < 4 ? (
+            <button className="btn-primary" onClick={nextStep} disabled={(step === 1 && !character.race) || (step === 2 && !character.class) || (step === 4 && !character.weapon)}>Next Step</button>
           ) : (
-            <button className="btn-primary" onClick={handleFinish} style={{ background: 'var(--accent)' }}>Complete Character</button>
+            <button className="btn-primary" onClick={handleFinish} style={{ background: 'var(--accent)' }} disabled={!character.weapon}>Complete Character</button>
           )}
         </div>
 
