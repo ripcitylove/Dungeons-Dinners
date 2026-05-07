@@ -34,14 +34,14 @@ export async function POST(request: Request) {
           },
         ],
         mode: 'subscription',
-        success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/pricing`,
+        success_url: (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001') + '/dashboard?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url: (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001') + '/pricing',
       });
 
       return NextResponse.json({ url: session.url });
     } else {
       // For demonstration, just return a mock success URL
-      return NextResponse.json({ url: `http://localhost:3001/dashboard?mock_success=true&tier=${encodeURIComponent(tier)}` });
+      return NextResponse.json({ url: 'http://localhost:3001/dashboard?mock_success=true&tier=' + encodeURIComponent(tier) });
     }
 
   } catch (error: any) {
