@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '../../../lib/supabaseClient';
-import '../../globals.css';
+import { supabase } from '../../lib/supabaseClient';
+import '../globals.css';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
