@@ -11,7 +11,7 @@ export default function Home() {
           <span style={{ color: 'var(--primary)' }}>⬡</span> D&D Legends
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
-          <Link href="/dashboard"><button className="btn-secondary">Login</button></Link>
+          <Link href="/auth"><button className="btn-secondary">Login</button></Link>
           <Link href="/create-character"><button className="btn-primary">Start Free Trial</button></Link>
         </div>
       </nav>

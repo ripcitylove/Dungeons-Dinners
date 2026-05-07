@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import '../globals.css';
 
+import { supabase } from '../../lib/supabaseClient';
+
 export default function CreateCharacter() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -13,9 +15,38 @@ export default function CreateCharacter() {
   const nextStep = () => setStep(s => Math.min(s + 1, 3));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
-  const handleFinish = () => {
-    // Save to backend will go here
-    router.push('/dashboard');
+  const handleFinish = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert("You must be logged in to save a character!");
+        router.push('/auth');
+        return;
+      }
+
+      const { error } = await supabase.from('characters').insert([
+        {
+          user_id: user.id,
+          name: character.name || 'Unknown Hero',
+          race: character.race || 'Human',
+          class: character.class || 'Fighter',
+          level: 1,
+          hp: 10,
+          strength: 15,
+          dexterity: 14,
+          constitution: 13,
+          intelligence: 12,
+          wisdom: 10,
+          charisma: 8
+        }
+      ]);
+      
+      if (error) throw error;
+      router.push('/dashboard');
+    } catch (error) {
+      console.error("Error saving character:", error);
+      alert("Failed to save character. Please try again.");
+    }
   };
 
   return (
