@@ -498,16 +498,12 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* Character Roster */}
-        <section>
+        {/* Character Roster — only shown when characters exist */}
+        {characters.length > 0 && <section>
           <h2 style={{ fontSize: "1.8rem", marginBottom: "24px", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
             Your Roster
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {characters.length === 0 && (
-              <p style={{ color: "#94a3b8" }}>No characters yet.</p>
-            )}
-
             {characters.map((char) => (
               <div
                 key={char.id}
@@ -551,7 +547,7 @@ export default function Dashboard() {
               </div>
             </Link>
           </div>
-        </section>
+        </section>}
       </div>
     </main>
   );
