@@ -113,13 +113,18 @@ export async function POST(req: NextRequest) {
 
     void (async () => {
       try {
+        let eventCount = 0;
+        let deltaCount = 0;
         for await (const event of stream) {
+          eventCount++;
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            deltaCount++;
             await writer.write(encoder.encode(event.delta.text));
           }
         }
-      } catch {
-        // stream closed or aborted
+        console.log(`[chat] stream done — events: ${eventCount}, text_deltas: ${deltaCount}`);
+      } catch (e) {
+        console.error("[chat] stream error:", e);
       } finally {
         try { await writer.close(); } catch { /* already closed */ }
       }
