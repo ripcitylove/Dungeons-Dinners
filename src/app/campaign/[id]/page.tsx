@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, use, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { PixelCharacter } from "../../../components/PixelCharacter";
 import "../../globals.css";
@@ -73,6 +74,7 @@ const VOICES = [
 
 export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
   const params = use(props.params);
+  const router = useRouter();
 
   const [messages,        setMessages]        = useState<Message[]>(OPENING_MESSAGES);
   const [logEntries,      setLogEntries]       = useState<LogEntry[]>([]);
@@ -100,13 +102,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const characterRef   = useRef<Character | null>(null);
   const channelRef     = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef      = useRef<string | null>(null);
-  const narrateAudioRef  = useRef<HTMLAudioElement | null>(null);
-  const audioQueueRef    = useRef<string[]>([]);
-  const audioPlayingRef  = useRef(false);
+  const narrateAudioRef      = useRef<HTMLAudioElement | null>(null);
+  const audioQueueRef        = useRef<string[]>([]);
+  const audioPlayingRef      = useRef(false);
+  const messagesRef          = useRef<Message[]>(OPENING_MESSAGES);
+  const isTypingRef          = useRef(false);
+  const narrationEnabledRef  = useRef(false);
+  const prevPlayerDataRef    = useRef<Map<string, PresencePlayer>>(new Map());
+  const isInitialPresenceRef = useRef(true);
+  const narratePartyEventRef = useRef<((type: "join"|"leave"|"kick", player: PresencePlayer) => void) | null>(null);
 
-  useEffect(() => { characterRef.current    = character;     }, [character]);
-  useEffect(() => { userIdRef.current      = userId;        }, [userId]);
-  useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
+  useEffect(() => { characterRef.current       = character;        }, [character]);
+  useEffect(() => { userIdRef.current          = userId;           }, [userId]);
+  useEffect(() => { selectedVoiceRef.current   = selectedVoice;    }, [selectedVoice]);
+  useEffect(() => { messagesRef.current        = messages;         }, [messages]);
+  useEffect(() => { isTypingRef.current        = isTyping;         }, [isTyping]);
+  useEffect(() => { narrationEnabledRef.current = narrationEnabled; }, [narrationEnabled]);
 
   // ── Load user, character, and message history ──────────────────────────────
   useEffect(() => {
@@ -148,7 +159,39 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     channel
       .on("presence", { event: "sync" }, () => {
-        setPlayers(Object.values(channel.presenceState<PresencePlayer>()).flat());
+        const all = Object.values(channel.presenceState<PresencePlayer>()).flat();
+        setPlayers(all);
+
+        if (isInitialPresenceRef.current) {
+          isInitialPresenceRef.current = false;
+          all.forEach(p => prevPlayerDataRef.current.set(p.userId, p));
+          return;
+        }
+
+        const currentIds = new Set(all.map(p => p.userId));
+        const prev = prevPlayerDataRef.current;
+
+        // Detect joins (skip self)
+        all.forEach(p => {
+          if (!prev.has(p.userId) && p.userId !== userIdRef.current) {
+            narratePartyEventRef.current?.("join", p);
+          }
+        });
+
+        // Detect leaves (skip self)
+        prev.forEach((p, id) => {
+          if (!currentIds.has(id) && id !== userIdRef.current) {
+            narratePartyEventRef.current?.("leave", p);
+          }
+        });
+
+        // Rebuild map with current players
+        prevPlayerDataRef.current = new Map(all.map(p => [p.userId, p]));
+      })
+      .on("broadcast", { event: "player_kicked" }, ({ payload }) => {
+        if (payload.targetUserId === userIdRef.current) {
+          router.push("/dashboard");
+        }
       })
       .on("broadcast", { event: "player_action" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -252,6 +295,76 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       playNextInQueue();
     } catch { /* narration is optional */ }
   }, [playNextInQueue]);
+
+  // ── Party join / leave narration ────────────────────────────────────────────
+  const narratePartyEvent = useCallback(async (type: "join" | "leave" | "kick", player: PresencePlayer) => {
+    const label =
+      type === "join" ? `${player.characterName} has joined the party.` :
+      type === "kick" ? `${player.characterName} has been removed from the party.` :
+                        `${player.characterName} has left the party.`;
+
+    const systemMsg: Message = { role: "system", content: `⚔ ${label}` };
+    setMessages(prev => [...prev, systemMsg]);
+    setLogEntries(prev => [...prev, { id: `party-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚔ ${label}` }]);
+
+    if (isTypingRef.current) return;
+
+    setIsTyping(true);
+    setStreamingContent("");
+
+    const trigger: Message = {
+      role: "player",
+      content: `[Party change — weave naturally into the story without breaking immersion or stating it mechanically: ${player.characterName}, a ${player.characterClass}, ${type === "join" ? "has arrived and joined" : "has departed from"} the party]`,
+    };
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [...messagesRef.current, systemMsg, trigger], character: characterRef.current }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = "", narBuf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        full += chunk; narBuf += chunk;
+        setStreamingContent(full);
+        if (narrationEnabledRef.current) {
+          const m = narBuf.match(/^([\s\S]{60,}?[.!?…]["']?)\s+/);
+          if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
+        }
+      }
+      if (narrationEnabledRef.current && narBuf.trim().length > 10) enqueueNarration(narBuf.trim());
+
+      setMessages(prev => [...prev, { role: "dm", content: full }]);
+      setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
+
+      supabase.from("campaign_messages").insert([
+        { campaign_id: params.id, role: "dm", content: full, sender: null },
+      ]).then(({ error }) => { if (error) console.error("[party event]", error); });
+
+      channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full } });
+
+    } catch { /* party events are best-effort */ } finally {
+      setIsTyping(false);
+      setStreamingContent("");
+      channelRef.current?.send({ type: "broadcast", event: "dm_typing", payload: { senderId: userIdRef.current, typing: false } });
+    }
+  }, [params.id, enqueueNarration]);
+
+  // Keep ref in sync so presence handler (stale closure) can always call latest version
+  useEffect(() => { narratePartyEventRef.current = narratePartyEvent; }, [narratePartyEvent]);
+
+  const kickPlayer = useCallback((player: PresencePlayer) => {
+    channelRef.current?.send({ type: "broadcast", event: "player_kicked", payload: { targetUserId: player.userId } });
+    narratePartyEvent("kick", player);
+  }, [narratePartyEvent]);
 
   // ── AI call ─────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[]) => {
@@ -473,9 +586,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               </div>
             )}
           </div>
-          <button onClick={copyInviteLink} className="btn-secondary" style={{ padding: "6px 12px", fontSize: "0.78rem", flexShrink: 0 }} title="Copy invite link">
-            {linkCopied ? "✓ Copied!" : "🔗 Invite"}
-          </button>
         </header>
 
         {/* Messages */}
@@ -571,36 +681,57 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* ── Character Sheet tab ── */}
         {sidebarTab === "sheet" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-            {/* Party members */}
-            {otherPlayers.length > 0 && (
-              <div style={{ marginBottom: "20px" }}>
-                <h3 style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#94a3b8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Party ({otherPlayers.length})</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {otherPlayers.map(p => {
-                    const pct   = Math.max(0, (p.hp / p.maxHp) * 100);
-                    const color = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
-                    return (
-                      <div key={p.userId} style={{ padding: "10px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                          <div>
-                            <div style={{ fontSize: "0.85rem", fontWeight: "bold" }}>{p.characterName}</div>
-                            <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{p.characterClass}</div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 6px #22c55e" }} />
-                            <span style={{ fontSize: "0.75rem", color, fontWeight: "bold" }}>{p.hp}/{p.maxHp}</span>
-                          </div>
+            {/* Party section — always show so invite link is accessible */}
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Party ({otherPlayers.length + 1})
+                </h3>
+                <button
+                  onClick={copyInviteLink}
+                  style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", padding: "3px 8px", fontSize: "0.7rem", color: linkCopied ? "#22c55e" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}
+                  title="Copy invite link"
+                >
+                  {linkCopied ? "✓ Copied!" : "🔗 Invite"}
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {otherPlayers.map(p => {
+                  const pct   = Math.max(0, (p.hp / p.maxHp) * 100);
+                  const color = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+                  return (
+                    <div key={p.userId} style={{ padding: "10px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: "0.85rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.characterName}</div>
+                          <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{p.characterClass}</div>
                         </div>
-                        <div style={{ width: "100%", height: "4px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden" }}>
-                          <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 6px #22c55e" }} />
+                          <span style={{ fontSize: "0.75rem", color, fontWeight: "bold" }}>{p.hp}/{p.maxHp}</span>
+                          <button
+                            onClick={() => kickPlayer(p)}
+                            title={`Remove ${p.characterName} from party`}
+                            style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.9rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-                <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)" }} />
+                      <div style={{ width: "100%", height: "4px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {otherPlayers.length === 0 && (
+                  <p style={{ fontSize: "0.78rem", color: "#475569", fontStyle: "italic" }}>No other adventurers yet — share the invite link to add party members.</p>
+                )}
               </div>
-            )}
+              <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)" }} />
+            </div>
 
             {/* State change notice */}
             {stateNotice && (
