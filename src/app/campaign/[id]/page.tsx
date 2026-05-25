@@ -79,12 +79,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [linkCopied,      setLinkCopied]       = useState(false);
   const [sidebarTab,      setSidebarTab]       = useState<"sheet" | "log">("sheet");
 
+  const [narrationEnabled, setNarrationEnabled] = useState(false);
+  const [narrating,        setNarrating]        = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const logEndRef      = useRef<HTMLDivElement>(null);
   const abortRef       = useRef<AbortController | null>(null);
   const characterRef   = useRef<Character | null>(null);
   const channelRef     = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef      = useRef<string | null>(null);
+  const narrateAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => { characterRef.current = character; }, [character]);
   useEffect(() => { userIdRef.current   = userId;    }, [userId]);
@@ -202,6 +206,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, []);
 
+  // ── Voice narration ─────────────────────────────────────────────────────────
+  const narrateDm = useCallback(async (text: string) => {
+    const audio = narrateAudioRef.current;
+    if (audio) { audio.pause(); audio.src = ""; }
+
+    try {
+      const res = await fetch("/api/narrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      if (!narrateAudioRef.current) return;
+      narrateAudioRef.current.src = url;
+      narrateAudioRef.current.onended = () => URL.revokeObjectURL(url);
+      narrateAudioRef.current.play().catch(() => {});
+    } catch {
+      // narration is a bonus — fail silently
+    }
+  }, []);
+
   // ── AI call ─────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[]) => {
     abortRef.current?.abort();
@@ -256,6 +283,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
         .then(r => r.json()).then(({ suggestions }) => setSuggestions(suggestions ?? [])).catch(() => {});
 
+      // Voice narration (non-blocking, only if enabled)
+      if (narrationEnabled) narrateDm(full);
+
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
       setMessages(prev => [...prev, { role: "dm", content: "The DM seems to be indisposed. Please try again." }]);
@@ -293,6 +323,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
+      <audio
+        ref={narrateAudioRef}
+        onPlay={() => setNarrating(true)}
+        onEnded={() => setNarrating(false)}
+        onPause={() => setNarrating(false)}
+      />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} />}
 
       {/* ── Pane 1: Visual scene ── */}
@@ -313,6 +349,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Curse of the Shadow King</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px" }}>DM: Claude Opus · {players.length + 1} in party</p>
           </div>
+          <button
+            onClick={() => {
+              if (narrationEnabled && narrateAudioRef.current) {
+                narrateAudioRef.current.pause();
+                narrateAudioRef.current.src = "";
+              }
+              setNarrationEnabled(v => !v);
+            }}
+            title={narrationEnabled ? "Disable voice narration" : "Enable AI voice narration"}
+            style={{
+              background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent",
+              border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
+              borderRadius: "8px",
+              padding: "6px 10px",
+              cursor: "pointer",
+              fontSize: "1rem",
+              lineHeight: 1,
+              flexShrink: 0,
+              position: "relative",
+              transition: "all 0.2s",
+            }}
+          >
+            {narrating ? (
+              <span style={{ display: "inline-block", animation: "blink 0.8s step-end infinite" }}>🔊</span>
+            ) : narrationEnabled ? "🔊" : "🔇"}
+          </button>
           <button onClick={copyInviteLink} className="btn-secondary" style={{ padding: "6px 12px", fontSize: "0.78rem", flexShrink: 0 }} title="Copy invite link">
             {linkCopied ? "✓ Copied!" : "🔗 Invite"}
           </button>
