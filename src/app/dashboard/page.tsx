@@ -244,13 +244,25 @@ export default function Dashboard() {
 
   const deleteCampaign = async (id: string, title: string) => {
     if (!confirm(`Delete "${title}"? All messages will be permanently lost.`)) return;
-    await supabase.from("campaigns").delete().eq("id", id);
+    // Remove messages first to avoid FK constraint violations
+    await supabase.from("campaign_messages").delete().eq("campaign_id", id);
+    const { error } = await supabase.from("campaigns").delete().eq("id", id);
+    if (error) {
+      console.error("[deleteCampaign]", error);
+      alert(`Failed to delete campaign: ${error.message}`);
+      return;
+    }
     setCampaigns(prev => prev.filter(c => c.id !== id));
   };
 
   const deleteCharacter = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
-    await supabase.from("characters").delete().eq("id", id);
+    const { error } = await supabase.from("characters").delete().eq("id", id);
+    if (error) {
+      console.error("[deleteCharacter]", error);
+      alert(`Failed to delete character: ${error.message}`);
+      return;
+    }
     setCharacters(prev => prev.filter(c => c.id !== id));
     setSelectedChar(null);
   };
