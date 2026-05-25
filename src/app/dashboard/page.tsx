@@ -206,6 +206,10 @@ export default function Dashboard() {
   }, [router]);
 
   const openNewCampaign = () => {
+    if (characters.length === 0) {
+      router.push("/create-character");
+      return;
+    }
     const limit = CAMPAIGN_LIMITS[tier];
     if (campaigns.length >= limit) {
       alert(tier === "free"
@@ -415,6 +419,15 @@ export default function Dashboard() {
                   </p>
                   <Link href="/pricing">
                     <button className="btn-primary" style={{ fontSize: "0.9rem" }}>Upgrade for More →</button>
+                  </Link>
+                </div>
+              ) : characters.length === 0 ? (
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ color: "#94a3b8", marginBottom: "12px", fontSize: "0.9rem" }}>
+                    You need a character before you can start a campaign.
+                  </p>
+                  <Link href="/create-character">
+                    <button className="btn-primary" style={{ fontSize: "0.9rem" }}>Create a Character →</button>
                   </Link>
                 </div>
               ) : (
