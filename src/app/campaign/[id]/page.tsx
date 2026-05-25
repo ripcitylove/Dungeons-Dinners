@@ -100,7 +100,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const characterRef   = useRef<Character | null>(null);
   const channelRef     = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef      = useRef<string | null>(null);
-  const narrateAudioRef = useRef<HTMLAudioElement | null>(null);
+  const narrateAudioRef  = useRef<HTMLAudioElement | null>(null);
+  const audioQueueRef    = useRef<string[]>([]);
+  const audioPlayingRef  = useRef(false);
 
   useEffect(() => { characterRef.current    = character;     }, [character]);
   useEffect(() => { userIdRef.current      = userId;        }, [userId]);
@@ -219,11 +221,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, []);
 
-  // ── Voice narration ─────────────────────────────────────────────────────────
-  const narrateDm = useCallback(async (text: string) => {
+  // ── Voice narration — queue-based for low-latency sentence streaming ────────
+  const playNextInQueue = useCallback(() => {
+    if (audioPlayingRef.current || audioQueueRef.current.length === 0) return;
+    audioPlayingRef.current = true;
+    const url = audioQueueRef.current.shift()!;
     const audio = narrateAudioRef.current;
-    if (audio) { audio.pause(); audio.src = ""; }
+    if (!audio) { audioPlayingRef.current = false; return; }
+    audio.src = url;
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      audioPlayingRef.current = false;
+      if (audioQueueRef.current.length === 0) setNarrating(false);
+      playNextInQueue();
+    };
+    setNarrating(true);
+    audio.play().catch(() => { audioPlayingRef.current = false; setNarrating(false); });
+  }, []);
 
+  const enqueueNarration = useCallback(async (text: string) => {
     try {
       const res = await fetch("/api/narrate", {
         method: "POST",
@@ -232,21 +248,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       });
       if (!res.ok) return;
       const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      if (!narrateAudioRef.current) return;
-      narrateAudioRef.current.src = url;
-      narrateAudioRef.current.onended = () => URL.revokeObjectURL(url);
-      narrateAudioRef.current.play().catch(() => {});
-    } catch {
-      // narration is a bonus — fail silently
-    }
-  }, []);
+      audioQueueRef.current.push(URL.createObjectURL(blob));
+      playNextInQueue();
+    } catch { /* narration is optional */ }
+  }, [playNextInQueue]);
 
   // ── AI call ─────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[]) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Stop any in-progress narration and reset the queue
+    if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
+    audioQueueRef.current  = [];
+    audioPlayingRef.current = false;
+    setNarrating(false);
 
     setIsTyping(true);
     setStreamingContent("");
@@ -266,13 +283,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
-      let full = "";
+      let full    = "";
+      let narBuf  = "";   // accumulates text until a sentence boundary is found
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        full += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        full   += chunk;
+        narBuf += chunk;
         setStreamingContent(full);
+
+        // Fire TTS as soon as we have a complete sentence (≥60 chars so we
+        // don't send tiny fragments that sound disjointed)
+        if (narrationEnabled) {
+          const m = narBuf.match(/^([\s\S]{60,}?[.!?…]["']?)\s+/);
+          if (m) {
+            enqueueNarration(m[1]);
+            narBuf = narBuf.slice(m[0].length);
+          }
+        }
+      }
+
+      // Narrate whatever is left in the buffer (last sentence / short responses)
+      if (narrationEnabled && narBuf.trim().length > 10) {
+        enqueueNarration(narBuf.trim());
       }
 
       setMessages(prev => [...prev, { role: "dm", content: full }]);
@@ -296,8 +331,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
         .then(r => r.json()).then(({ suggestions }) => setSuggestions(suggestions ?? [])).catch(() => {});
 
-      // Voice narration (non-blocking, only if enabled)
-      if (narrationEnabled) narrateDm(full);
 
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -336,12 +369,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
-      <audio
-        ref={narrateAudioRef}
-        onPlay={() => setNarrating(true)}
-        onEnded={() => setNarrating(false)}
-        onPause={() => setNarrating(false)}
-      />
+      <audio ref={narrateAudioRef} />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} />}
 
       {/* ── Pane 1: Visual scene ── */}
