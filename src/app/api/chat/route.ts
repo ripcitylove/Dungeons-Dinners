@@ -116,7 +116,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[api/chat]", err);
+    const e = err as Error;
+    console.error("[api/chat] error:", e?.message, "stack:", e?.stack?.slice(0, 300));
     return new Response(
       JSON.stringify({ error: "The DM is temporarily unavailable." }),
       { status: 500, headers: { "Content-Type": "application/json" } }
