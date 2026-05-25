@@ -6,11 +6,53 @@ import '../globals.css';
 
 import { supabase } from '../../lib/supabaseClient';
 
+type AbilityScores = {
+  strength: number; dexterity: number; constitution: number;
+  intelligence: number; wisdom: number; charisma: number;
+};
+
+// 4d6 drop lowest — standard D&D 5e method
+function roll4d6DropLowest(): number {
+  const rolls = Array.from({ length: 4 }, () => Math.floor(Math.random() * 6) + 1);
+  rolls.sort((a, b) => a - b);
+  return rolls.slice(1).reduce((a, b) => a + b, 0);
+}
+
+function rollAbilityScores(): AbilityScores {
+  return {
+    strength: roll4d6DropLowest(),
+    dexterity: roll4d6DropLowest(),
+    constitution: roll4d6DropLowest(),
+    intelligence: roll4d6DropLowest(),
+    wisdom: roll4d6DropLowest(),
+    charisma: roll4d6DropLowest(),
+  };
+}
+
+// Level 1 HP = hit die max + CON modifier
+const CLASS_HIT_DIE: Record<string, number> = {
+  Barbarian: 12, Fighter: 10, Paladin: 10, Ranger: 10,
+  Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8,
+  Sorcerer: 6, Wizard: 6,
+};
+
+function startingHP(cls: string, con: number): number {
+  const hitDie = CLASS_HIT_DIE[cls] ?? 8;
+  const conMod = Math.floor((con - 10) / 2);
+  return Math.max(1, hitDie + conMod);
+}
+
+const DEFAULT_SCORES: AbilityScores = {
+  strength: 15, dexterity: 14, constitution: 13,
+  intelligence: 12, wisdom: 10, charisma: 8,
+};
+
 export default function CreateCharacter() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [character, setCharacter] = useState({ name: '', race: '', class: '', background: '', weapon: '', trinket: '' });
   const [rollingStats, setRollingStats] = useState(false);
+  const [scores, setScores] = useState<AbilityScores>(DEFAULT_SCORES);
 
   const nextStep = () => setStep(s => Math.min(s + 1, 4));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
@@ -31,21 +73,24 @@ export default function CreateCharacter() {
         items: ['Bedroll', 'Rations (5 days)', character.trinket || 'Mysterious Coin']
       };
 
+      const charClass = character.class || 'Fighter';
+      const maxHp = startingHP(charClass, scores.constitution);
+
       const { error } = await supabase.from('characters').insert([
         {
           user_id: user.id,
           name: character.name || 'Unknown Hero',
           race: character.race || 'Human',
-          class: character.class || 'Fighter',
+          class: charClass,
           level: 1,
-          max_hp: 10,
-          hp: 10,
-          strength: 15,
-          dexterity: 14,
-          constitution: 13,
-          intelligence: 12,
-          wisdom: 10,
-          charisma: 8,
+          max_hp: maxHp,
+          hp: maxHp,
+          strength: scores.strength,
+          dexterity: scores.dexterity,
+          constitution: scores.constitution,
+          intelligence: scores.intelligence,
+          wisdom: scores.wisdom,
+          charisma: scores.charisma,
           inventory: startingInventory
         }
       ]);
@@ -147,28 +192,43 @@ export default function CreateCharacter() {
               <div style={{ fontSize: '4rem', marginBottom: '24px', animation: rollingStats ? 'float 0.5s infinite' : 'none' }}>
                 🎲
               </div>
-              <button 
-                className="btn-primary" 
+              <button
+                className="btn-primary"
                 onClick={() => {
                   setRollingStats(true);
-                  setTimeout(() => setRollingStats(false), 1500);
+                  setTimeout(() => {
+                    setScores(rollAbilityScores());
+                    setRollingStats(false);
+                  }, 900);
                 }}
                 disabled={rollingStats}
                 style={{ marginBottom: '24px' }}
               >
-                {rollingStats ? 'Rolling...' : 'Roll Ability Scores'}
+                {rollingStats ? 'Rolling...' : 'Roll Ability Scores (4d6 drop lowest)'}
               </button>
-              
-              {!rollingStats && (
-                <div style={{ display: 'flex', gap: '16px', opacity: 0.5 }}>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>STR<br/><b>15</b></div>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>DEX<br/><b>14</b></div>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>CON<br/><b>13</b></div>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>INT<br/><b>12</b></div>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>WIS<br/><b>10</b></div>
-                  <div style={{ padding: '16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center' }}>CHA<br/><b>8</b></div>
-                </div>
-              )}
+
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {([
+                  ['STR', scores.strength],
+                  ['DEX', scores.dexterity],
+                  ['CON', scores.constitution],
+                  ['INT', scores.intelligence],
+                  ['WIS', scores.wisdom],
+                  ['CHA', scores.charisma],
+                ] as [string, number][]).map(([label, val]) => {
+                  const m = Math.floor((val - 10) / 2);
+                  return (
+                    <div key={label} style={{ padding: '14px 16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '70px', border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1.3rem' }}>{val}</div>
+                      <div style={{ fontSize: '0.75rem', color: m >= 0 ? '#22c55e' : '#ef4444' }}>{m >= 0 ? `+${m}` : m}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '16px' }}>
+                Re-roll as many times as you like before continuing.
+              </p>
             </div>
           )}
 
