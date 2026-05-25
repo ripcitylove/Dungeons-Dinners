@@ -100,11 +100,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const stream = anthropic.messages.stream({
+    const stream = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 768,
       system: buildSystemPrompt(character),
       messages: claudeMessages,
+      stream: true,
     });
 
     const encoder = new TextEncoder();
@@ -113,16 +114,11 @@ export async function POST(req: NextRequest) {
 
     void (async () => {
       try {
-        let eventCount = 0;
-        let deltaCount = 0;
         for await (const event of stream) {
-          eventCount++;
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            deltaCount++;
             await writer.write(encoder.encode(event.delta.text));
           }
         }
-        console.log(`[chat] stream done — events: ${eventCount}, text_deltas: ${deltaCount}`);
       } catch (e) {
         console.error("[chat] stream error:", e);
       } finally {
