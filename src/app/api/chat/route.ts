@@ -107,19 +107,23 @@ export async function POST(req: NextRequest) {
       messages: claudeMessages,
     });
 
-    const readable = new ReadableStream({
-      async start(controller) {
+    const encoder = new TextEncoder();
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+
+    void (async () => {
+      try {
         for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            controller.enqueue(new TextEncoder().encode(event.delta.text));
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            await writer.write(encoder.encode(event.delta.text));
           }
         }
-        controller.close();
-      },
-    });
+      } catch {
+        // stream closed or aborted
+      } finally {
+        try { await writer.close(); } catch { /* already closed */ }
+      }
+    })();
 
     return new Response(readable, {
       headers: {
