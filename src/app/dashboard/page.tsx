@@ -174,6 +174,8 @@ export default function Dashboard() {
   const [newCampaignName, setNewCampaignName] = useState("");
   const [newCampaignDesc, setNewCampaignDesc] = useState("");
   const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -242,17 +244,24 @@ export default function Dashboard() {
     }
   };
 
-  const deleteCampaign = async (id: string, title: string) => {
-    if (!confirm(`Delete "${title}"? All messages will be permanently lost.`)) return;
+  const deleteCampaign = (id: string, title: string) => {
+    setConfirmDelete({ id, title });
+  };
+
+  const confirmDeleteCampaign = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
     // Remove messages first to avoid FK constraint violations
-    await supabase.from("campaign_messages").delete().eq("campaign_id", id);
-    const { error } = await supabase.from("campaigns").delete().eq("id", id);
+    await supabase.from("campaign_messages").delete().eq("campaign_id", confirmDelete.id);
+    const { error } = await supabase.from("campaigns").delete().eq("id", confirmDelete.id);
+    setDeleting(false);
     if (error) {
       console.error("[deleteCampaign]", error);
       alert(`Failed to delete campaign: ${error.message}`);
       return;
     }
-    setCampaigns(prev => prev.filter(c => c.id !== id));
+    setCampaigns(prev => prev.filter(c => c.id !== confirmDelete.id));
+    setConfirmDelete(null);
   };
 
   const deleteCharacter = async (id: string, name: string) => {
@@ -346,6 +355,44 @@ export default function Dashboard() {
               <button onClick={() => setShowNewCampaign(false)} className="btn-secondary" style={{ padding: "9px 20px", fontSize: "0.9rem" }}>Cancel</button>
               <button onClick={createCampaign} className="btn-primary" disabled={creating} style={{ padding: "9px 20px", fontSize: "0.9rem" }}>
                 {creating ? "Creating…" : "Begin Adventure →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete campaign confirmation modal */}
+      {confirmDelete && (
+        <div
+          onClick={() => { if (!deleting) setConfirmDelete(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "20px" }}
+        >
+          <div
+            className="glass-panel animate-fade-in"
+            onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: "420px", padding: "32px", textAlign: "center" }}
+          >
+            <div style={{ fontSize: "2.5rem", marginBottom: "16px" }}>⚠️</div>
+            <h2 style={{ fontSize: "1.3rem", fontWeight: "bold", marginBottom: "10px" }}>Delete Campaign?</h2>
+            <p style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: "6px" }}>
+              <strong style={{ color: "white" }}>&ldquo;{confirmDelete.title}&rdquo;</strong> and all of its messages will be permanently deleted.
+            </p>
+            <p style={{ color: "#64748b", fontSize: "0.82rem", marginBottom: "28px" }}>This cannot be undone.</p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+                className="btn-secondary"
+                style={{ padding: "10px 24px", fontSize: "0.9rem" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteCampaign}
+                disabled={deleting}
+                style={{ padding: "10px 24px", fontSize: "0.9rem", borderRadius: "8px", border: "none", background: "#ef4444", color: "white", cursor: deleting ? "default" : "pointer", opacity: deleting ? 0.7 : 1, fontWeight: "bold" }}
+              >
+                {deleting ? "Deleting…" : "Yes, Delete It"}
               </button>
             </div>
           </div>
