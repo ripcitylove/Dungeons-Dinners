@@ -101,19 +101,35 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Non-streaming fallback while diagnosing SDK ByteString bug
-    const msg = await anthropic.messages.create({
+    const stream = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 768,
       system: buildSystemPrompt(character),
       messages: claudeMessages,
+      stream: true,
     });
 
-    const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
-    return new Response(text, {
+    const encoder = new TextEncoder();
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+
+    void (async () => {
+      try {
+        for await (const event of stream) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            await writer.write(encoder.encode(event.delta.text));
+          }
+        }
+      } finally {
+        try { await writer.close(); } catch { /* already closed */ }
+      }
+    })();
+
+    return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (err) {
