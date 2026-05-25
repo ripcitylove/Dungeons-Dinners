@@ -4,32 +4,163 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import { PixelCharacter } from "../../components/PixelCharacter";
 import "../globals.css";
 
+type Inventory = { gold: number; weapons: string[]; items: string[] };
+type Character = {
+  id: string; name: string; race: string; class: string; level: number;
+  hp: number; max_hp: number;
+  strength: number; dexterity: number; constitution: number;
+  intelligence: number; wisdom: number; charisma: number;
+  inventory: Inventory | null;
+};
 type Campaign = { id: string; title: string; description: string; created_at: string };
-type Character = { id: string; name: string; race: string; class: string; level: number };
 type Tier = "free" | "tavern" | "dm" | "legendary";
 
 const TIER_LABELS: Record<Tier, string> = {
-  free: "Free",
-  tavern: "Tavern Patron",
-  dm: "Dungeon Master",
-  legendary: "Legendary Hero",
+  free: "Free", tavern: "Tavern Patron", dm: "Dungeon Master", legendary: "Legendary Hero",
 };
-
 const TIER_COLORS: Record<Tier, string> = {
-  free: "#64748b",
-  tavern: "var(--primary)",
-  dm: "var(--secondary)",
-  legendary: "#f59e0b",
+  free: "#64748b", tavern: "var(--primary)", dm: "var(--secondary)", legendary: "#f59e0b",
+};
+const CAMPAIGN_LIMITS: Record<Tier, number> = {
+  free: 1, tavern: 5, dm: Infinity, legendary: Infinity,
 };
 
-const CAMPAIGN_LIMITS: Record<Tier, number> = {
-  free: 1,
-  tavern: 5,
-  dm: Infinity,
-  legendary: Infinity,
-};
+const ABILITY_LABELS = [
+  ["STR", "strength"], ["DEX", "dexterity"], ["CON", "constitution"],
+  ["INT", "intelligence"], ["WIS", "wisdom"], ["CHA", "charisma"],
+] as const;
+
+function mod(score: number) {
+  const m = Math.floor((score - 10) / 2);
+  return m >= 0 ? `+${m}` : `${m}`;
+}
+
+// ── Character Sheet Modal ────────────────────────────────────────────────────
+
+function CharacterModal({
+  char,
+  onClose,
+  onDelete,
+}: {
+  char: Character;
+  onClose: () => void;
+  onDelete: (id: string, name: string) => void;
+}) {
+  const hpPct = Math.max(0, Math.min(100, Math.round((char.hp / char.max_hp) * 100)));
+  const hpColor = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
+  const inv = char.inventory;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.75)",
+        backdropFilter: "blur(6px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: "20px",
+      }}
+    >
+      <div
+        className="glass-panel animate-fade-in"
+        onClick={e => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: "560px", padding: "32px", position: "relative" }}
+      >
+        {/* Close */}
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "1.3rem", lineHeight: 1 }}
+        >
+          ✕
+        </button>
+
+        {/* Hero header */}
+        <div style={{ display: "flex", gap: "24px", alignItems: "flex-end", marginBottom: "28px" }}>
+          <div style={{ height: "96px", display: "flex", alignItems: "flex-end", flexShrink: 0 }}>
+            <PixelCharacter race={char.race} cls={char.class} size={6} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "4px" }}>{char.name}</h2>
+            <p style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: "12px" }}>
+              {char.race} {char.class} · Level {char.level}
+            </p>
+            {/* HP bar */}
+            <div style={{ fontSize: "0.78rem", display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+              <span style={{ color: "#64748b" }}>Hit Points</span>
+              <span style={{ color: hpColor, fontWeight: "bold" }}>{char.hp} / {char.max_hp}</span>
+            </div>
+            <div style={{ height: "8px", borderRadius: "4px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${hpPct}%`, background: hpColor, borderRadius: "4px", transition: "width 0.4s ease" }} />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+          {/* Ability scores */}
+          <div>
+            <div style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Ability Scores</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+              {ABILITY_LABELS.map(([label, key]) => {
+                const val = char[key];
+                const m = mod(val);
+                return (
+                  <div key={label} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.62rem", color: "#64748b", marginBottom: "2px" }}>{label}</div>
+                    <div style={{ fontWeight: "bold", fontSize: "1.15rem" }}>{val}</div>
+                    <div style={{ fontSize: "0.68rem", color: m.startsWith("+") ? "#22c55e" : "#ef4444" }}>{m}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Inventory */}
+          <div>
+            <div style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Inventory</div>
+            <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "14px", fontSize: "0.83rem", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>🪙</span>
+                <span style={{ color: "#f59e0b", fontWeight: "bold" }}>{inv?.gold ?? 0} gold</span>
+              </div>
+              {(inv?.weapons?.length ?? 0) > 0 && (
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "#475569", marginBottom: "4px" }}>WEAPONS</div>
+                  {inv!.weapons.map((w, i) => (
+                    <div key={i} style={{ color: "#e2e8f0", marginBottom: "2px" }}>⚔ {w}</div>
+                  ))}
+                </div>
+              )}
+              {(inv?.items?.length ?? 0) > 0 && (
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "#475569", marginBottom: "4px" }}>ITEMS</div>
+                  {inv!.items.map((item, i) => (
+                    <div key={i} style={{ color: "#94a3b8", marginBottom: "2px" }}>· {item}</div>
+                  ))}
+                </div>
+              )}
+              {!inv && <div style={{ color: "#475569" }}>No inventory data</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={() => onDelete(char.id, char.name)}
+            style={{ background: "none", border: "1px solid #ef4444", color: "#ef4444", padding: "7px 16px", borderRadius: "6px", cursor: "pointer", fontSize: "0.82rem" }}
+          >
+            Delete Character
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const router = useRouter();
@@ -38,6 +169,11 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [tier, setTier] = useState<Tier>("free");
   const [userEmail, setUserEmail] = useState("");
+  const [selectedChar, setSelectedChar] = useState<Character | null>(null);
+  const [showNewCampaign, setShowNewCampaign] = useState(false);
+  const [newCampaignName, setNewCampaignName] = useState("");
+  const [newCampaignDesc, setNewCampaignDesc] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -47,9 +183,17 @@ export default function Dashboard() {
       setUserEmail(user.email ?? "");
 
       const [charsRes, campsRes, profileRes] = await Promise.all([
-        supabase.from("characters").select("id, name, race, class, level").eq("user_id", user.id),
-        supabase.from("campaigns").select("id, title, description, created_at").eq("user_id", user.id).order("created_at", { ascending: false }),
-        supabase.from("user_profiles").select("subscription_tier").eq("id", user.id).maybeSingle(),
+        supabase.from("characters")
+          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory")
+          .eq("user_id", user.id),
+        supabase.from("campaigns")
+          .select("id, title, description, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase.from("user_profiles")
+          .select("subscription_tier")
+          .eq("id", user.id)
+          .maybeSingle(),
       ]);
 
       if (charsRes.data) setCharacters(charsRes.data as Character[]);
@@ -61,31 +205,50 @@ export default function Dashboard() {
     loadDashboard();
   }, [router]);
 
-  const startNewCampaign = async () => {
+  const openNewCampaign = () => {
     const limit = CAMPAIGN_LIMITS[tier];
     if (campaigns.length >= limit) {
-      const upgradeMsg = tier === "free"
+      alert(tier === "free"
         ? "Free accounts can only have 1 campaign. Upgrade to Tavern Patron for 5, or DM tier for unlimited."
-        : `Your ${TIER_LABELS[tier]} plan allows up to ${limit} campaigns. Upgrade for unlimited.`;
-      alert(upgradeMsg);
+        : `Your ${TIER_LABELS[tier]} plan allows up to ${limit} campaigns. Upgrade for unlimited.`);
       router.push("/pricing");
       return;
     }
+    setNewCampaignName("");
+    setNewCampaignDesc("");
+    setShowNewCampaign(true);
+  };
 
+  const createCampaign = async () => {
+    const title = newCampaignName.trim() || "New Adventure";
+    const description = newCampaignDesc.trim() || "A freshly created campaign.";
+    setCreating(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
+    if (!user) { setCreating(false); return; }
     const { data, error } = await supabase
       .from("campaigns")
-      .insert([{ title: "New Adventure", description: "A freshly created campaign.", user_id: user.id }])
+      .insert([{ title, description, user_id: user.id }])
       .select();
-
+    setCreating(false);
     if (!error && data?.[0]) {
       router.push(`/campaign/${data[0].id}`);
     } else {
       console.error(error);
       alert("Failed to start campaign.");
     }
+  };
+
+  const deleteCampaign = async (id: string, title: string) => {
+    if (!confirm(`Delete "${title}"? All messages will be permanently lost.`)) return;
+    await supabase.from("campaigns").delete().eq("id", id);
+    setCampaigns(prev => prev.filter(c => c.id !== id));
+  };
+
+  const deleteCharacter = async (id: string, name: string) => {
+    if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+    await supabase.from("characters").delete().eq("id", id);
+    setCharacters(prev => prev.filter(c => c.id !== id));
+    setSelectedChar(null);
   };
 
   const signOut = async () => {
@@ -106,34 +269,92 @@ export default function Dashboard() {
 
   return (
     <main style={{ minHeight: "100vh", padding: "40px" }}>
+      {/* Character sheet modal */}
+      {selectedChar && (
+        <CharacterModal
+          char={selectedChar}
+          onClose={() => setSelectedChar(null)}
+          onDelete={deleteCharacter}
+        />
+      )}
+
+      {/* New Campaign modal */}
+      {showNewCampaign && (
+        <div
+          onClick={() => setShowNewCampaign(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "20px" }}
+        >
+          <div
+            className="glass-panel animate-fade-in"
+            onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: "440px", padding: "32px", position: "relative" }}
+          >
+            <button
+              onClick={() => setShowNewCampaign(false)}
+              style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "1.3rem", lineHeight: 1 }}
+            >
+              ✕
+            </button>
+
+            <h2 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "6px" }}>Name Your Adventure</h2>
+            <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: "24px" }}>Give your campaign a title before heading into the tavern.</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "6px" }}>Campaign Name</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newCampaignName}
+                  onChange={e => setNewCampaignName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !creating && createCampaign()}
+                  placeholder="e.g. The Lost Mines of Phandelver"
+                  maxLength={80}
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.3)", color: "white", fontSize: "0.95rem", outline: "none" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "6px" }}>Description <span style={{ color: "#475569" }}>(optional)</span></label>
+                <textarea
+                  value={newCampaignDesc}
+                  onChange={e => setNewCampaignDesc(e.target.value)}
+                  placeholder="A brief hook or premise for the adventure…"
+                  maxLength={200}
+                  rows={2}
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.3)", color: "white", fontSize: "0.9rem", resize: "none", outline: "none", fontFamily: "inherit" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+              <button onClick={() => setShowNewCampaign(false)} className="btn-secondary" style={{ padding: "9px 20px", fontSize: "0.9rem" }}>Cancel</button>
+              <button onClick={createCampaign} className="btn-primary" disabled={creating} style={{ padding: "9px 20px", fontSize: "0.9rem" }}>
+                {creating ? "Creating…" : "Begin Adventure →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
         <div style={{ fontSize: "1.5rem", fontWeight: "bold" }}>
           <span style={{ color: "var(--primary)" }}>⬡</span> Tavern Dashboard
         </div>
         <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-          {/* Tier badge */}
           <span style={{
-            padding: "4px 12px",
-            borderRadius: "20px",
-            fontSize: "0.8rem",
-            fontWeight: "bold",
-            border: `1px solid ${TIER_COLORS[tier]}`,
-            color: TIER_COLORS[tier],
+            padding: "4px 12px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "bold",
+            border: `1px solid ${TIER_COLORS[tier]}`, color: TIER_COLORS[tier],
           }}>
             {TIER_LABELS[tier]}
           </span>
           <span style={{ color: "#94a3b8", fontSize: "0.9rem" }}>{userEmail}</span>
           {tier === "free" && (
             <Link href="/pricing">
-              <button className="btn-primary" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>
-                Upgrade ↑
-              </button>
+              <button className="btn-primary" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>Upgrade ↑</button>
             </Link>
           )}
-          <button onClick={signOut} className="btn-secondary" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>
-            Sign Out
-          </button>
+          <button onClick={signOut} className="btn-secondary" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>Sign Out</button>
         </div>
       </nav>
 
@@ -169,13 +390,20 @@ export default function Dashboard() {
                     </button>
                   </div>
                 </div>
-                <Link href={`/campaign/${camp.id}`}>
-                  <button className="btn-primary">Resume Session</button>
-                </Link>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+                  <Link href={`/campaign/${camp.id}`}>
+                    <button className="btn-primary">Resume Session</button>
+                  </Link>
+                  <button
+                    onClick={() => deleteCampaign(camp.id, camp.title)}
+                    style={{ background: "none", border: "1px solid #ef4444", color: "#ef4444", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem" }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
 
-            {/* New campaign button */}
             <div
               className="glass-panel animate-fade-in"
               style={{ padding: "24px", display: "flex", justifyContent: "center", alignItems: "center", borderStyle: "dashed", opacity: atLimit ? 0.6 : 1 }}
@@ -190,7 +418,7 @@ export default function Dashboard() {
                   </Link>
                 </div>
               ) : (
-                <button onClick={startNewCampaign} className="btn-secondary" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button onClick={openNewCampaign} className="btn-secondary" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "1.5rem" }}>+</span> Start New Campaign
                 </button>
               )}
@@ -209,16 +437,39 @@ export default function Dashboard() {
             )}
 
             {characters.map((char) => (
-              <div key={char.id} className="glass-panel animate-fade-in" style={{ padding: "16px", display: "flex", gap: "14px", alignItems: "center" }}>
-                <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", flexShrink: 0 }}>
-                  ⚔️
+              <div
+                key={char.id}
+                className="glass-panel animate-fade-in"
+                onClick={() => setSelectedChar(char)}
+                style={{ padding: "16px", display: "flex", gap: "14px", alignItems: "center", cursor: "pointer", transition: "border-color 0.2s" }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--primary)")}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "")}
+              >
+                <div style={{ width: "48px", height: "56px", display: "flex", alignItems: "flex-end", justifyContent: "center", flexShrink: 0, overflow: "visible" }}>
+                  <PixelCharacter race={char.race} cls={char.class} size={3} />
                 </div>
-                <div>
+                <div style={{ flex: 1 }}>
                   <h4 style={{ fontWeight: "bold" }}>{char.name}</h4>
                   <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>
                     {char.race} {char.class} · Lvl {char.level}
                   </p>
+                  {/* Mini HP bar */}
+                  <div style={{ marginTop: "5px", height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.08)", overflow: "hidden", width: "80%" }}>
+                    <div style={{
+                      height: "100%",
+                      width: `${Math.max(0, Math.min(100, Math.round((char.hp / char.max_hp) * 100)))}%`,
+                      background: char.hp / char.max_hp > 0.5 ? "#22c55e" : char.hp / char.max_hp > 0.25 ? "#f59e0b" : "#ef4444",
+                      borderRadius: "2px",
+                    }} />
+                  </div>
                 </div>
+                <button
+                  onClick={e => { e.stopPropagation(); deleteCharacter(char.id, char.name); }}
+                  style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "1rem", padding: "4px", lineHeight: 1, flexShrink: 0 }}
+                  title="Delete character"
+                >
+                  🗑
+                </button>
               </div>
             ))}
 

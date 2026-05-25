@@ -98,3 +98,58 @@ a {
 .delay-100 { animation-delay: 100ms; }
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
+
+/* ─── Pixel Character animations ─────────────────────────────────────────── */
+
+.pc-char {
+  display: inline-block;
+  image-rendering: pixelated;
+}
+
+/* Steady soldier bounce */
+@keyframes pc-march {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-2px); }
+}
+
+/* Weightless mage hover */
+@keyframes pc-float {
+  0%, 100% { transform: translateY(0); }
+  40%       { transform: translateY(-5px); }
+  60%       { transform: translateY(-5px); }
+}
+
+/* Neutral idle bob */
+@keyframes pc-idle {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-3px); }
+}
+
+/* Quick sneak-crouch */
+@keyframes pc-lurk {
+  0%, 65%, 100% { transform: translateY(0); }
+  30%           { transform: translateY(-4px) scaleY(0.97); }
+}
+
+/* Musical sway — left/right rhythm */
+@keyframes pc-groove {
+  0%, 100% { transform: rotate(-2deg) translateY(0);   }
+  25%       { transform: rotate(0deg)  translateY(-3px); }
+  50%       { transform: rotate(2deg)  translateY(0);   }
+  75%       { transform: rotate(0deg)  translateY(-3px); }
+}
+
+/* Ominous drift with slight pulse */
+@keyframes pc-drift {
+  0%, 100% { transform: translateY(0)   scale(1);    }
+  50%       { transform: translateY(-6px) scale(1.02); }
+}
+
+.pc-anim-fighter { animation: pc-march  1.8s ease-in-out infinite; }
+.pc-anim-wizard  { animation: pc-float  3.2s ease-in-out infinite; }
+.pc-anim-rogue   { animation: pc-lurk   1.4s ease-in-out infinite; }
+.pc-anim-cleric  { animation: pc-idle   2.5s ease-in-out infinite; }
+.pc-anim-paladin { animation: pc-march  2.0s ease-in-out infinite; }
+.pc-anim-ranger  { animation: pc-idle   2.2s ease-in-out infinite; }
+.pc-anim-bard    { animation: pc-groove 0.85s ease-in-out infinite; }
+.pc-anim-warlock { animation: pc-drift  4.0s ease-in-out infinite; }

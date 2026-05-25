@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import '../globals.css';
 
 import { supabase } from '../../lib/supabaseClient';
+import { PixelCharacter } from '../../components/PixelCharacter';
 
 type AbilityScores = {
   strength: number; dexterity: number; constitution: number;
@@ -266,6 +267,19 @@ export default function CreateCharacter() {
           )}
 
         </div>
+
+        {/* Live character preview — appears once race or class is chosen */}
+        {(character.race || character.class) && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "20px", padding: "20px 0", marginTop: "8px", borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>Preview</span>
+              <PixelCharacter race={character.race || "Human"} cls={character.class || "Fighter"} size={5} />
+              <span style={{ fontSize: "0.8rem", color: "var(--primary)", fontWeight: 600 }}>
+                {[character.race, character.class].filter(Boolean).join(" · ") || "Choose race & class"}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Footer Navigation */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
