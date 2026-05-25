@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Strip BOM that may be prepended by clipboard/Vercel encoding when key was pasted
+const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
 type MsgRole = "player" | "dm" | "system";
 type FrontendMessage = { role: MsgRole; content: string; sender?: string };
