@@ -253,11 +253,20 @@ export default function Dashboard() {
     setDeleting(true);
     // Remove messages first to avoid FK constraint violations
     await supabase.from("campaign_messages").delete().eq("campaign_id", confirmDelete.id);
-    const { error } = await supabase.from("campaigns").delete().eq("id", confirmDelete.id);
+    const { data, error } = await supabase
+      .from("campaigns")
+      .delete()
+      .eq("id", confirmDelete.id)
+      .select();
     setDeleting(false);
     if (error) {
       console.error("[deleteCampaign]", error);
       alert(`Failed to delete campaign: ${error.message}`);
+      return;
+    }
+    // RLS blocked the delete — no rows returned, no error thrown
+    if (!data || data.length === 0) {
+      alert("Delete was blocked by database permissions. Ask your admin to add a DELETE policy for the campaigns table.");
       return;
     }
     setCampaigns(prev => prev.filter(c => c.id !== confirmDelete.id));
