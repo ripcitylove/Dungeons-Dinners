@@ -54,8 +54,15 @@ export default function CreateCharacter() {
   const [character, setCharacter] = useState({ name: '', race: '', class: '', background: '', weapon: '', trinket: '' });
   const [rollingStats, setRollingStats] = useState(false);
   const [scores, setScores] = useState<AbilityScores>(DEFAULT_SCORES);
+  const [nameError, setNameError] = useState('');
 
-  const nextStep = () => setStep(s => Math.min(s + 1, 4));
+  const nextStep = () => {
+    if (step === 1) {
+      if (!character.name.trim()) { setNameError('Your character needs a name.'); return; }
+      if (!character.race) return;
+    }
+    setStep(s => Math.min(s + 1, 4));
+  };
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
   const handleFinish = async () => {
@@ -64,6 +71,22 @@ export default function CreateCharacter() {
       if (!user) {
         alert("You must be logged in to save a character!");
         router.push('/auth');
+        return;
+      }
+
+      const trimmedName = character.name.trim();
+      if (!trimmedName) { setStep(1); setNameError('Your character needs a name.'); return; }
+
+      // Check for duplicate name on this user's roster
+      const { data: existing } = await supabase
+        .from('characters')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('name', trimmedName)
+        .limit(1);
+      if (existing && existing.length > 0) {
+        setStep(1);
+        setNameError(`"${trimmedName}" is already on your roster. Choose a different name.`);
         return;
       }
 
@@ -80,7 +103,7 @@ export default function CreateCharacter() {
       const { error } = await supabase.from('characters').insert([
         {
           user_id: user.id,
-          name: character.name || 'Unknown Hero',
+          name: trimmedName,
           race: character.race || 'Human',
           class: charClass,
           level: 1,
@@ -136,13 +159,14 @@ export default function CreateCharacter() {
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Character Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={character.name}
-                  onChange={e => setCharacter({...character, name: e.target.value})}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }} 
+                  onChange={e => { setCharacter({...character, name: e.target.value}); setNameError(''); }}
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
                   placeholder="e.g. Elara Moonwhisper"
                 />
+                {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Race</label>
@@ -288,7 +312,7 @@ export default function CreateCharacter() {
           </button>
           
           {step < 4 ? (
-            <button className="btn-primary" onClick={nextStep} disabled={(step === 1 && !character.race) || (step === 2 && !character.class) || (step === 4 && !character.weapon)}>Next Step</button>
+            <button className="btn-primary" onClick={nextStep} disabled={(step === 1 && (!character.name.trim() || !character.race)) || (step === 2 && !character.class) || (step === 4 && !character.weapon)}>Next Step</button>
           ) : (
             <button className="btn-primary" onClick={handleFinish} style={{ background: 'var(--accent)' }} disabled={!character.weapon}>Complete Character</button>
           )}
