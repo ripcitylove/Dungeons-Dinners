@@ -60,6 +60,15 @@ function exportLog(entries: LogEntry[], campaignId: string) {
   URL.revokeObjectURL(url);
 }
 
+// ── Voice roster ─────────────────────────────────────────────────────────────
+const VOICES = [
+  { id: "onyx",   label: "Gravedigger", desc: "Deep & foreboding"   },
+  { id: "fable",  label: "Bard",        desc: "British storyteller" },
+  { id: "echo",   label: "Herald",      desc: "Clear & resonant"    },
+  { id: "ash",    label: "Rogue",       desc: "Gritty & measured"   },
+  { id: "ballad", label: "Sage",        desc: "Warm narrator"       },
+] as const;
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
@@ -79,8 +88,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [linkCopied,      setLinkCopied]       = useState(false);
   const [sidebarTab,      setSidebarTab]       = useState<"sheet" | "log">("sheet");
 
-  const [narrationEnabled, setNarrationEnabled] = useState(false);
-  const [narrating,        setNarrating]        = useState(false);
+  const [narrationEnabled,  setNarrationEnabled]  = useState(false);
+  const [narrating,         setNarrating]         = useState(false);
+  const [selectedVoice,     setSelectedVoice]     = useState<string>("onyx");
+  const [voicePickerOpen,   setVoicePickerOpen]   = useState(false);
+  const selectedVoiceRef = useRef<string>("onyx");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const logEndRef      = useRef<HTMLDivElement>(null);
@@ -90,8 +102,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const userIdRef      = useRef<string | null>(null);
   const narrateAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => { characterRef.current = character; }, [character]);
-  useEffect(() => { userIdRef.current   = userId;    }, [userId]);
+  useEffect(() => { characterRef.current    = character;     }, [character]);
+  useEffect(() => { userIdRef.current      = userId;        }, [userId]);
+  useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
 
   // ── Load user, character, and message history ──────────────────────────────
   useEffect(() => {
@@ -215,7 +228,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const res = await fetch("/api/narrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voice: selectedVoiceRef.current }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -349,32 +362,89 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Curse of the Shadow King</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px" }}>DM: Claude Opus · {players.length + 1} in party</p>
           </div>
-          <button
-            onClick={() => {
-              if (narrationEnabled && narrateAudioRef.current) {
-                narrateAudioRef.current.pause();
-                narrateAudioRef.current.src = "";
-              }
-              setNarrationEnabled(v => !v);
-            }}
-            title={narrationEnabled ? "Disable voice narration" : "Enable AI voice narration"}
-            style={{
-              background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent",
-              border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
-              borderRadius: "8px",
-              padding: "6px 10px",
-              cursor: "pointer",
-              fontSize: "1rem",
-              lineHeight: 1,
-              flexShrink: 0,
-              position: "relative",
-              transition: "all 0.2s",
-            }}
-          >
-            {narrating ? (
-              <span style={{ display: "inline-block", animation: "blink 0.8s step-end infinite" }}>🔊</span>
-            ) : narrationEnabled ? "🔊" : "🔇"}
-          </button>
+          {/* Narration toggle + voice picker */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              onClick={() => {
+                if (!narrationEnabled) {
+                  setNarrationEnabled(true);
+                  setVoicePickerOpen(true);
+                } else {
+                  setVoicePickerOpen(v => !v);
+                }
+              }}
+              title={narrationEnabled ? "Change DM voice" : "Enable AI voice narration"}
+              style={{
+                background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent",
+                border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
+                borderRadius: "8px",
+                padding: "5px 10px",
+                cursor: "pointer",
+                fontSize: "0.85rem",
+                lineHeight: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                transition: "all 0.2s",
+                color: narrationEnabled ? "#c4b5fd" : "#94a3b8",
+              }}
+            >
+              {narrating
+                ? <span style={{ display: "inline-block", animation: "blink 0.8s step-end infinite" }}>🔊</span>
+                : narrationEnabled ? "🔊" : "🔇"}
+              {narrationEnabled && (
+                <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>
+                  {VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾
+                </span>
+              )}
+            </button>
+
+            {voicePickerOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
+                background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)",
+                borderRadius: "10px", padding: "6px", minWidth: "160px",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+              }}>
+                {VOICES.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => { setSelectedVoice(v.id); setVoicePickerOpen(false); }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "8px 10px", borderRadius: "7px", border: "none",
+                      background: selectedVoice === v.id ? "rgba(139,92,246,0.25)" : "transparent",
+                      cursor: "pointer", transition: "background 0.15s",
+                    }}
+                    onMouseEnter={e => { if (selectedVoice !== v.id) e.currentTarget.style.background = "rgba(139,92,246,0.12)"; }}
+                    onMouseLeave={e => { if (selectedVoice !== v.id) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: selectedVoice === v.id ? "#c4b5fd" : "white" }}>{v.label}</div>
+                    <div style={{ fontSize: "0.68rem", color: "#64748b", marginTop: "1px" }}>{v.desc}</div>
+                  </button>
+                ))}
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
+                  <button
+                    onClick={() => {
+                      if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
+                      setNarrationEnabled(false);
+                      setVoicePickerOpen(false);
+                    }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "7px 10px", borderRadius: "7px", border: "none",
+                      background: "transparent", cursor: "pointer", fontSize: "0.75rem",
+                      color: "#64748b", transition: "color 0.15s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}
+                  >
+                    Turn off narration
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <button onClick={copyInviteLink} className="btn-secondary" style={{ padding: "6px 12px", fontSize: "0.78rem", flexShrink: 0 }} title="Copy invite link">
             {linkCopied ? "✓ Copied!" : "🔗 Invite"}
           </button>
