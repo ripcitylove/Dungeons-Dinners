@@ -132,6 +132,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const currentTurnIndexRef  = useRef(0);
   const pendingActionsRef    = useRef<PendingAction[]>([]);
   const currentSceneRef      = useRef<string>("tavern");
+  const resumeNarrationRef   = useRef<string>("");
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
@@ -192,6 +193,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           id: `hist-${i}`, timestamp: m.created_at ? new Date(m.created_at) : new Date(),
           role: m.role, sender: m.sender, content: m.content,
         })));
+        const lastDm = [...hist].reverse().find(m => m.role === "dm");
+        if (lastDm) resumeNarrationRef.current = lastDm.content;
       }
     }
     load();
@@ -683,8 +686,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 // handler so it counts as a user gesture in all browsers.
                 window.__dndMusicPlay?.();
 
-                // Narrate the DM's opening line immediately.
-                enqueueNarration(OPENING_MESSAGES[1].content);
+                // Narrate the last DM line on resume, or the opening line for new campaigns.
+                enqueueNarration(resumeNarrationRef.current || OPENING_MESSAGES[1].content);
               }}>
               Enter the Tavern
             </button>
