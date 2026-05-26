@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { NextRequest } from "next/server";
 
-const ALLOWED_VOICES = ["onyx", "fable", "echo", "ash", "nova"] as const;
+const ALLOWED_VOICES = ["onyx", "fable", "echo", "ash", "nova", "ballad"] as const;
 type AllowedVoice = typeof ALLOWED_VOICES[number];
 
 export async function POST(req: NextRequest) {
@@ -15,10 +15,9 @@ export async function POST(req: NextRequest) {
       : "onyx";
 
     const response = await openai.audio.speech.create({
-      model: "tts-1",
+      model: "gpt-4o-mini-tts",
       voice: safeVoice,
       input: text.slice(0, 4096),
-      speed: 0.92,
     });
 
     const buffer = Buffer.from(await response.arrayBuffer());

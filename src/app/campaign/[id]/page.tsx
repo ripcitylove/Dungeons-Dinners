@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, use, useCallback } from "react";
+import React, { useState, useEffect, useRef, use, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC } from "../../../lib/spellData";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -25,6 +25,8 @@ type Character = {
   sex?: string;
   cantrips_known?: string[];
   spells_prepared?: string[];
+  status_effects?: string[];
+  spell_slots_used?: Record<number, number>;
   inventory: { gold: number; weapons: string[]; items: string[] };
 };
 
@@ -63,8 +65,48 @@ const VOICES = [
   { id: "fable",  label: "Bard",        desc: "British storyteller" },
   { id: "echo",   label: "Herald",      desc: "Clear & resonant"    },
   { id: "ash",    label: "Rogue",       desc: "Gritty & measured"   },
-  { id: "nova",   label: "Sage",        desc: "Warm narrator"       },
+  { id: "ballad", label: "Sage",        desc: "Warm narrator"       },
 ] as const;
+
+// ── Colored narrative — red for damage, green for healing ─────────────────────
+const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightning|thunder|poison|acid|necrotic|radiant|psychic|force)\s+)?damage\b/gi;
+const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
+
+function ColorizedText({ text }: { text: string }) {
+  type Seg = { start: number; end: number; color: string };
+  const segs: Seg[] = [];
+  let m: RegExpExecArray | null;
+  DAMAGE_RE.lastIndex = 0;
+  while ((m = DAMAGE_RE.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#ef4444" });
+  HEAL_RE.lastIndex = 0;
+  while ((m = HEAL_RE.exec(text))   !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#22c55e" });
+  segs.sort((a, b) => a.start - b.start);
+  const out: React.ReactElement[] = [];
+  let pos = 0;
+  for (const seg of segs) {
+    if (seg.start < pos) continue;
+    if (seg.start > pos) out.push(<span key={pos}>{text.slice(pos, seg.start)}</span>);
+    out.push(<span key={seg.start} style={{ color: seg.color, fontWeight: 600 }}>{text.slice(seg.start, seg.end)}</span>);
+    pos = seg.end;
+  }
+  if (pos < text.length) out.push(<span key={pos}>{text.slice(pos)}</span>);
+  return <>{out}</>;
+}
+
+const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
+  Unconscious:   { bg: "rgba(239,68,68,0.25)",   color: "#ef4444" },
+  Dead:          { bg: "rgba(31,31,31,0.6)",      color: "#6b7280" },
+  Poisoned:      { bg: "rgba(168,85,247,0.25)",   color: "#a855f7" },
+  Blinded:       { bg: "rgba(100,116,139,0.2)",   color: "#94a3b8" },
+  Frightened:    { bg: "rgba(249,115,22,0.25)",   color: "#f97316" },
+  Paralyzed:     { bg: "rgba(139,92,246,0.25)",   color: "#8b5cf6" },
+  Stunned:       { bg: "rgba(234,179,8,0.25)",    color: "#eab308" },
+  Prone:         { bg: "rgba(148,163,184,0.15)",  color: "#94a3b8" },
+  Charmed:       { bg: "rgba(236,72,153,0.25)",   color: "#ec4899" },
+  Exhausted:     { bg: "rgba(245,158,11,0.25)",   color: "#f59e0b" },
+  Restrained:    { bg: "rgba(132,204,22,0.2)",    color: "#84cc16" },
+  Petrified:     { bg: "rgba(163,163,163,0.2)",   color: "#a3a3a3" },
+};
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
@@ -216,6 +258,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setPlayers(all);
         turnOrderRef.current = newOrder;
         setTurnOrder(newOrder);
+        // Sync live HP from presence into campaignParty so cards update in real-time
+        setCampaignParty(prev => prev.map(char => {
+          const online = all.find(p => p.userId === char.user_id);
+          return (online && online.hp !== char.hp) ? { ...char, hp: online.hp } : char;
+        }));
 
         if (isInitialPresenceRef.current) {
           isInitialPresenceRef.current = false;
@@ -312,7 +359,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const hasChange =
       change.hp_delta !== 0 || change.gold_delta !== 0 ||
       change.items_gained.length > 0 || change.items_lost.length > 0 ||
-      change.weapons_gained.length > 0 || change.xp_award > 0;
+      change.weapons_gained.length > 0 || change.xp_award > 0 ||
+      change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0 ||
+      change.spell_slots_used > 0;
     if (!hasChange) return;
 
     const newHp      = Math.max(0, Math.min(char.max_hp, char.hp + change.hp_delta));
@@ -320,15 +369,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const newItems   = [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained];
     const newWeapons = [...(char.inventory?.weapons ?? []), ...change.weapons_gained];
 
+    // Status effects
+    let newStatuses = [...(char.status_effects ?? [])];
+    if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
+    if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
+    change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
+    newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+
+    // Spell slots
+    const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
+    if (change.spell_slots_used > 0) {
+      newSlotsUsed[1] = (newSlotsUsed[1] ?? 0) + change.spell_slots_used;
+    }
+
     const parts: string[] = [];
-    if (change.hp_delta    < 0) parts.push(`${Math.abs(change.hp_delta)} damage taken`);
-    if (change.hp_delta    > 0) parts.push(`+${change.hp_delta} HP restored`);
-    if (change.gold_delta  > 0) parts.push(`+${change.gold_delta}gp`);
-    if (change.gold_delta  < 0) parts.push(`${change.gold_delta}gp`);
+    if (change.hp_delta < 0) parts.push(`${Math.abs(change.hp_delta)} damage taken`);
+    if (change.hp_delta > 0) parts.push(`+${change.hp_delta} HP restored`);
+    if (change.gold_delta > 0) parts.push(`+${change.gold_delta}gp`);
+    if (change.gold_delta < 0) parts.push(`${change.gold_delta}gp`);
     change.items_gained.forEach(i   => parts.push(`+${i}`));
     change.weapons_gained.forEach(w => parts.push(`+${w}`));
+    change.status_effects_gained.forEach(s => parts.push(`⚡ ${s}`));
+    change.status_effects_lost.forEach(s   => parts.push(`✓ ${s} cleared`));
+    if (change.spell_slots_used > 0) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
+    if (newHp === 0 && change.hp_delta < 0) parts.push("💀 UNCONSCIOUS");
 
-    // XP award
+    // XP + level up
     let newXp    = char.xp ?? 0;
     let newLevel = char.level;
     let newMaxHp = char.max_hp;
@@ -337,8 +403,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (change.xp_award > 0) {
       newXp += change.xp_award;
       parts.push(`+${change.xp_award} XP`);
-
-      // Check level up (D&D 5e thresholds)
       const xpToNext = getXpToNextLevel(newLevel);
       if (newXp >= xpToNext && newLevel < 10) {
         newLevel++;
@@ -352,6 +416,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     const updatedChar: Character = {
       ...char, hp: newHp, level: newLevel, max_hp: newMaxHp, xp: newXp,
+      status_effects: newStatuses, spell_slots_used: newSlotsUsed,
       inventory: { gold: newGold, items: newItems, weapons: newWeapons },
     };
     setCharacter(updatedChar);
@@ -359,6 +424,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     const dbUpdate: Record<string, unknown> = {
       hp: newHp, inventory: updatedChar.inventory, xp: newXp,
+      status_effects: newStatuses, spell_slots_used: newSlotsUsed,
     };
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
     await supabase.from("characters").update(dbUpdate).eq("id", char.id);
@@ -366,7 +432,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (parts.length) {
       const notice = parts.join(" · ");
       setStateNotice(notice);
-      setTimeout(() => setStateNotice(null), leveledUp ? 8000 : 4000);
+      setTimeout(() => setStateNotice(null), leveledUp || newHp === 0 ? 8000 : 4000);
       setLogEntries(prev => [...prev, { id: `state-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
     }
   }, []);
@@ -480,6 +546,44 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narratePartyEvent("kick", player);
   }, [narratePartyEvent]);
 
+  const handleShortRest = useCallback(async () => {
+    const char = characterRef.current;
+    if (!char) return;
+    const hitDie = CLASS_HIT_DIE[char.class] ?? 8;
+    const roll   = Math.ceil(Math.random() * hitDie);
+    const conMod = Math.floor((char.constitution - 10) / 2);
+    const gained = Math.max(1, roll + conMod);
+    const newHp  = Math.min(char.max_hp, char.hp + gained);
+    const isWarlock = char.class === "Warlock";
+    // Warlock recovers all pact slots on short rest
+    const newSlotsUsed = isWarlock ? {} : { ...(char.spell_slots_used ?? {}) };
+    // Clear temporary status effects on rest
+    const newStatuses = (char.status_effects ?? []).filter(s => !["Prone", "Frightened", "Stunned"].includes(s));
+    const updated: Character = { ...char, hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses };
+    setCharacter(updated);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
+    await supabase.from("characters").update({ hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses }).eq("id", char.id);
+    const notice = `Short Rest: d${hitDie} rolled ${roll} + CON ${conMod >= 0 ? "+" : ""}${conMod} = +${gained} HP${isWarlock ? " · Pact slots restored" : ""}`;
+    setStateNotice(notice);
+    setTimeout(() => setStateNotice(null), 5000);
+    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 ${notice}` }]);
+  }, []);
+
+  const handleLongRest = useCallback(async () => {
+    const char = characterRef.current;
+    if (!char) return;
+    // Long rest: full HP, all slots, clear non-permanent conditions
+    const newStatuses = (char.status_effects ?? []).filter(s => s === "Dead" || s === "Petrified");
+    const updated: Character = { ...char, hp: char.max_hp, spell_slots_used: {}, status_effects: newStatuses };
+    setCharacter(updated);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
+    await supabase.from("characters").update({ hp: char.max_hp, spell_slots_used: {}, status_effects: newStatuses }).eq("id", char.id);
+    const notice = `Long Rest: HP fully restored (${char.max_hp}), spell slots recovered, conditions cleared`;
+    setStateNotice(notice);
+    setTimeout(() => setStateNotice(null), 6000);
+    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
+  }, []);
+
   // ── AI call ───────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[]) => {
     abortRef.current?.abort();
@@ -501,7 +605,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, character }),
+        body: JSON.stringify({
+          messages: allMessages,
+          character: character ? {
+            ...character,
+            ac: computeAC(character.class, character.dexterity, character.constitution, character.wisdom, character.inventory?.items, character.inventory?.weapons),
+          } : null,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("DM unavailable");
@@ -804,7 +914,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
-              }}>{msg.content}</div>
+              }}>{msg.role === "dm" ? <ColorizedText text={msg.content} /> : msg.content}</div>
             </div>
           ))}
 
@@ -930,6 +1040,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </span>
                       )}
                     </div>
+                    {(char.status_effects?.length ?? 0) > 0 && (
+                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
+                        {char.status_effects!.map(s => {
+                          const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
+                          return <span key={s} style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em" }}>{s}</span>;
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               }) : allPartyCards.map(p => {
@@ -1038,6 +1156,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 </div>
 
+                {/* Status effects */}
+                {(character.status_effects?.length ?? 0) > 0 && (
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {character.status_effects!.map(s => {
+                      const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
+                      return <span key={s} style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40` }}>{s}</span>;
+                    })}
+                  </div>
+                )}
+
                 {/* HP */}
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "0.85rem" }}>
@@ -1074,13 +1202,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   })}
                 </div>
 
-                {/* Spells (spellcasters only) */}
+                {/* Spell slots */}
+                {SPELLCASTING_CLASSES.has(character.class) && (() => {
+                  const maxSlots  = getSpellSlots(character.class, character.level);
+                  const usedSlots = character.spell_slots_used ?? {};
+                  const hasSlots  = Object.keys(maxSlots).length > 0;
+                  return hasSlots ? (
+                    <div>
+                      <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spell Slots</h3>
+                      {Object.entries(maxSlots).map(([lvl, max]) => {
+                        const used = usedSlots[Number(lvl)] ?? 0;
+                        const remaining = Math.max(0, max - used);
+                        return (
+                          <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                            <span style={{ fontSize: "0.7rem", color: "#64748b", width: "42px", flexShrink: 0 }}>Lvl {lvl}</span>
+                            <div style={{ display: "flex", gap: "4px" }}>
+                              {Array.from({ length: max }, (_, i) => (
+                                <div key={i} style={{ width: "12px", height: "12px", borderRadius: "50%", background: i < remaining ? "#8b5cf6" : "rgba(100,116,139,0.3)", border: i < remaining ? "1px solid #7c3aed" : "1px solid #475569", transition: "background 0.2s" }} />
+                              ))}
+                            </div>
+                            <span style={{ fontSize: "0.68rem", color: remaining > 0 ? "#8b5cf6" : "#ef4444" }}>{remaining}/{max}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Spellbook */}
                 {SPELLCASTING_CLASSES.has(character.class) && ((character.cantrips_known?.length ?? 0) > 0 || (character.spells_prepared?.length ?? 0) > 0) && (
                   <div>
-                    <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spells</h3>
+                    <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
                     {(character.cantrips_known?.length ?? 0) > 0 && (
                       <div style={{ marginBottom: "8px" }}>
-                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips</div>
+                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips (at-will)</div>
                         {character.cantrips_known!.map((s, i) => (
                           <div key={i} style={{ padding: "5px 10px", background: "rgba(139,92,246,0.08)", borderRadius: "5px", marginBottom: "3px", fontSize: "0.8rem" }}>✦ {s}</div>
                         ))}
@@ -1088,7 +1243,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     )}
                     {(character.spells_prepared?.length ?? 0) > 0 && (
                       <div>
-                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Prepared</div>
+                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Prepared Spells</div>
                         {character.spells_prepared!.map((s, i) => (
                           <div key={i} style={{ padding: "5px 10px", background: "rgba(139,92,246,0.08)", borderRadius: "5px", marginBottom: "3px", fontSize: "0.8rem" }}>◈ {s}</div>
                         ))}
@@ -1122,6 +1277,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}>drop</button>
                     </div>
                   ))}
+                </div>
+
+                {/* Rest */}
+                <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
+                  <button onClick={handleShortRest}
+                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(245,158,11,0.1)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.1)"; }}>
+                    🌙 Short Rest
+                  </button>
+                  <button onClick={handleLongRest}
+                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(99,102,241,0.1)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}>
+                    ☀️ Long Rest
+                  </button>
                 </div>
               </div>
             ) : (

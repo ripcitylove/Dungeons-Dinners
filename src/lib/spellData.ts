@@ -296,3 +296,59 @@ export function getSpellCounts(
 
   return { cantrips: lim.cantrips, spells };
 }
+
+// D&D 5e spell slots per character level (index = charLevel-1)
+// Each entry: [1st-level, 2nd-level, 3rd-level, 4th-level, 5th-level] slots
+const FULL_CASTER_SLOTS: number[][] = [
+  [2,0,0,0,0],[3,0,0,0,0],[4,2,0,0,0],[4,3,0,0,0],
+  [4,3,2,0,0],[4,3,3,0,0],[4,3,3,1,0],[4,3,3,2,0],
+  [4,3,3,3,1],[4,3,3,3,2],
+];
+const HALF_CASTER_SLOTS: number[][] = [
+  [0,0,0,0,0],[2,0,0,0,0],[3,0,0,0,0],[3,0,0,0,0],
+  [4,2,0,0,0],[4,2,0,0,0],[4,3,0,0,0],[4,3,0,0,0],
+  [4,3,2,0,0],[4,3,2,0,0],
+];
+const WARLOCK_SLOTS: number[][] = [
+  [1,0,0,0,0],[2,0,0,0,0],[0,2,0,0,0],[0,2,0,0,0],
+  [0,0,2,0,0],[0,0,2,0,0],[0,0,0,2,0],[0,0,0,2,0],
+  [0,0,0,0,2],[0,0,0,0,2],
+];
+
+export const SPELL_SLOT_TABLE: Partial<Record<string, number[][]>> = {
+  Bard: FULL_CASTER_SLOTS, Cleric: FULL_CASTER_SLOTS, Druid: FULL_CASTER_SLOTS,
+  Sorcerer: FULL_CASTER_SLOTS, Wizard: FULL_CASTER_SLOTS,
+  Paladin: HALF_CASTER_SLOTS, Ranger: HALF_CASTER_SLOTS,
+  Warlock: WARLOCK_SLOTS,
+};
+
+/** Returns { [slotLevel]: maxSlots } for a class at the given character level */
+export function getSpellSlots(cls: string, charLevel: number): Record<number, number> {
+  const table = SPELL_SLOT_TABLE[cls];
+  if (!table) return {};
+  const row = table[Math.min(charLevel, 10) - 1] ?? [];
+  const result: Record<number, number> = {};
+  row.forEach((n, i) => { if (n > 0) result[i + 1] = n; });
+  return result;
+}
+
+/** Compute armor class from class, stats, and gear */
+export function computeAC(
+  cls: string, dex: number, con: number, wis: number,
+  items?: string[], weapons?: string[]
+): number {
+  const dexMod = Math.floor((dex  - 10) / 2);
+  const conMod = Math.floor((con  - 10) / 2);
+  const wisMod = Math.floor((wis  - 10) / 2);
+  const gear   = [...(items ?? []), ...(weapons ?? [])].join(" ").toLowerCase();
+  const shield = /\bshield\b/.test(gear) ? 2 : 0;
+  if (/plate mail|full plate/.test(gear))   return 18 + shield;
+  if (/chain mail/.test(gear))              return 16 + shield;
+  if (/scale mail|breastplate/.test(gear))  return 14 + Math.min(dexMod, 2) + shield;
+  if (/leather|studded/.test(gear))         return 11 + dexMod + shield;
+  if (cls === "Barbarian")                  return 10 + dexMod + conMod;
+  if (cls === "Monk")                       return 10 + dexMod + wisMod;
+  if (["Fighter","Paladin"].includes(cls))  return 16 + shield; // chain mail default
+  if (["Cleric","Ranger","Druid"].includes(cls)) return 14 + Math.min(dexMod, 2) + shield;
+  return 11 + dexMod + shield; // leather default (Rogue, Bard, Warlock, Sorcerer, Wizard)
+}

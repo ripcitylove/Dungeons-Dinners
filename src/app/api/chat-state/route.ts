@@ -4,43 +4,44 @@ import { NextRequest } from "next/server";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export type StateChange = {
-  hp_delta:      number;
-  gold_delta:    number;
-  items_gained:  string[];
-  items_lost:    string[];
-  weapons_gained:string[];
-  xp_award:      number;
+  hp_delta:              number;
+  gold_delta:            number;
+  items_gained:          string[];
+  items_lost:            string[];
+  weapons_gained:        string[];
+  xp_award:              number;
+  status_effects_gained: string[];
+  status_effects_lost:   string[];
+  spell_slots_used:      number;
 };
 
 const ZERO_CHANGE: StateChange = {
   hp_delta: 0, gold_delta: 0,
   items_gained: [], items_lost: [], weapons_gained: [],
-  xp_award: 0,
+  xp_award: 0, status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0,
 };
 
-const SYSTEM = `You are a D&D 5e game state extractor. Given a Dungeon Master's narrative, extract character stat changes AND XP awards.
+const SYSTEM = `You are a D&D 5e game state extractor. Given a Dungeon Master's narrative, extract character stat changes, XP awards, status effects, and spell slot usage.
 
 Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing changed:
 {
-  "hp_delta":       number,        // negative = damage, positive = healing. 0 if no HP change.
-  "gold_delta":     number,        // net gold change. 0 if none.
-  "items_gained":   string[],      // consumables/trinkets added. [] if none.
-  "items_lost":     string[],      // items spent or destroyed. [] if none.
-  "weapons_gained": string[],      // weapons or armor obtained. [] if none.
-  "xp_award":       number         // XP earned by each player this turn. Guidelines:
-                                   //   0  — no meaningful action resolved
-                                   //  15  — minor successful action (pick a lock, persuade a guard)
-                                   //  30  — notable skill success or clever solution
-                                   //  75  — small combat victory (one enemy defeated)
-                                   // 150  — significant combat success (multiple enemies, boss minion)
-                                   // 300  — major combat victory or important story milestone
-                                   // 500+ — boss defeat or major quest objective completed
+  "hp_delta":              number,    // negative = damage, positive = healing. 0 if no HP change.
+  "gold_delta":            number,    // net gold change. 0 if none.
+  "items_gained":          string[],  // consumables/trinkets added. [] if none.
+  "items_lost":            string[],  // items spent or destroyed. [] if none.
+  "weapons_gained":        string[],  // weapons or armor obtained. [] if none.
+  "xp_award":              number,    // XP earned. 0=nothing, 15=minor, 30=notable, 75=small combat, 150=sig combat, 300=major, 500+=boss
+  "status_effects_gained": string[],  // conditions gained: "Unconscious","Poisoned","Prone","Blinded","Frightened","Paralyzed","Stunned","Charmed","Restrained","Exhausted","Petrified"
+  "status_effects_lost":   string[],  // conditions that ended this turn. [] if none.
+  "spell_slots_used":      number     // number of leveled spell slots consumed (not cantrips). 0 if none.
 }
 
 Rules:
-- Only extract changes the DM explicitly states — never infer or guess.
-- HP/loot only count when the DM narrates the resolved result, not during roll-request prompts.
-- XP: award based on what WAS accomplished in THIS narrative, not what might happen.
+- Only extract changes the DM explicitly states — never infer.
+- HP/loot only count when the DM narrates the resolved result.
+- A creature falling to 0 HP = Unconscious (if not dead).
+- Status effects: only add when DM explicitly applies the condition.
+- Spell slots: only count when a leveled spell is explicitly cast.
 - No markdown, no explanation — output JSON only.`;
 
 export async function POST(req: NextRequest) {
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 256,
+      max_tokens: 300,
       system:     SYSTEM,
       messages:   [{ role: "user", content: narrative }],
     });
@@ -61,18 +62,23 @@ export async function POST(req: NextRequest) {
 
     const parsed = JSON.parse(match[0]) as Partial<StateChange>;
     const change: StateChange = {
-      hp_delta:       Number(parsed.hp_delta      ?? 0),
-      gold_delta:     Number(parsed.gold_delta    ?? 0),
-      items_gained:   Array.isArray(parsed.items_gained)   ? parsed.items_gained   : [],
-      items_lost:     Array.isArray(parsed.items_lost)     ? parsed.items_lost     : [],
-      weapons_gained: Array.isArray(parsed.weapons_gained) ? parsed.weapons_gained : [],
-      xp_award:       Math.max(0, Number(parsed.xp_award ?? 0)),
+      hp_delta:              Number(parsed.hp_delta      ?? 0),
+      gold_delta:            Number(parsed.gold_delta    ?? 0),
+      items_gained:          Array.isArray(parsed.items_gained)          ? parsed.items_gained          : [],
+      items_lost:            Array.isArray(parsed.items_lost)            ? parsed.items_lost            : [],
+      weapons_gained:        Array.isArray(parsed.weapons_gained)        ? parsed.weapons_gained        : [],
+      xp_award:              Math.max(0, Number(parsed.xp_award         ?? 0)),
+      status_effects_gained: Array.isArray(parsed.status_effects_gained) ? parsed.status_effects_gained : [],
+      status_effects_lost:   Array.isArray(parsed.status_effects_lost)   ? parsed.status_effects_lost   : [],
+      spell_slots_used:      Math.max(0, Number(parsed.spell_slots_used ?? 0)),
     };
 
     const hasChange =
       change.hp_delta !== 0 || change.gold_delta !== 0 ||
       change.items_gained.length > 0 || change.items_lost.length > 0 ||
-      change.weapons_gained.length > 0 || change.xp_award > 0;
+      change.weapons_gained.length > 0 || change.xp_award > 0 ||
+      change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0 ||
+      change.spell_slots_used > 0;
 
     return Response.json(hasChange ? change : ZERO_CHANGE);
   } catch (err) {
