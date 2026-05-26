@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
-import { PixelCharacter } from "../../components/PixelCharacter";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
@@ -14,6 +13,7 @@ type Character = {
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   inventory: Inventory | null;
+  portrait_url?: string | null;
 };
 type Campaign = { id: string; title: string; description: string; created_at: string };
 type Tier = "free" | "tavern" | "dm" | "legendary";
@@ -79,8 +79,11 @@ function CharacterModal({
 
         {/* Hero header */}
         <div style={{ display: "flex", gap: "24px", alignItems: "flex-end", marginBottom: "28px" }}>
-          <div style={{ height: "96px", display: "flex", alignItems: "flex-end", flexShrink: 0 }}>
-            <PixelCharacter race={char.race} cls={char.class} size={6} />
+          <div style={{ width: "80px", height: "80px", flexShrink: 0, borderRadius: "10px", overflow: "hidden", border: "2px solid var(--border)", background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {char.portrait_url
+              ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontSize: "2.2rem" }}>🧙</span>
+            }
           </div>
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "4px" }}>{char.name}</h2>
@@ -170,10 +173,6 @@ export default function Dashboard() {
   const [tier, setTier] = useState<Tier>("free");
   const [userEmail, setUserEmail] = useState("");
   const [selectedChar, setSelectedChar] = useState<Character | null>(null);
-  const [showNewCampaign, setShowNewCampaign] = useState(false);
-  const [newCampaignName, setNewCampaignName] = useState("");
-  const [newCampaignDesc, setNewCampaignDesc] = useState("");
-  const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -186,7 +185,7 @@ export default function Dashboard() {
 
       const [charsRes, campsRes, profileRes] = await Promise.all([
         supabase.from("characters")
-          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory")
+          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url")
           .eq("user_id", user.id),
         supabase.from("campaigns")
           .select("id, title, description, created_at")
@@ -208,10 +207,6 @@ export default function Dashboard() {
   }, [router]);
 
   const openNewCampaign = () => {
-    if (characters.length === 0) {
-      router.push("/create-character");
-      return;
-    }
     const limit = CAMPAIGN_LIMITS[tier];
     if (campaigns.length >= limit) {
       alert(tier === "free"
@@ -220,28 +215,7 @@ export default function Dashboard() {
       router.push("/pricing");
       return;
     }
-    setNewCampaignName("");
-    setNewCampaignDesc("");
-    setShowNewCampaign(true);
-  };
-
-  const createCampaign = async () => {
-    const title = newCampaignName.trim() || "New Adventure";
-    const description = newCampaignDesc.trim() || "A freshly created campaign.";
-    setCreating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setCreating(false); return; }
-    const { data, error } = await supabase
-      .from("campaigns")
-      .insert([{ title, description, user_id: user.id }])
-      .select();
-    setCreating(false);
-    if (!error && data?.[0]) {
-      router.push(`/campaign/${data[0].id}`);
-    } else {
-      console.error(error);
-      alert("Failed to start campaign.");
-    }
+    router.push("/create-campaign");
   };
 
   const deleteCampaign = (id: string, title: string) => {
@@ -310,64 +284,6 @@ export default function Dashboard() {
           onClose={() => setSelectedChar(null)}
           onDelete={deleteCharacter}
         />
-      )}
-
-      {/* New Campaign modal */}
-      {showNewCampaign && (
-        <div
-          onClick={() => setShowNewCampaign(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "20px" }}
-        >
-          <div
-            className="glass-panel animate-fade-in"
-            onClick={e => e.stopPropagation()}
-            style={{ width: "100%", maxWidth: "440px", padding: "32px", position: "relative" }}
-          >
-            <button
-              onClick={() => setShowNewCampaign(false)}
-              style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "1.3rem", lineHeight: 1 }}
-            >
-              ✕
-            </button>
-
-            <h2 style={{ fontSize: "1.4rem", fontWeight: "bold", marginBottom: "6px" }}>Name Your Adventure</h2>
-            <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: "24px" }}>Give your campaign a title before heading into the tavern.</p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "6px" }}>Campaign Name</label>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newCampaignName}
-                  onChange={e => setNewCampaignName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && !creating && createCampaign()}
-                  placeholder="e.g. The Lost Mines of Phandelver"
-                  maxLength={80}
-                  style={{ width: "100%", padding: "11px 14px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.3)", color: "white", fontSize: "0.95rem", outline: "none" }}
-                />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: "0.8rem", color: "#94a3b8", marginBottom: "6px" }}>Description <span style={{ color: "#475569" }}>(optional)</span></label>
-                <textarea
-                  value={newCampaignDesc}
-                  onChange={e => setNewCampaignDesc(e.target.value)}
-                  placeholder="A brief hook or premise for the adventure…"
-                  maxLength={200}
-                  rows={2}
-                  style={{ width: "100%", padding: "11px 14px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.3)", color: "white", fontSize: "0.9rem", resize: "none", outline: "none", fontFamily: "inherit" }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
-              <button onClick={() => setShowNewCampaign(false)} className="btn-secondary" style={{ padding: "9px 20px", fontSize: "0.9rem" }}>Cancel</button>
-              <button onClick={createCampaign} className="btn-primary" disabled={creating} style={{ padding: "9px 20px", fontSize: "0.9rem" }}>
-                {creating ? "Creating…" : "Begin Adventure →"}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Delete campaign confirmation modal */}
@@ -489,15 +405,6 @@ export default function Dashboard() {
                     <button className="btn-primary" style={{ fontSize: "0.9rem" }}>Upgrade for More →</button>
                   </Link>
                 </div>
-              ) : characters.length === 0 ? (
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ color: "#94a3b8", marginBottom: "12px", fontSize: "0.9rem" }}>
-                    You need a character before you can start a campaign.
-                  </p>
-                  <Link href="/create-character">
-                    <button className="btn-primary" style={{ fontSize: "0.9rem" }}>Create a Character →</button>
-                  </Link>
-                </div>
               ) : (
                 <button onClick={openNewCampaign} className="btn-secondary" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "1.5rem" }}>+</span> Start New Campaign
@@ -522,8 +429,11 @@ export default function Dashboard() {
                 onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--primary)")}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = "")}
               >
-                <div style={{ width: "48px", height: "56px", display: "flex", alignItems: "flex-end", justifyContent: "center", flexShrink: 0, overflow: "visible" }}>
-                  <PixelCharacter race={char.race} cls={char.class} size={3} />
+                <div style={{ width: "48px", height: "48px", flexShrink: 0, borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {char.portrait_url
+                    ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: "1.4rem" }}>🧙</span>
+                  }
                 </div>
                 <div style={{ flex: 1 }}>
                   <h4 style={{ fontWeight: "bold" }}>{char.name}</h4>
