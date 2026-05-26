@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { NextRequest } from "next/server";
 
-const ALLOWED_VOICES = ["onyx", "fable", "echo", "ash", "ballad"] as const;
+const ALLOWED_VOICES = ["onyx", "fable", "echo", "ash", "nova"] as const;
 type AllowedVoice = typeof ALLOWED_VOICES[number];
 
 export async function POST(req: NextRequest) {

@@ -63,7 +63,7 @@ const VOICES = [
   { id: "fable",  label: "Bard",        desc: "British storyteller" },
   { id: "echo",   label: "Herald",      desc: "Clear & resonant"    },
   { id: "ash",    label: "Rogue",       desc: "Gritty & measured"   },
-  { id: "ballad", label: "Sage",        desc: "Warm narrator"       },
+  { id: "nova",   label: "Sage",        desc: "Warm narrator"       },
 ] as const;
 
 // ── Component ──────────────────────────────────────────────────────────────────
