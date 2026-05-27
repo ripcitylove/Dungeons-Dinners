@@ -211,6 +211,7 @@ function CharacterModal({
 export default function Dashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [tier, setTier] = useState<Tier>("free");
@@ -253,6 +254,7 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth"); return; }
 
+      setUserId(user.id);
       setUserEmail(user.email ?? "");
 
       const [charsRes, campsRes, profileRes] = await Promise.all([
@@ -277,6 +279,28 @@ export default function Dashboard() {
     }
     loadDashboard();
   }, [router]);
+
+  // Real-time portrait updates — fires when generate-portrait writes portrait_url to DB
+  useEffect(() => {
+    if (!userId) return;
+    const ch = supabase
+      .channel("portrait-updates")
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "characters",
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        const updated = payload.new as { id: string; portrait_url?: string | null };
+        if (!updated.portrait_url) return;
+        setCharacters(prev => prev.map(c =>
+          c.id === updated.id ? { ...c, portrait_url: updated.portrait_url } : c
+        ));
+        setSelectedChar(prev =>
+          prev?.id === updated.id ? { ...prev, portrait_url: updated.portrait_url } : prev
+        );
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [userId]);
 
   const openNewCampaign = () => {
     const limit = CAMPAIGN_LIMITS[tier];

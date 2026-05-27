@@ -98,6 +98,13 @@ function ColorizedText({ text }: { text: string }) {
   return <>{out}</>;
 }
 
+const CLASS_COLORS: Record<string, string> = {
+  Fighter:   "#ef4444", Wizard:    "#3b82f6", Rogue:     "#94a3b8",
+  Cleric:    "#f59e0b", Paladin:   "#fbbf24", Ranger:    "#22c55e",
+  Bard:      "#ec4899", Warlock:   "#8b5cf6", Barbarian: "#f97316",
+  Druid:     "#65a30d", Monk:      "#06b6d4", Sorcerer:  "#a855f7",
+};
+
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Unconscious:   { bg: "rgba(239,68,68,0.25)",   color: "#ef4444" },
   Dead:          { bg: "rgba(31,31,31,0.6)",      color: "#6b7280" },
@@ -268,6 +275,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
+
+  // ── Live portrait push — fires when generate-portrait writes portrait_url ──────
+  useEffect(() => {
+    if (!userId) return;
+    const ch = supabase
+      .channel("campaign-portrait-updates")
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "characters",
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        const updated = payload.new as Partial<Character> & { id: string };
+        if (!updated.portrait_url) return;
+        const url = updated.portrait_url;
+        setCharacter(prev => prev?.id === updated.id ? { ...prev, portrait_url: url } : prev);
+        setCampaignParty(prev => prev.map(c => c.id === updated.id ? { ...c, portrait_url: url } : c));
+        setUserRoster(prev => prev.map(c => c.id === updated.id ? { ...c, portrait_url: url } : c));
+        // Push updated portrait to presence so other players see it immediately
+        if (characterRef.current?.id === updated.id && channelRef.current) {
+          channelRef.current.track({
+            userId: userIdRef.current!,
+            characterName:  characterRef.current.name,
+            characterClass: characterRef.current.class,
+            hp:             characterRef.current.hp,
+            maxHp:          characterRef.current.max_hp,
+            portraitUrl:    url,
+          });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [userId]);
 
   // ── Realtime ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1396,16 +1434,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             {character ? (
               <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                 {/* Identity with portrait */}
-                <div style={{ display: "flex", alignItems: "flex-end", gap: "14px" }}>
-                  <div style={{ width: "56px", height: "56px", borderRadius: "8px", overflow: "hidden", flexShrink: 0, border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "100%", height: "180px", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
                     {character.portrait_url ? (
-                      <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                     ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem" }}>🧙</div>
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
                     )}
                   </div>
-                  <div>
-                    <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{character.name}</div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: CLASS_COLORS[character.class] ?? "white" }}>{character.name}</div>
                     <div style={{ color: "#94a3b8", fontSize: "0.75rem" }}>{character.race} {character.class} · Lvl {character.level}</div>
                   </div>
                 </div>
