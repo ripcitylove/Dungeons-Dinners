@@ -18,6 +18,7 @@ type Character = {
   portrait_url?: string | null;
 };
 type Campaign = { id: string; title: string; description: string; created_at: string };
+type CampaignMember = { id: string; name: string; race: string; class: string; level: number; portrait_url?: string | null; campaign_id: string };
 type Tier = "free" | "tavern" | "dm" | "legendary";
 
 const TIER_LABELS: Record<Tier, string> = {
@@ -217,6 +218,7 @@ export default function Dashboard() {
   const [tier, setTier] = useState<Tier>("free");
   const [userEmail, setUserEmail] = useState("");
   const [selectedChar, setSelectedChar] = useState<Character | null>(null);
+  const [campaignMembers, setCampaignMembers] = useState<Record<string, CampaignMember[]>>({});
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tavernBgUrl, setTavernBgUrl] = useState<string | null>(null);
@@ -274,6 +276,21 @@ export default function Dashboard() {
       if (charsRes.data) setCharacters(charsRes.data as Character[]);
       if (campsRes.data) setCampaigns(campsRes.data as Campaign[]);
       if (profileRes.data?.subscription_tier) setTier(profileRes.data.subscription_tier as Tier);
+
+      if (campsRes.data && campsRes.data.length > 0) {
+        const campIds = campsRes.data.map(c => c.id);
+        const { data: membersData } = await supabase
+          .from("characters")
+          .select("id, name, race, class, level, portrait_url, campaign_id")
+          .in("campaign_id", campIds);
+        if (membersData) {
+          const grouped = (membersData as CampaignMember[]).reduce<Record<string, CampaignMember[]>>((acc, char) => {
+            (acc[char.campaign_id] ??= []).push(char);
+            return acc;
+          }, {});
+          setCampaignMembers(grouped);
+        }
+      }
 
       setLoading(false);
     }
@@ -469,36 +486,72 @@ export default function Dashboard() {
               <p style={{ color: "#94a3b8" }}>No campaigns yet. Start one below!</p>
             )}
 
-            {campaigns.map((camp) => (
-              <div key={camp.id} className="glass-panel animate-fade-in" style={{ padding: "24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px" }}>
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ fontSize: "1.2rem", marginBottom: "6px" }}>{camp.title}</h3>
-                  <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "8px" }}>{camp.description}</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <code style={{ fontSize: "0.72rem", color: "#475569", background: "rgba(0,0,0,0.3)", padding: "3px 8px", borderRadius: "4px" }}>
-                      ID: {camp.id.slice(0, 8)}...
-                    </code>
+            {campaigns.map((camp) => {
+              const members = campaignMembers[camp.id] ?? [];
+              return (
+                <div key={camp.id} className="glass-panel animate-fade-in" style={{ padding: "24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "20px" }}>
+                  {/* Left: title + description + ID */}
+                  <div style={{ minWidth: "180px", maxWidth: "200px" }}>
+                    <h3 style={{ fontSize: "1.2rem", marginBottom: "6px" }}>{camp.title}</h3>
+                    <p style={{ color: "#94a3b8", fontSize: "0.82rem", marginBottom: "10px", lineHeight: 1.45 }}>{camp.description}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                      <code style={{ fontSize: "0.7rem", color: "#475569", background: "rgba(0,0,0,0.3)", padding: "3px 8px", borderRadius: "4px" }}>
+                        ID: {camp.id.slice(0, 8)}...
+                      </code>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/campaign/${camp.id}`)}
+                        style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.78rem", padding: 0 }}
+                      >
+                        🔗 Copy invite link
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Middle: party roster */}
+                  <div style={{ flex: 1, borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)", padding: "0 20px", alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
+                    <p style={{ fontSize: "0.65rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>
+                      Party · {members.length} {members.length === 1 ? "adventurer" : "adventurers"}
+                    </p>
+                    {members.length === 0 ? (
+                      <p style={{ color: "#334155", fontSize: "0.82rem", fontStyle: "italic" }}>No players yet — share the invite link!</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+                        {members.slice(0, 5).map(m => (
+                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <div style={{ width: "32px", height: "32px", flexShrink: 0, borderRadius: "6px", overflow: "hidden", border: `1px solid ${CLASS_COLORS[m.class] ?? "var(--border)"}44`, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {m.portrait_url
+                                ? <img src={m.portrait_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                : <span style={{ fontSize: "0.9rem" }}>🧙</span>
+                              }
+                            </div>
+                            <div>
+                              <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: CLASS_COLORS[m.class] ?? "white", lineHeight: 1.2 }}>{m.name}</div>
+                              <div style={{ fontSize: "0.68rem", color: "#64748b" }}>{m.race} {m.class} · Lvl {m.level}</div>
+                            </div>
+                          </div>
+                        ))}
+                        {members.length > 5 && (
+                          <p style={{ fontSize: "0.72rem", color: "#475569" }}>+{members.length - 5} more…</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: actions */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+                    <Link href={`/campaign/${camp.id}`}>
+                      <button className="btn-primary">Resume Session</button>
+                    </Link>
                     <button
-                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/campaign/${camp.id}`)}
-                      style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.8rem", padding: 0 }}
+                      onClick={() => deleteCampaign(camp.id, camp.title)}
+                      style={{ background: "none", border: "1px solid #ef4444", color: "#ef4444", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem" }}
                     >
-                      🔗 Copy invite link
+                      Delete
                     </button>
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
-                  <Link href={`/campaign/${camp.id}`}>
-                    <button className="btn-primary">Resume Session</button>
-                  </Link>
-                  <button
-                    onClick={() => deleteCampaign(camp.id, camp.title)}
-                    style={{ background: "none", border: "1px solid #ef4444", color: "#ef4444", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem" }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div
               className="glass-panel animate-fade-in"
