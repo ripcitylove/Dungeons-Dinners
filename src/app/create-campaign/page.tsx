@@ -20,7 +20,7 @@ type CharDraft = {
   scores: AbilityScores;
   cantrips: string[]; spells: string[];
 };
-type Phase = "campaign" | "count" | "characters" | "review" | "creating";
+type Phase = "count" | "characters" | "review" | "creating";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const CLASS_HIT_DIE: Record<string, number> = {
@@ -87,10 +87,7 @@ export default function CreateCampaignWizard() {
   const router = useRouter();
 
   // Campaign
-  const [phase, setPhase]               = useState<Phase>("campaign");
-  const [campaignName, setCampaignName] = useState("");
-  const [campaignDesc, setCampaignDesc] = useState("");
-  const [campNameErr,  setCampNameErr]  = useState("");
+  const [phase, setPhase] = useState<Phase>("count");
 
   // Player count
   const [playerCount, setPlayerCount] = useState(1);
@@ -147,13 +144,6 @@ export default function CreateCampaignWizard() {
 
   // ── Navigation ──
   const handleNext = () => {
-    if (phase === "campaign") {
-      if (!campaignName.trim()) { setCampNameErr("Your campaign needs a name."); return; }
-      setCampNameErr("");
-      setPhase("count");
-      return;
-    }
-
     if (phase === "count") {
       setPhase("characters");
       return;
@@ -178,8 +168,7 @@ export default function CreateCampaignWizard() {
   };
 
   const handleBack = () => {
-    if (phase === "campaign") { router.push("/dashboard"); return; }
-    if (phase === "count") { setPhase("campaign"); return; }
+    if (phase === "count") { router.push("/dashboard"); return; }
 
     if (phase === "characters") {
       if (charStep > 1) { setCharStep(s => s - 1); return; }
@@ -219,9 +208,21 @@ export default function CreateCampaignWizard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth"); return; }
 
+      // Ask the AI DM to name and describe the campaign
+      const genRes = await fetch("/api/generate-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characters: completedChars.map(c => ({ name: c.name, race: c.race, cls: c.class })),
+        }),
+      });
+      const { title: aiTitle, description: aiDescription } = genRes.ok
+        ? await genRes.json()
+        : { title: "Shadows of the Forgotten Realm", description: "A perilous adventure awaits." };
+
       const { data: campData, error: campErr } = await supabase
         .from("campaigns")
-        .insert([{ title: campaignName.trim(), description: campaignDesc.trim() || "A freshly created campaign.", user_id: user.id }])
+        .insert([{ title: aiTitle, description: aiDescription, user_id: user.id }])
         .select().single();
       if (campErr || !campData) throw campErr ?? new Error("Campaign creation failed");
 
@@ -265,8 +266,8 @@ export default function CreateCampaignWizard() {
         });
       }
 
-      // Store title so campaign header shows it immediately (no "Loading…" flash)
-      sessionStorage.setItem("pendingCampaignTitle", campaignName.trim());
+      // Store AI title so campaign header shows it immediately (no "Loading…" flash)
+      sessionStorage.setItem("pendingCampaignTitle", aiTitle);
       router.push(`/campaign/${campData.id}`);
     } catch (err) {
       console.error("[create-campaign]", err);
@@ -276,19 +277,17 @@ export default function CreateCampaignWizard() {
   };
 
   // ── Progress ──
-  // Top-level steps: Campaign → Party Size → Players 1…N → Review
-  const totalTopSteps = 2 + playerCount + 1;
+  // Top-level steps: Party Size → Players 1…N → Review
+  const totalTopSteps = 1 + playerCount + 1;
   const currentTopStep =
-    phase === "campaign"   ? 1 :
-    phase === "count"      ? 2 :
-    phase === "characters" ? 2 + currentPlayerIdx + 1 :
+    phase === "count"      ? 1 :
+    phase === "characters" ? 1 + currentPlayerIdx + 1 :
     totalTopSteps;
 
   const progressPct = (currentTopStep / totalTopSteps) * 100;
 
   // Next button label
   const nextLabel =
-    phase === "campaign"   ? "Next →" :
     phase === "count"      ? `Build ${playerCount} ${playerCount === 1 ? "Character" : "Characters"} →` :
     phase === "characters" && charStep < totalCharSteps ? "Next Step →" :
     phase === "characters" && currentPlayerIdx + 1 < playerCount ? `Player ${currentPlayerIdx + 2} →` :
@@ -304,7 +303,6 @@ export default function CreateCampaignWizard() {
   // Step title
   const charSubStepTitles = ["Identity & Origins", "Class & Vocation", "Ability Scores", "Starting Equipment", "Spells & Cantrips"];
   const stepTitle =
-    phase === "campaign"   ? "Name Your Adventure" :
     phase === "count"      ? "How Many Adventurers?" :
     phase === "characters" ? charSubStepTitles[charStep - 1] :
     phase === "review"     ? "Ready to Begin" :
@@ -320,7 +318,7 @@ export default function CreateCampaignWizard() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
             <span style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {phase === "characters" ? `Player ${currentPlayerIdx + 1} of ${playerCount}` :
-               phase === "creating"   ? "Creating your world…" : "Campaign Setup"}
+               phase === "creating"   ? "The DM is forging your world…" : "Campaign Setup"}
             </span>
             <span style={{ fontSize: "0.72rem", color: "#475569" }}>{Math.round(progressPct)}%</span>
           </div>
@@ -351,34 +349,6 @@ export default function CreateCampaignWizard() {
 
         {/* ── Content ── */}
         <div style={{ minHeight: "320px" }}>
-
-          {/* Campaign name & desc */}
-          {phase === "campaign" && (
-            <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              <div>
-                <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Campaign Name</label>
-                <input
-                  autoFocus type="text" value={campaignName} maxLength={80}
-                  onChange={e => { setCampaignName(e.target.value); setCampNameErr(""); }}
-                  onKeyDown={e => e.key === "Enter" && handleNext()}
-                  placeholder="e.g. The Lost Mines of Phandelver"
-                  style={{ width: "100%", padding: "14px", borderRadius: "8px", border: `1px solid ${campNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.1rem" }}
-                />
-                {campNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{campNameErr}</p>}
-              </div>
-              <div>
-                <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
-                  Description <span style={{ color: "#475569" }}>(optional)</span>
-                </label>
-                <textarea
-                  value={campaignDesc} maxLength={300} rows={3}
-                  onChange={e => setCampaignDesc(e.target.value)}
-                  placeholder="A brief hook or premise for your adventure…"
-                  style={{ width: "100%", padding: "12px 14px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "0.95rem", resize: "none", fontFamily: "inherit" }}
-                />
-              </div>
-            </div>
-          )}
 
           {/* Player count */}
           {phase === "count" && (
@@ -609,7 +579,7 @@ export default function CreateCampaignWizard() {
           {phase === "review" && (
             <div className="animate-fade-in">
               <p style={{ textAlign: "center", color: "#94a3b8", marginBottom: "24px", fontSize: "0.9rem" }}>
-                <strong style={{ color: "white" }}>{campaignName}</strong> is ready. Your party:
+                Your party is assembled. The DM will name your campaign upon launch.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "12px" }}>
                 {completedChars.map((c, i) => (
@@ -633,7 +603,7 @@ export default function CreateCampaignWizard() {
           {phase === "creating" && (
             <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "20px", height: "240px" }}>
               <div style={{ fontSize: "3rem", animation: "float 1.2s ease-in-out infinite" }}>⚔️</div>
-              <p style={{ color: "#94a3b8", fontSize: "0.95rem" }}>Forging your world…</p>
+              <p style={{ color: "#94a3b8", fontSize: "0.95rem" }}>The DM is naming and preparing your campaign…</p>
             </div>
           )}
         </div>
@@ -642,7 +612,7 @@ export default function CreateCampaignWizard() {
         {phase !== "creating" && (
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "40px", paddingTop: "20px", borderTop: "1px solid var(--border)" }}>
             <button className="btn-secondary" onClick={handleBack}>
-              {phase === "campaign" ? "Cancel" : "Back"}
+              {phase === "count" ? "Cancel" : "Back"}
             </button>
             <button
               className="btn-primary"
