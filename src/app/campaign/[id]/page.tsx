@@ -166,6 +166,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Item tooltip hover
   const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
 
+  // Party management
+  const [userRoster,       setUserRoster]         = useState<Character[]>([]);
+  const [managePartyOpen,  setManagePartyOpen]    = useState(false);
+
+  // Dice-roll targeting — character name the DM just asked to roll
+  const [diceRollTarget,   setDiceRollTarget]     = useState<string | null>(null);
+
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const logEndRef            = useRef<HTMLDivElement>(null);
@@ -222,7 +229,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setUserId(user.id);
 
       const [charRes, historyRes, partyRes, campRes] = await Promise.all([
-        supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1),
+        // Load ALL of the current user's characters (no limit — used for roster + active char)
+        supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
         supabase.from("campaigns").select("title").eq("id", params.id).single(),
@@ -230,11 +238,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
 
+      // Roster = all user characters
+      if (charRes.data) setUserRoster(charRes.data as Character[]);
+
       if (partyRes.data?.length) {
         const party = partyRes.data as Character[];
         setCampaignParty(party);
         campaignPartyRef.current = party;
-        setCharacter(party[0]);
+        // Set active character to the current user's own character in the party
+        const myChar = party.find(c => c.user_id === user.id) ?? (charRes.data?.[0] as Character | undefined);
+        const myIdx  = party.findIndex(c => c.user_id === user.id);
+        if (myChar) { setCharacter(myChar); characterRef.current = myChar; }
+        if (myIdx >= 0) setActiveCharIdx(myIdx);
       } else if (charRes.data?.[0]) {
         setCharacter(charRes.data[0] as Character);
       }
@@ -595,6 +610,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
   }, []);
 
+  // ── Dice-roll target detection ────────────────────────────────────────────────
+  const detectDiceRollTarget = useCallback((narrative: string): string | null => {
+    const names = campaignPartyRef.current.map(c => c.name).filter(Boolean);
+    for (const name of names) {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const patterns = [
+        new RegExp(`\\b${esc}[,.]?\\s+(?:roll|make|attempt)`, "i"),
+        new RegExp(`roll[s]?[^.!?]*?\\bfor\\s+${esc}\\b`, "i"),
+        new RegExp(`\\b${esc}[,.]?\\s+(?:you|your)\\s+(?:need|must|have to)`, "i"),
+        new RegExp(`\\b${esc}'s?\\s+(?:turn|roll|check|saving throw|save)`, "i"),
+        new RegExp(`\\b${esc}[,]\\s+(?:make|give me)`, "i"),
+      ];
+      if (patterns.some(p => p.test(narrative))) return name;
+    }
+    return null;
+  }, []);
+
   // ── AI call ───────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[]) => {
     abortRef.current?.abort();
@@ -630,10 +662,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         };
       })() : null;
 
+      // Build full party context for the DM (effective stats)
+      const partyForDM = campaignPartyRef.current.length > 1
+        ? campaignPartyRef.current.map(c => {
+            const inv  = c.inventory ?? { gold: 0, items: [], weapons: [] };
+            const ib   = computeInventoryBonuses(inv.items, inv.weapons);
+            const baseAC = computeAC(c.class, c.dexterity, c.constitution, c.wisdom, inv.items, inv.weapons);
+            return {
+              ...c,
+              strength:     getEffectiveStat(c.strength,     "strength",     ib),
+              dexterity:    getEffectiveStat(c.dexterity,    "dexterity",    ib),
+              constitution: getEffectiveStat(c.constitution, "constitution", ib),
+              intelligence: getEffectiveStat(c.intelligence, "intelligence", ib),
+              wisdom:       getEffectiveStat(c.wisdom,       "wisdom",       ib),
+              charisma:     getEffectiveStat(c.charisma,     "charisma",     ib),
+              ac: baseAC + ib.acAdd,
+              active_item_effects: ib.activeEffects.map(e => `${e.itemName}: ${e.text}`),
+            };
+          })
+        : undefined;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, character: charForDM }),
+        body: JSON.stringify({ messages: allMessages, character: charForDM, party: partyForDM }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("DM unavailable");
@@ -661,10 +713,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
-      // Advance turn to next campaign character
-      if (campaignPartyRef.current.length > 1) {
-        setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
-      }
+      // Detect which character the DM is asking to roll dice
+      const rollTarget = detectDiceRollTarget(full);
+      setDiceRollTarget(rollTarget);
 
       const lastPlayerMsg = allMessages[allMessages.length - 1];
       supabase.from("campaign_messages").insert([
@@ -715,6 +766,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!isMyTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
+    setDiceRollTarget(null); // clear roll highlight when player acts
 
     const playerMsg: Message = { role: "player", content: text, sender: character?.name ?? "You" };
     const updatedMessages    = [...messages, playerMsg];
@@ -810,6 +862,42 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTimeout(() => setStateNotice(null), 5000);
     setLogEntries(prev => [...prev, { id: `use-${Date.now()}`, timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
   }, []);
+
+  // ── Party management ─────────────────────────────────────────────────────────
+  const addToParty = useCallback(async (char: Character) => {
+    if (campaignPartyRef.current.some(c => c.id === char.id)) return;
+    const { error } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", char.id);
+    if (error) { console.error("[addToParty]", error); return; }
+    const updated = { ...char };
+    const newParty = [...campaignPartyRef.current, updated];
+    setCampaignParty(newParty);
+    campaignPartyRef.current = newParty;
+    // If the user has no active character yet, use this one
+    if (!characterRef.current || characterRef.current.user_id !== userIdRef.current) {
+      setCharacter(updated); characterRef.current = updated;
+      setActiveCharIdx(newParty.length - 1);
+    }
+    narratePartyEvent("join", { userId: userIdRef.current!, characterName: char.name, characterClass: char.class, hp: char.hp, maxHp: char.max_hp, portraitUrl: char.portrait_url ?? null });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id, narratePartyEvent]);
+
+  const leaveParty = useCallback(async (charId: string) => {
+    const char = campaignPartyRef.current.find(c => c.id === charId);
+    if (!char) return;
+    const { error } = await supabase.from("characters").update({ campaign_id: null }).eq("id", charId);
+    if (error) { console.error("[leaveParty]", error); return; }
+    const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
+    setCampaignParty(newParty);
+    campaignPartyRef.current = newParty;
+    // If the removed character was active, switch to first remaining character the user owns
+    if (characterRef.current?.id === charId) {
+      const next = newParty.find(c => c.user_id === userIdRef.current) ?? newParty[0] ?? null;
+      setCharacter(next); characterRef.current = next;
+      setActiveCharIdx(next ? newParty.indexOf(next) : 0);
+    }
+    narratePartyEvent("leave", { userId: char.user_id ?? userIdRef.current!, characterName: char.name, characterClass: char.class, hp: char.hp, maxHp: char.max_hp, portraitUrl: char.portrait_url ?? null });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narratePartyEvent]);
 
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
   const copyInviteLink    = () => { navigator.clipboard.writeText(window.location.href); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
@@ -1019,16 +1107,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)" }}>
           <div style={{ display: "flex", gap: "10px" }}>
-            <button className="btn-secondary" onClick={() => setShowDice(true)} disabled={isTyping} style={{ padding: "0 14px", fontSize: "1.2rem", flexShrink: 0 }} title="Roll Dice">🎲</button>
+            <button className="btn-secondary" onClick={() => setShowDice(true)} disabled={isTyping || !isMyTurn} style={{ padding: "0 14px", fontSize: "1.2rem", flexShrink: 0 }} title="Roll Dice">🎲</button>
             <input
               type="text" value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-              disabled={isTyping}
-              placeholder={isTyping ? "The DM is responding..." : "Describe your action..."}
-              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: isTyping ? 0.6 : 1 }}
+              disabled={isTyping || !isMyTurn}
+              placeholder={
+                isTyping   ? "The DM is responding…"
+                : !isMyTurn ? `Waiting for ${players.find(p => p.userId === currentTurnPlayerId)?.characterName ?? "other players"}…`
+                : "Describe your action…"
+              }
+              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || !isMyTurn) ? 0.6 : 1 }}
             />
-            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
+            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || !isMyTurn || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
           </div>
         </div>
       </div>
@@ -1066,15 +1158,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             {/* Player cards — campaign party (always visible) or presence fallback */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: droppedItems.length > 0 ? "20px" : 0 }}>
               {campaignParty.length > 0 ? campaignParty.map((char, idx) => {
-                const isActive  = idx === activeCharIdx;
-                const isOnline  = players.some(p => p.userId === char.user_id);
-                const pct       = Math.max(0, (char.hp / char.max_hp) * 100);
-                const color     = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
-                const classEmoji = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
+                const isActive    = idx === activeCharIdx;
+                const isOnline    = players.some(p => p.userId === char.user_id);
+                const isDiceTarget = diceRollTarget === char.name;
+                const isMyChar    = char.user_id === userId;
+                const pct         = Math.max(0, (char.hp / char.max_hp) * 100);
+                const color       = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+                const classEmoji  = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
+                const borderColor = isDiceTarget ? "rgba(251,191,36,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
+                const bgColor     = isDiceTarget ? "rgba(251,191,36,0.08)" : isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
+                const glow        = isDiceTarget ? "0 0 20px rgba(251,191,36,0.4)" : isActive ? "0 0 20px rgba(139,92,246,0.28)" : "none";
                 return (
                   <div key={char.id}
                     onClick={() => campaignParty.length > 1 && setActiveCharIdx(idx)}
-                    style={{ padding: "12px 14px", background: isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)", borderRadius: "10px", border: isActive ? "1.5px solid rgba(139,92,246,0.6)" : "1px solid var(--border)", boxShadow: isActive ? "0 0 20px rgba(139,92,246,0.28)" : "none", transition: "all 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, boxShadow: glow, transition: "all 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isActive ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)" }}>
@@ -1102,11 +1199,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }}>{char.hp}/{char.max_hp} HP</span>
-                      {campaignParty.length > 1 && (
-                        <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
-                          {isActive ? "Acting" : "Waiting"}
-                        </span>
-                      )}
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        {isDiceTarget && (
+                          <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
+                        )}
+                        {campaignParty.length > 1 && !isDiceTarget && (
+                          <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
+                            {isActive ? "Acting" : "Waiting"}
+                          </span>
+                        )}
+                        {isMyChar && (
+                          <button
+                            onClick={e => { e.stopPropagation(); leaveParty(char.id); }}
+                            title="Leave party"
+                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: "0.75rem", padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "#3f3f46"; }}
+                          >✕</button>
+                        )}
+                      </div>
                     </div>
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
@@ -1120,11 +1231,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 );
               }) : allPartyCards.map(p => {
                 const isCurrentTurn = turnOrder.length > 1 && p.userId === currentTurnPlayerId;
+                const isDiceTarget  = diceRollTarget === p.characterName;
                 const isMe          = p.userId === userId;
                 const pct           = Math.max(0, (p.hp / p.maxHp) * 100);
                 const color         = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+                const borderColor2  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.6)" : "var(--border)";
+                const bgColor2      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
+                const glow2         = isDiceTarget ? "0 0 18px rgba(251,191,36,0.35)" : isCurrentTurn ? "0 0 18px rgba(139,92,246,0.25)" : "none";
                 return (
-                  <div key={p.userId} style={{ padding: "12px 14px", background: isCurrentTurn ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)", borderRadius: "10px", border: isCurrentTurn ? "1.5px solid rgba(139,92,246,0.6)" : "1px solid var(--border)", boxShadow: isCurrentTurn ? "0 0 18px rgba(139,92,246,0.25)" : "none", transition: "all 0.3s ease" }}>
+                  <div key={p.userId} style={{ padding: "12px 14px", background: bgColor2, borderRadius: "10px", border: `1.5px solid ${borderColor2}`, boxShadow: glow2, transition: "all 0.3s ease" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `2px solid ${isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)" }}>
                         {p.portraitUrl ? (
@@ -1157,17 +1272,76 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }}>{p.hp}/{p.maxHp} HP</span>
-                      {turnOrder.length > 1 && (
-                        <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isCurrentTurn ? "#c4b5fd" : "#475569", background: isCurrentTurn ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isCurrentTurn ? "2px 7px" : "0" }}>
-                          {isCurrentTurn ? (isMe ? "⚡ Your turn" : "⚡ Acting…") : "Waiting"}
-                        </span>
-                      )}
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        {isDiceTarget && (
+                          <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
+                        )}
+                        {turnOrder.length > 1 && !isDiceTarget && (
+                          <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isCurrentTurn ? "#c4b5fd" : "#475569", background: isCurrentTurn ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isCurrentTurn ? "2px 7px" : "0" }}>
+                            {isCurrentTurn ? (isMe ? "⚡ Your turn" : "⚡ Acting…") : "Waiting"}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
               {campaignParty.length === 0 && allPartyCards.length === 0 && (
                 <p style={{ fontSize: "0.78rem", color: "#475569", fontStyle: "italic" }}>No adventurers connected. Share the invite link!</p>
+              )}
+            </div>
+
+            {/* Manage party — add/remove characters from roster */}
+            <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+              <button
+                onClick={() => setManagePartyOpen(o => !o)}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "1px solid var(--border)", borderRadius: "7px", padding: "7px 10px", cursor: "pointer", fontSize: "0.75rem", color: "#94a3b8", transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "white"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#94a3b8"; }}
+              >
+                <span>⊕ Manage Party</span>
+                <span style={{ fontSize: "0.65rem" }}>{managePartyOpen ? "▲" : "▼"}</span>
+              </button>
+
+              {managePartyOpen && (
+                <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {userRoster.length === 0 ? (
+                    <p style={{ fontSize: "0.75rem", color: "#475569", fontStyle: "italic", padding: "6px 0" }}>
+                      No characters yet. <Link href="/create-character" style={{ color: "var(--primary)" }}>Create one →</Link>
+                    </p>
+                  ) : userRoster.map(char => {
+                    const inParty = campaignParty.some(c => c.id === char.id);
+                    return (
+                      <div key={char.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", background: inParty ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "7px", border: `1px solid ${inParty ? "rgba(139,92,246,0.35)" : "var(--border)"}` }}>
+                        <div style={{ width: "28px", height: "28px", borderRadius: "50%", overflow: "hidden", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {char.portrait_url
+                            ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : <span style={{ fontSize: "0.9rem" }}>🧙</span>
+                          }
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: "0.8rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name}</div>
+                          <div style={{ fontSize: "0.65rem", color: "#64748b" }}>{char.race} {char.class} · Lvl {char.level} · {char.hp}/{char.max_hp} HP</div>
+                        </div>
+                        {inParty ? (
+                          <button
+                            onClick={() => leaveParty(char.id)}
+                            style={{ fontSize: "0.68rem", padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
+                          >Leave</button>
+                        ) : (
+                          <button
+                            onClick={() => addToParty(char)}
+                            style={{ fontSize: "0.68rem", padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.1)", color: "#4ade80", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.2)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.1)"; }}
+                          >Join</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
