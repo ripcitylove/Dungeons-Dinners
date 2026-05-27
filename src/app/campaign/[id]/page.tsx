@@ -138,6 +138,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [stateNotice,      setStateNotice]       = useState<string | null>(null);
   const [players,          setPlayers]           = useState<PresencePlayer[]>([]);
   const [userId,           setUserId]            = useState<string | null>(null);
+  const [partyChangePending, setPartyChangePending] = useState(false);
   const [linkCopied,       setLinkCopied]        = useState(false);
   const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log">("party");
 
@@ -571,6 +572,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Leave / kick fire immediately.
   const fireDmPartyResponse = useCallback(async (trigger: Message) => {
     if (isTypingRef.current) return;
+    setPartyChangePending(false);
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
     narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
@@ -993,6 +995,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCharacter(updated); characterRef.current = updated;
       setActiveCharIdx(newParty.length - 1);
     }
+    setPartyChangePending(true);
     narratePartyEvent("join", { userId: userIdRef.current!, characterName: updated.name, characterClass: updated.class, hp: updated.hp, maxHp: updated.max_hp, portraitUrl: updated.portrait_url ?? null });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, narratePartyEvent]);
@@ -1010,6 +1013,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCharacter(next); characterRef.current = next;
       setActiveCharIdx(next ? newParty.indexOf(next) : 0);
     }
+    setPartyChangePending(true);
     narratePartyEvent("leave", { userId: char.user_id ?? userIdRef.current!, characterName: char.name, characterClass: char.class, hp: char.hp, maxHp: char.max_hp, portraitUrl: char.portrait_url ?? null });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narratePartyEvent]);
@@ -1189,6 +1193,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               }}>{msg.role === "dm" ? <ColorizedText text={msg.content} /> : msg.content}</div>
             </div>
           ))}
+
+          {/* Party change — waiting for DM debounce to fire */}
+          {partyChangePending && !isTyping && !streamingContent && (
+            <div className="animate-fade-in" style={{ alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "14px 20px", borderRadius: "12px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", marginTop: "4px" }}>
+              <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--primary)", opacity: 0.7, animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                ))}
+              </div>
+              <span style={{ fontSize: "0.75rem", color: "#8b5cf6", letterSpacing: "0.04em" }}>The DM is preparing their response…</span>
+            </div>
+          )}
 
           {/* Streaming */}
           {(isTyping || streamingContent) && (
