@@ -381,6 +381,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setIsTyping(false); setStreamingContent("");
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "dm", content: payload.content }]);
+        const rollTarget = detectDiceRollTarget(payload.content as string);
+        setDiceRollTarget(rollTarget);
+        fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
+          .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       })
       .on("broadcast", { event: "dm_typing" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -397,6 +401,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "round_reset" }, () => {
         setCurrentTurnIndex(0); setPendingActions([]);
         currentTurnIndexRef.current = 0; pendingActionsRef.current = [];
+      })
+      .on("broadcast", { event: "character_hp_update" }, ({ payload }) => {
+        const { charId, newHp, newMaxHp } = payload as { charId: string; newHp: number; newMaxHp: number };
+        setCampaignParty(prev => prev.map(c => c.id === charId ? { ...c, hp: newHp, max_hp: newMaxHp } : c));
       })
       .on("broadcast", { event: "item_dropped" }, ({ payload }) => {
         if (payload.fromUserId === userIdRef.current) return;
@@ -498,6 +506,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const applyStateChange = useCallback(async (change: StateChange) => {
     const char = characterRef.current;
     if (!char) return;
+    // In multiplayer, only apply to the character targeted by the DM
+    if (change.target_name && change.target_name.toLowerCase() !== char.name.toLowerCase()) return;
     const hasChange =
       change.hp_delta !== 0 || change.gold_delta !== 0 ||
       change.items_gained.length > 0 || change.items_lost.length > 0 ||
@@ -576,6 +586,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
     await supabase.from("characters").update(dbUpdate).eq("id", char.id);
+
+    // Broadcast HP update so all players' party cards stay in sync
+    if (change.hp_delta !== 0 || leveledUp) {
+      channelRef.current?.send({ type: "broadcast", event: "character_hp_update", payload: { charId: char.id, newHp, newMaxHp } });
+    }
 
     if (parts.length) {
       const notice = parts.join(" · ");

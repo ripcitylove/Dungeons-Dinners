@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
 export type StateChange = {
+  target_name:           string | null;
   hp_delta:              number;
   gold_delta:            number;
   items_gained:          string[];
@@ -16,6 +17,7 @@ export type StateChange = {
 };
 
 const ZERO_CHANGE: StateChange = {
+  target_name: null,
   hp_delta: 0, gold_delta: 0,
   items_gained: [], items_lost: [], weapons_gained: [],
   xp_award: 0, status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0,
@@ -25,6 +27,7 @@ const SYSTEM = `You are a D&D 5e game state extractor. Given a Dungeon Master's 
 
 Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing changed:
 {
+  "target_name":           string | null, // exact name of the specific character who received damage/healing/items; null if unclear or if XP/gold applies to the whole party.
   "hp_delta":              number,    // negative = damage, positive = healing. 0 if no HP change.
   "gold_delta":            number,    // net gold change. 0 if none.
   "items_gained":          string[],  // consumables/trinkets added. [] if none.
@@ -65,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     const parsed = JSON.parse(match[0]) as Partial<StateChange>;
     const change: StateChange = {
+      target_name:           typeof parsed.target_name === "string" ? parsed.target_name : null,
       hp_delta:              Number(parsed.hp_delta      ?? 0),
       gold_delta:            Number(parsed.gold_delta    ?? 0),
       items_gained:          Array.isArray(parsed.items_gained)          ? parsed.items_gained          : [],

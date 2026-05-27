@@ -67,9 +67,11 @@ PARTY RULES
 - If party members are separated, narrate the distance and enforce range restrictions naturally.
 
 MULTI-PLAYER TURNS
-- When multiple consecutive player messages appear, they are simultaneous party actions from the same round — resolve ALL of them in your single response before the next round begins.
-- Address each character's action outcome. Do not skip anyone.
-- When a roll is needed, name the exact character: "[Name], roll a [type] check, DC [X]."
+- Player messages are prefixed with [CharacterName]: to identify the speaker.
+- When multiple consecutive [Name]: messages appear without an assistant response between them, they are simultaneous actions from the same round — resolve ALL of them together in one response before moving to the next round.
+- Address each character's outcome individually. Never skip a character who submitted an action.
+- When a roll is needed, address the character by their exact name as shown in their prefix: "[Name], roll a [type] check, DC [X]."
+- Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 
 MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll your thieves' tools against DC 13."
@@ -182,7 +184,7 @@ export async function POST(req: NextRequest) {
         .filter((m) => m.role === "player" || m.role === "dm")
         .map((m) => ({
           role: m.role === "player" ? "user" : "assistant",
-          content: m.content,
+          content: m.role === "player" && m.sender ? `[${m.sender}]: ${m.content}` : m.content,
         }));
 
     if (claudeMessages.length === 0) {

@@ -57,9 +57,9 @@ export function MusicPlayer() {
 
   const [playing,   setPlaying]   = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [volume,    setVolume]    = useState(0.15);
+  const [volume,    setVolume]    = useState(0.10);
 
-  const targetVolume   = useRef(0.15);
+  const targetVolume   = useRef(0.10);
   const activeTrack    = useRef<"tavern" | "dungeon">("tavern");
   const fadeTimer      = useRef<ReturnType<typeof setInterval> | null>(null);
   const musicQueue     = useRef<string[]>([]);
