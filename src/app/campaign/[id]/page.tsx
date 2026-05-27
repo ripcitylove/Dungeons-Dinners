@@ -7,7 +7,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS } from "../../../lib/spellData";
 import {
   getItemByName, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
@@ -184,6 +184,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Item tooltip hover
   const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
+  const [hoveredSpell,     setHoveredSpell]       = useState<string | null>(null);
 
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
@@ -221,6 +222,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
   const narPlaySlotRef       = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
+  const pendingSpellCastRef  = useRef<number>(0);
 
   // ── Ref sync effects ─────────────────────────────────────────────────────────
   useEffect(() => { characterRef.current        = character;        }, [character]);
@@ -494,10 +496,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
     newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
 
-    // Spell slots
+    // Spell slots — skip deduction if the player already paid via click-cast
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
     if (change.spell_slots_used > 0) {
-      newSlotsUsed[1] = (newSlotsUsed[1] ?? 0) + change.spell_slots_used;
+      if (pendingSpellCastRef.current > 0) {
+        pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - change.spell_slots_used);
+      } else {
+        newSlotsUsed[1] = (newSlotsUsed[1] ?? 0) + change.spell_slots_used;
+      }
     }
 
     const parts: string[] = [];
@@ -1793,21 +1799,95 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div>
                     <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
                     {(character.cantrips_known?.length ?? 0) > 0 && (
-                      <div style={{ marginBottom: "8px" }}>
-                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips (at-will)</div>
-                        {character.cantrips_known!.map((s, i) => (
-                          <div key={i} style={{ padding: "5px 10px", background: "rgba(139,92,246,0.08)", borderRadius: "5px", marginBottom: "3px", fontSize: "0.8rem" }}>✦ {s}</div>
-                        ))}
+                      <div style={{ marginBottom: "10px" }}>
+                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips · at-will</div>
+                        {character.cantrips_known!.map((s, i) => {
+                          const entry = CANTRIPS[character.class]?.find(e => e.name === s);
+                          const active = hoveredSpell === `c-${i}`;
+                          return (
+                            <div key={i} style={{ position: "relative", marginBottom: "3px" }}>
+                              <div
+                                role="button"
+                                onClick={() => { if (!isTyping) handleSend(`I cast ${s}.`); }}
+                                onMouseEnter={() => setHoveredSpell(`c-${i}`)}
+                                onMouseLeave={() => setHoveredSpell(null)}
+                                style={{ padding: "6px 10px", background: active ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.08)", borderRadius: "5px", fontSize: "0.8rem", cursor: isTyping ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: isTyping ? 0.55 : 1 }}
+                              >
+                                <span>✦ {s}</span>
+                                <span style={{ fontSize: "0.58rem", color: "#8b5cf6", fontWeight: 600 }}>at-will</span>
+                              </div>
+                              {active && entry && (
+                                <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                                  <div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div>
+                                  <div style={{ color: "#94a3b8" }}>{entry.desc}</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
-                    {(character.spells_prepared?.length ?? 0) > 0 && (
-                      <div>
-                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Prepared Spells</div>
-                        {character.spells_prepared!.map((s, i) => (
-                          <div key={i} style={{ padding: "5px 10px", background: "rgba(139,92,246,0.08)", borderRadius: "5px", marginBottom: "3px", fontSize: "0.8rem" }}>◈ {s}</div>
-                        ))}
-                      </div>
-                    )}
+                    {(character.spells_prepared?.length ?? 0) > 0 && (() => {
+                      const maxSlots  = getSpellSlots(character.class, character.level);
+                      const usedSlots = character.spell_slots_used ?? {};
+                      const slotLevels = Object.keys(maxSlots).map(Number).sort();
+                      const availLvl   = slotLevels.find(lvl => Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0)) > 0) ?? null;
+                      const totalAvail = slotLevels.reduce((n, lvl) => n + Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0)), 0);
+                      return (
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Prepared Spells</div>
+                            {slotLevels.length > 0 && (
+                              <div style={{ display: "flex", gap: "5px" }}>
+                                {slotLevels.map(lvl => {
+                                  const avail = Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0));
+                                  return (
+                                    <span key={lvl} style={{ fontSize: "0.58rem", background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600 }}>
+                                      L{lvl}: {avail}/{maxSlots[lvl]}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          {character.spells_prepared!.map((s, i) => {
+                            const entry   = LEVEL1_SPELLS[character.class]?.find(e => e.name === s);
+                            const canCast = !isTyping && totalAvail > 0;
+                            const active  = hoveredSpell === `p-${i}`;
+                            return (
+                              <div key={i} style={{ position: "relative", marginBottom: "3px" }}>
+                                <div
+                                  role="button"
+                                  onClick={async () => {
+                                    if (!canCast || !availLvl) return;
+                                    const newSlots = { ...usedSlots, [availLvl]: (usedSlots[availLvl] ?? 0) + 1 };
+                                    setCharacter(prev => prev ? { ...prev, spell_slots_used: newSlots } : null);
+                                    setCampaignParty(prev => prev.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c));
+                                    await supabase.from("characters").update({ spell_slots_used: newSlots }).eq("id", character.id);
+                                    pendingSpellCastRef.current += 1;
+                                    handleSend(`I cast ${s}.`);
+                                  }}
+                                  onMouseEnter={() => setHoveredSpell(`p-${i}`)}
+                                  onMouseLeave={() => setHoveredSpell(null)}
+                                  style={{ padding: "6px 10px", background: canCast && active ? "rgba(139,92,246,0.22)" : canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: "0.8rem", cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active && canCast ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: canCast ? 1 : 0.4 }}
+                                >
+                                  <span style={{ color: canCast ? undefined : "#475569" }}>◈ {s}</span>
+                                  <span style={{ fontSize: "0.58rem", color: canCast ? "#8b5cf6" : "#3f3f46", fontWeight: 600 }}>
+                                    {availLvl !== null ? `L${availLvl} slot` : "no slots"}
+                                  </span>
+                                </div>
+                                {active && entry && (
+                                  <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                                    <div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div>
+                                    <div style={{ color: "#94a3b8" }}>{entry.desc}</div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
