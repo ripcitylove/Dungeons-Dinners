@@ -19,6 +19,7 @@ type Message  = { role: MsgRole; content: string; sender?: string };
 type LogEntry = { id: string; timestamp: Date; role: MsgRole; sender?: string; content: string };
 type PendingAction = { userId: string; characterName: string; content: string };
 type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string };
+type TradeOffer    = { id: string; fromUserId: string; fromCharId: string; fromCharName: string; toUserId: string; toCharId: string; offeredItems: { name: string; type: "item" | "weapon" }[]; offeredGold: number };
 
 type Character = {
   id: string; user_id?: string; name: string; race: string; class: string; level: number;
@@ -173,6 +174,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Inventory exchange
   const [droppedItems,     setDroppedItems]       = useState<DroppedItem[]>([]);
+  const [tradeTarget,      setTradeTarget]        = useState<Character | null>(null);
+  const [tradeItems,       setTradeItems]         = useState<{ name: string; type: "item" | "weapon" }[]>([]);
+  const [tradeGold,        setTradeGold]          = useState(0);
+  const [incomingTrade,    setIncomingTrade]      = useState<TradeOffer | null>(null);
 
   // Stat tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
@@ -388,6 +393,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "item_taken" }, ({ payload }) => {
         setDroppedItems(prev => prev.filter(i => i.id !== payload.id));
+      })
+      .on("broadcast", { event: "trade_offer" }, ({ payload }) => {
+        const offer = payload as TradeOffer;
+        if (offer.toUserId !== userIdRef.current) return;
+        setIncomingTrade(offer);
+      })
+      .on("broadcast", { event: "trade_accepted" }, ({ payload }) => {
+        const offer = payload as TradeOffer;
+        if (offer.fromUserId !== userIdRef.current) return;
+        const char = characterRef.current;
+        if (!char || char.id !== offer.fromCharId) return;
+        let items   = [...char.inventory.items];
+        let weapons = [...char.inventory.weapons];
+        offer.offeredItems.forEach(oi => {
+          if (oi.type === "item")   { const idx = items.indexOf(oi.name);   if (idx !== -1) items.splice(idx, 1); }
+          else                      { const idx = weapons.indexOf(oi.name); if (idx !== -1) weapons.splice(idx, 1); }
+        });
+        const newGold = Math.max(0, (char.inventory.gold ?? 0) - offer.offeredGold);
+        const newInv  = { ...char.inventory, gold: newGold, items, weapons };
+        setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+        setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        const toName = campaignPartyRef.current.find(c => c.id === offer.toCharId)?.name ?? "party member";
+        setStateNotice(`Trade complete — items sent to ${toName}.`);
+        setTimeout(() => setStateNotice(null), 4000);
+      })
+      .on("broadcast", { event: "trade_declined" }, ({ payload }) => {
+        const p = payload as { fromUserId: string; fromCharName?: string };
+        if (p.fromUserId !== userIdRef.current) return;
+        setStateNotice("Your trade offer was declined.");
+        setTimeout(() => setStateNotice(null), 3000);
       })
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -922,6 +958,46 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
   }, []);
 
+  const sendTradeOffer = useCallback(() => {
+    const char = characterRef.current;
+    if (!char || !tradeTarget || (tradeItems.length === 0 && tradeGold === 0)) return;
+    const offer: TradeOffer = {
+      id:           `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      fromUserId:   userIdRef.current!,
+      fromCharId:   char.id,
+      fromCharName: char.name,
+      toUserId:     tradeTarget.user_id!,
+      toCharId:     tradeTarget.id,
+      offeredItems: tradeItems,
+      offeredGold:  tradeGold,
+    };
+    channelRef.current?.send({ type: "broadcast", event: "trade_offer", payload: offer });
+    setTradeTarget(null); setTradeItems([]); setTradeGold(0);
+    setStateNotice(`Trade offer sent to ${tradeTarget.name}.`);
+    setTimeout(() => setStateNotice(null), 3000);
+  }, [tradeTarget, tradeItems, tradeGold]);
+
+  const acceptTrade = useCallback(async (offer: TradeOffer) => {
+    const char = characterRef.current;
+    if (!char) return;
+    const newItems   = [...char.inventory.items,   ...offer.offeredItems.filter(i => i.type === "item").map(i => i.name)];
+    const newWeapons = [...char.inventory.weapons, ...offer.offeredItems.filter(i => i.type === "weapon").map(i => i.name)];
+    const newGold    = (char.inventory.gold ?? 0) + offer.offeredGold;
+    const newInv     = { ...char.inventory, gold: newGold, items: newItems, weapons: newWeapons };
+    setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    channelRef.current?.send({ type: "broadcast", event: "trade_accepted", payload: offer });
+    setIncomingTrade(null);
+    setStateNotice(`Trade accepted! Received from ${offer.fromCharName}.`);
+    setTimeout(() => setStateNotice(null), 4000);
+  }, []);
+
+  const declineTrade = useCallback((offer: TradeOffer) => {
+    channelRef.current?.send({ type: "broadcast", event: "trade_declined", payload: { id: offer.id, fromUserId: offer.fromUserId } });
+    setIncomingTrade(null);
+  }, []);
+
   const handleUseItem = useCallback(async (itemName: string) => {
     const char = characterRef.current;
     if (!char) return;
@@ -1353,6 +1429,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                             onMouseLeave={e => { e.currentTarget.style.color = "#3f3f46"; }}
                           >✕</button>
+                        )}
+                        {!isMyChar && char.user_id && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setTradeTarget(char); setTradeItems([]); setTradeGold(0); }}
+                            title={`Trade with ${char.name}`}
+                            style={{ background: "none", border: "1px solid rgba(139,92,246,0.25)", color: "#8b5cf6", cursor: "pointer", fontSize: "0.58rem", padding: "2px 5px", borderRadius: "4px", lineHeight: 1, transition: "all 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.15)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; }}
+                          >⇄</button>
                         )}
                       </div>
                     </div>
@@ -1859,9 +1944,106 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         )}
       </div>
 
+      {/* ── Trade compose modal ── */}
+      {tradeTarget && character && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => setTradeTarget(null)}>
+          <div style={{ background: "#1e293b", borderRadius: "14px", padding: "24px", maxWidth: "400px", width: "90%", border: "1px solid rgba(139,92,246,0.45)", boxShadow: "0 20px 60px rgba(0,0,0,0.85)" }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: "4px", fontSize: "1rem", fontWeight: "bold" }}>⇄ Trade with {tradeTarget.name}</h3>
+            <p style={{ fontSize: "0.72rem", color: "#64748b", marginBottom: "18px" }}>{tradeTarget.race} {tradeTarget.class} · Lvl {tradeTarget.level}</p>
+
+            {/* Items to offer */}
+            <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Your Items to Offer</div>
+              {[...(character.inventory?.weapons ?? []).map(w => ({ name: w, type: "weapon" as const })), ...(character.inventory?.items ?? []).map(i => ({ name: i, type: "item" as const }))].length === 0 ? (
+                <p style={{ fontSize: "0.75rem", color: "#475569", fontStyle: "italic" }}>No items in inventory.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "180px", overflowY: "auto" }}>
+                  {[...(character.inventory?.weapons ?? []).map(w => ({ name: w, type: "weapon" as const })), ...(character.inventory?.items ?? []).map(i => ({ name: i, type: "item" as const }))].map(({ name, type }, idx) => {
+                    const isSelected = tradeItems.some(ti => ti.name === name && ti.type === type);
+                    return (
+                      <label key={`${type}-${idx}`} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", borderRadius: "6px", background: isSelected ? "rgba(139,92,246,0.15)" : "rgba(0,0,0,0.3)", cursor: "pointer", border: `1px solid ${isSelected ? "rgba(139,92,246,0.4)" : "transparent"}`, transition: "all 0.15s" }}>
+                        <input type="checkbox" checked={isSelected}
+                          onChange={() => setTradeItems(prev => isSelected ? prev.filter(ti => !(ti.name === name && ti.type === type)) : [...prev, { name, type }])}
+                          style={{ accentColor: "#8b5cf6", width: "14px", height: "14px", flexShrink: 0 }} />
+                        <span style={{ fontSize: "0.8rem" }}>{type === "weapon" ? "⚔️" : "🎒"} {name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Gold to offer */}
+            <div style={{ marginBottom: "22px" }}>
+              <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Gold to Send</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input type="number" min={0} max={character.inventory?.gold ?? 0} value={tradeGold}
+                  onChange={e => setTradeGold(Math.max(0, Math.min(character.inventory?.gold ?? 0, parseInt(e.target.value) || 0)))}
+                  style={{ flex: 1, padding: "7px 10px", borderRadius: "6px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--border)", color: "#fbbf24", fontSize: "0.85rem", outline: "none" }} />
+                <span style={{ fontSize: "0.75rem", color: "#64748b", flexShrink: 0 }}>/ {character.inventory?.gold ?? 0}gp available</span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => { setTradeTarget(null); setTradeItems([]); setTradeGold(0); }}
+                style={{ flex: 1, padding: "9px", borderRadius: "7px", fontSize: "0.8rem", border: "1px solid var(--border)", background: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={sendTradeOffer} disabled={tradeItems.length === 0 && tradeGold === 0}
+                style={{ flex: 2, padding: "9px", borderRadius: "7px", fontSize: "0.8rem", fontWeight: "bold", border: "1px solid rgba(139,92,246,0.5)", background: tradeItems.length === 0 && tradeGold === 0 ? "rgba(139,92,246,0.05)" : "rgba(139,92,246,0.2)", color: tradeItems.length === 0 && tradeGold === 0 ? "#475569" : "#c4b5fd", cursor: tradeItems.length === 0 && tradeGold === 0 ? "not-allowed" : "pointer", transition: "all 0.15s" }}>
+                Send Offer ⇄
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Incoming trade modal ── */}
+      {incomingTrade && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}>
+          <div style={{ background: "#1e293b", borderRadius: "14px", padding: "24px", maxWidth: "380px", width: "90%", border: "1px solid rgba(139,92,246,0.45)", boxShadow: "0 20px 60px rgba(0,0,0,0.85)", animation: "fadeInScale 0.2s ease" }}>
+            <h3 style={{ marginBottom: "4px", fontSize: "1rem", fontWeight: "bold" }}>⇄ Trade Offer</h3>
+            <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginBottom: "16px" }}><span style={{ color: "white", fontWeight: 600 }}>{incomingTrade.fromCharName}</span> wants to trade with you</p>
+
+            <div style={{ padding: "12px 14px", borderRadius: "8px", background: "rgba(0,0,0,0.35)", border: "1px solid var(--border)", marginBottom: "20px" }}>
+              <div style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>They&apos;re offering</div>
+              {incomingTrade.offeredItems.length === 0 && incomingTrade.offeredGold === 0 && (
+                <p style={{ fontSize: "0.8rem", color: "#475569", fontStyle: "italic" }}>Nothing specified</p>
+              )}
+              {incomingTrade.offeredItems.map((item, i) => (
+                <div key={i} style={{ fontSize: "0.82rem", padding: "3px 0", color: "#e2e8f0" }}>{item.type === "weapon" ? "⚔️" : "🎒"} {item.name}</div>
+              ))}
+              {incomingTrade.offeredGold > 0 && (
+                <div style={{ fontSize: "0.85rem", color: "#fbbf24", fontWeight: "bold", marginTop: incomingTrade.offeredItems.length > 0 ? "6px" : 0 }}>
+                  🪙 {incomingTrade.offeredGold} gold
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => declineTrade(incomingTrade)}
+                style={{ flex: 1, padding: "9px", borderRadius: "7px", fontSize: "0.8rem", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.22)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}>
+                Decline
+              </button>
+              <button onClick={() => acceptTrade(incomingTrade)}
+                style={{ flex: 2, padding: "9px", borderRadius: "7px", fontSize: "0.8rem", fontWeight: "bold", border: "1px solid rgba(139,92,246,0.5)", background: "rgba(139,92,246,0.2)", color: "#c4b5fd", cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.32)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.2)"; }}>
+                Accept Trade
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
+        @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
     </main>
   );
