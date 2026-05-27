@@ -203,6 +203,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const turnOrderRef         = useRef<string[]>([]);
   const currentTurnIndexRef  = useRef(0);
   const pendingActionsRef    = useRef<PendingAction[]>([]);
+  const pendingJoinsRef      = useRef<PresencePlayer[]>([]);
+  const joinDebounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSceneRef      = useRef<string>("tavern");
   const resumeNarrationRef   = useRef<string>("");
   // Ordered narration slot system — ensures sentences always play in the order they were sent
@@ -401,7 +403,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       });
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); channelRef.current = null; };
+    return () => {
+      supabase.removeChannel(channel); channelRef.current = null;
+      if (joinDebounceRef.current) { clearTimeout(joinDebounceRef.current); joinDebounceRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, character?.id, params.id]);
 
@@ -558,30 +563,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [playNextInQueue]);
 
   // ── Party join/leave narration ────────────────────────────────────────────────
-  const narratePartyEvent = useCallback(async (type: "join" | "leave" | "kick", player: PresencePlayer) => {
-    const label    = type === "join" ? `${player.characterName} has joined the party.`
-                   : type === "kick" ? `${player.characterName} has been removed from the party.`
-                   :                   `${player.characterName} has left the party.`;
-    const systemMsg: Message = { role: "system", content: `⚔ ${label}` };
-    setMessages(prev => [...prev, systemMsg]);
-    setLogEntries(prev => [...prev, { id: `party-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚔ ${label}` }]);
+  // Joins are debounced 8 s so multiple arrivals batch into one DM announcement.
+  // Leave / kick fire immediately.
+  const fireDmPartyResponse = useCallback(async (trigger: Message) => {
     if (isTypingRef.current) return;
-
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
-    // Reset narration slots for this new response
     narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
-
-    const trigger: Message = {
-      role: "player",
-      content: `[Party change — weave naturally into the story: ${player.characterName}, a ${player.characterClass}, ${type === "join" ? "has arrived and joined" : "has departed from"} the party]`,
-    };
-
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...messagesRef.current, systemMsg, trigger], character: characterRef.current }),
+        body: JSON.stringify({ messages: [...messagesRef.current, trigger], character: characterRef.current }),
       });
       if (!res.ok || !res.body) throw new Error();
       const reader = res.body.getReader();
@@ -610,6 +603,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       channelRef.current?.send({ type: "broadcast", event: "dm_typing", payload: { senderId: userIdRef.current, typing: false } });
     }
   }, [params.id, enqueueNarration]);
+
+  const narratePartyEvent = useCallback((type: "join" | "leave" | "kick", player: PresencePlayer) => {
+    const label = type === "join" ? `${player.characterName} has joined the party.`
+                : type === "kick" ? `${player.characterName} has been removed from the party.`
+                :                   `${player.characterName} has left the party.`;
+    setMessages(prev => [...prev, { role: "system", content: `⚔ ${label}` }]);
+    setLogEntries(prev => [...prev, { id: `party-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚔ ${label}` }]);
+
+    if (type === "join") {
+      // Collect arrivals; DM speaks once after 8 s of silence
+      pendingJoinsRef.current = [...pendingJoinsRef.current, player];
+      if (joinDebounceRef.current) clearTimeout(joinDebounceRef.current);
+      joinDebounceRef.current = setTimeout(() => {
+        const joins = pendingJoinsRef.current;
+        pendingJoinsRef.current = [];
+        joinDebounceRef.current = null;
+        if (!joins.length) return;
+        const arrivals = joins.map(p => `${p.characterName} (${p.characterClass})`).join(", ");
+        const content = joins.length === 1
+          ? `[Party change — weave naturally into the story: ${joins[0].characterName}, a ${joins[0].characterClass}, has arrived and joined the party]`
+          : `[Party change — weave naturally into the story: ${arrivals} have all arrived and joined the party together — acknowledge each of them]`;
+        fireDmPartyResponse({ role: "player", content });
+      }, 8000);
+      return;
+    }
+
+    // Leave / kick — immediate
+    const content = `[Party change — weave naturally into the story: ${player.characterName}, a ${player.characterClass}, has departed from the party]`;
+    fireDmPartyResponse({ role: "player", content });
+  }, [fireDmPartyResponse]);
 
   useEffect(() => { narratePartyEventRef.current = narratePartyEvent; }, [narratePartyEvent]);
 
