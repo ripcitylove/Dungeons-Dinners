@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 const supabase  = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -67,19 +67,18 @@ export async function POST(req: NextRequest) {
     const fullPrompt  = `Fantasy RPG environment art. ${scenePrompt}. Wide cinematic landscape view, dramatic fantasy painting style, moody atmosphere, dark fantasy aesthetic, no characters, no text.`;
 
     const imgResponse = await openai.images.generate({
-      model:   "dall-e-3",
+      model:   "gpt-image-1",
       prompt:  fullPrompt,
-      size:    "1792x1024",
-      quality: "standard",
+      size:    "1536x1024",
+      quality: "medium",
       n:       1,
     });
 
-    const dalleUrl = imgResponse.data?.[0]?.url;
-    if (!dalleUrl) return Response.json({ sceneName, imageUrl: null });
+    const b64 = imgResponse.data?.[0]?.b64_json;
+    if (!b64) return Response.json({ sceneName, imageUrl: null });
 
     // Step 4: Upload to Supabase Storage
-    const imgFetch  = await fetch(dalleUrl);
-    const imgBuffer = await imgFetch.arrayBuffer();
+    const imgBuffer = Buffer.from(b64, "base64");
 
     const { error: uploadError } = await supabase.storage
       .from("scenes")

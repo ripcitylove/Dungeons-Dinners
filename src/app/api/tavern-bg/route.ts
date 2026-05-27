@@ -33,21 +33,21 @@ export async function GET() {
       return Response.json({ imageUrl: tavernCached.image_url });
     }
 
-    // Generate with DALL-E 3
+    // Generate with gpt-image-1
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const img = await openai.images.generate({
-      model:   "dall-e-3",
+      model:   "gpt-image-1",
       prompt:  PROMPT,
-      size:    "1792x1024",
-      quality: "standard",
+      size:    "1536x1024",
+      quality: "medium",
       n:       1,
     });
 
-    const dalleUrl = img.data?.[0]?.url;
-    if (!dalleUrl) return Response.json({ imageUrl: null });
+    const b64 = img.data?.[0]?.b64_json;
+    if (!b64) return Response.json({ imageUrl: null });
 
     // Store in Supabase Storage
-    const buf = await (await fetch(dalleUrl)).arrayBuffer();
+    const buf = Buffer.from(b64, "base64");
     const { error: uploadErr } = await supabase.storage
       .from("scenes")
       .upload("tavern-dashboard.png", buf, { contentType: "image/png", upsert: true });

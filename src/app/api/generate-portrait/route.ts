@@ -43,20 +43,16 @@ export async function POST(req: NextRequest) {
     const prompt = `Fantasy RPG character portrait. A ${genderWord} who is a ${raceDesc}, ${classDesc}. Dark fantasy painterly style, dramatic side lighting, highly detailed face, head-and-shoulders composition. Cinematic epic fantasy art. No text, no watermarks, no logos.`;
 
     const imgResponse = await openai.images.generate({
-      model:   "dall-e-3",
+      model:   "gpt-image-1",
       prompt,
       size:    "1024x1024",
-      quality: "standard",
+      quality: "medium",
       n:       1,
     });
 
-    const dalleUrl = imgResponse.data?.[0]?.url;
-    if (!dalleUrl) throw new Error("No image URL returned");
-
-    // Fetch the image binary
-    const imgFetch = await fetch(dalleUrl);
-    if (!imgFetch.ok) throw new Error("Failed to download generated image");
-    const imgBuffer = await imgFetch.arrayBuffer();
+    const b64 = imgResponse.data?.[0]?.b64_json;
+    if (!b64) throw new Error("No image data returned");
+    const imgBuffer = Buffer.from(b64, "base64");
 
     // Upload to Supabase Storage using the caller's auth token
     const supabase = createClient(
