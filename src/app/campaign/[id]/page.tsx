@@ -1356,6 +1356,53 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         )}
                       </div>
                     </div>
+                    {/* XP progress bar */}
+                    {(() => {
+                      const curXp = char.xp ?? 0;
+                      const xpMax = getXpToNextLevel(char.level);
+                      const xpPct = char.level >= 10 ? 100 : Math.min(100, (curXp / xpMax) * 100);
+                      return (
+                        <div style={{ marginTop: "5px" }}>
+                          <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden" }}>
+                            <div style={{ width: `${xpPct}%`, height: "100%", background: char.level >= 10 ? "#f59e0b" : "linear-gradient(90deg,#6d28d9,#8b5cf6)", transition: "width 0.6s ease" }} />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.58rem", marginTop: "2px" }}>
+                            <span style={{ color: "#7c3aed", fontWeight: 600 }}>XP</span>
+                            <span style={{ color: "#64748b" }}>{char.level >= 10 ? "MAX LEVEL" : `${curXp} / ${xpMax}`}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Spell slot pips */}
+                    {SPELLCASTING_CLASSES.has(char.class) && (() => {
+                      const maxSlots  = getSpellSlots(char.class, char.level);
+                      const usedSlots = char.spell_slots_used ?? {};
+                      const levels    = Object.keys(maxSlots).map(Number).sort();
+                      if (levels.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: "6px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                          {levels.map(lvl => {
+                            const max   = maxSlots[lvl];
+                            const used  = usedSlots[lvl] ?? 0;
+                            const avail = Math.max(0, max - used);
+                            return (
+                              <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+                                <span style={{ fontSize: "0.52rem", color: "#64748b", marginRight: "1px" }}>L{lvl}</span>
+                                {Array.from({ length: max }, (_, i) => (
+                                  <div key={i} style={{
+                                    width: "7px", height: "7px", borderRadius: "50%",
+                                    background: i < avail ? "#8b5cf6" : "transparent",
+                                    border: `1.5px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}`,
+                                    transition: "all 0.2s",
+                                    boxShadow: i < avail ? "0 0 3px rgba(139,92,246,0.5)" : "none",
+                                  }} />
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(s => {
