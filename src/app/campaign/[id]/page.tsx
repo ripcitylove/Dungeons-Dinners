@@ -7,7 +7,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle } from "../../../lib/spellData";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -154,6 +154,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Inventory exchange
   const [droppedItems,     setDroppedItems]       = useState<DroppedItem[]>([]);
+
+  // Stat tooltip hover
+  const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
@@ -1192,11 +1195,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
                   {([["STR", character.strength], ["DEX", character.dexterity], ["CON", character.constitution], ["INT", character.intelligence], ["WIS", character.wisdom], ["CHA", character.charisma]] as [string, number][]).map(([label, score]) => {
                     const m = Math.floor((score - 10) / 2);
+                    const guide = CLASS_STAT_GUIDES[character.class]?.[label];
+                    const tierStyle = guide ? getTierStyle(guide.tier) : null;
                     return (
-                      <div key={label} style={{ background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", padding: "10px 4px", borderRadius: "8px", textAlign: "center" }}>
+                      <div
+                        key={label}
+                        style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px", borderRadius: "8px", textAlign: "center", cursor: "default", transition: "border-color 0.2s" }}
+                        onMouseEnter={() => setHoveredStat(label)}
+                        onMouseLeave={() => setHoveredStat(null)}
+                      >
                         <div style={{ fontSize: "0.65rem", color: "#94a3b8", marginBottom: "2px" }}>{label}</div>
                         <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{score}</div>
                         <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
+                        {tierStyle && (
+                          <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
+                            {tierStyle.label.toUpperCase()}
+                          </div>
+                        )}
+                        {hoveredStat === label && guide && tierStyle && (
+                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "160px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                            <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
+                            {guide.reason}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

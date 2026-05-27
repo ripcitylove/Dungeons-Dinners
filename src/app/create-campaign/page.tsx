@@ -6,7 +6,7 @@ import { supabase } from "../../lib/supabaseClient";
 import "../globals.css";
 import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
-  getSpellCounts, type SpellEntry,
+  getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
 } from "../../lib/spellData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -104,6 +104,7 @@ export default function CreateCampaignWizard() {
   const [selectedCantrips,   setSelectedCantrips]   = useState<string[]>([]);
   const [selectedSpells,     setSelectedSpells]     = useState<string[]>([]);
   const [charNameErr,        setCharNameErr]        = useState("");
+  const [hoveredStat,        setHoveredStat]        = useState<string | null>(null);
 
   // Completed characters
   const [completedChars, setCompletedChars] = useState<CharDraft[]>([]);
@@ -475,11 +476,29 @@ export default function CreateCampaignWizard() {
                   <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
                     {([["STR", scores.strength], ["DEX", scores.dexterity], ["CON", scores.constitution], ["INT", scores.intelligence], ["WIS", scores.wisdom], ["CHA", scores.charisma]] as [string, number][]).map(([label, val]) => {
                       const m = Math.floor((val - 10) / 2);
+                      const guide = CLASS_STAT_GUIDES[draft.class]?.[label];
+                      const tierStyle = guide ? getTierStyle(guide.tier) : null;
                       return (
-                        <div key={label} style={{ padding: "14px 16px", background: "var(--card-bg)", borderRadius: "8px", textAlign: "center", minWidth: "70px", border: "1px solid var(--border)" }}>
+                        <div
+                          key={label}
+                          style={{ position: "relative", padding: "14px 16px", background: "var(--card-bg)", borderRadius: "8px", textAlign: "center", minWidth: "70px", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, cursor: "default", transition: "border-color 0.2s" }}
+                          onMouseEnter={() => setHoveredStat(label)}
+                          onMouseLeave={() => setHoveredStat(null)}
+                        >
                           <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginBottom: "4px" }}>{label}</div>
                           <div style={{ fontWeight: "bold", fontSize: "1.3rem" }}>{val}</div>
                           <div style={{ fontSize: "0.75rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
+                          {tierStyle && (
+                            <div style={{ fontSize: "0.52rem", color: tierStyle.color, marginTop: "4px", fontWeight: "bold", letterSpacing: "0.06em" }}>
+                              {tierStyle.label.toUpperCase()}
+                            </div>
+                          )}
+                          {hoveredStat === label && guide && tierStyle && (
+                            <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 300, width: "170px", pointerEvents: "none", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                              <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.74rem" }}>{tierStyle.label} Stat</div>
+                              {guide.reason}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
@@ -52,6 +53,7 @@ function CharacterModal({
   const hpPct = Math.max(0, Math.min(100, Math.round((char.hp / char.max_hp) * 100)));
   const hpColor = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
   const inv = char.inventory;
+  const [hoveredStat, setHoveredStat] = useState<string | null>(null);
 
   return (
     <div
@@ -109,11 +111,29 @@ function CharacterModal({
               {ABILITY_LABELS.map(([label, key]) => {
                 const val = char[key];
                 const m = mod(val);
+                const guide = CLASS_STAT_GUIDES[char.class]?.[label];
+                const tierStyle = guide ? getTierStyle(guide.tier) : null;
                 return (
-                  <div key={label} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                  <div
+                    key={label}
+                    style={{ position: "relative", background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "transparent"}`, cursor: "default", transition: "border-color 0.2s" }}
+                    onMouseEnter={() => setHoveredStat(label)}
+                    onMouseLeave={() => setHoveredStat(null)}
+                  >
                     <div style={{ fontSize: "0.62rem", color: "#64748b", marginBottom: "2px" }}>{label}</div>
                     <div style={{ fontWeight: "bold", fontSize: "1.15rem" }}>{val}</div>
                     <div style={{ fontSize: "0.68rem", color: m.startsWith("+") ? "#22c55e" : "#ef4444" }}>{m}</div>
+                    {tierStyle && (
+                      <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
+                        {tierStyle.label.toUpperCase()}
+                      </div>
+                    )}
+                    {hoveredStat === label && guide && tierStyle && (
+                      <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "160px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                        <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
+                        {guide.reason}
+                      </div>
+                    )}
                   </div>
                 );
               })}
