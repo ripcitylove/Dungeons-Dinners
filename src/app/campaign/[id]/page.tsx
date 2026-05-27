@@ -1321,7 +1321,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name}</span>
+                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
                           {isActive && campaignParty.length > 1 && (
                             <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
@@ -1389,7 +1389,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.characterName}</span>
+                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[p.characterClass] ?? "white" }}>{p.characterName}</span>
                           {isMe && <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.3)", color: "#c4b5fd", borderRadius: "3px", padding: "1px 4px", flexShrink: 0 }}>You</span>}
                         </div>
                         <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{p.characterClass}</div>
