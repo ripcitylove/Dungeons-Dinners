@@ -157,8 +157,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [currentTurnIndex, setCurrentTurnIndex]  = useState(0);
   const [pendingActions,   setPendingActions]    = useState<PendingAction[]>([]);
 
-  // Campaign meta
-  const [campaignTitle,    setCampaignTitle]      = useState<string>("");
+  // Campaign meta — pre-populate from sessionStorage when navigating from create-campaign
+  const [campaignTitle, setCampaignTitle] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    const stored = sessionStorage.getItem("pendingCampaignTitle");
+    if (stored) { sessionStorage.removeItem("pendingCampaignTitle"); return stored; }
+    return "";
+  });
 
   // Scene
   const [currentSceneUrl,  setCurrentSceneUrl]   = useState<string | null>(null);
@@ -244,6 +249,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
+      else if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       // Roster = all user characters
       if (charRes.data) setUserRoster(charRes.data as Character[]);

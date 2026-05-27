@@ -263,6 +263,8 @@ export default function CreateCampaignWizard() {
         });
       }
 
+      // Store title so campaign header shows it immediately (no "Loading…" flash)
+      sessionStorage.setItem("pendingCampaignTitle", campaignName.trim());
       router.push(`/campaign/${campData.id}`);
     } catch (err) {
       console.error("[create-campaign]", err);
