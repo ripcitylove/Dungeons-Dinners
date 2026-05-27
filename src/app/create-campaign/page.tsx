@@ -248,6 +248,7 @@ export default function CreateCampaignWizard() {
         spells_prepared:  c.spells,
         spell_slots_used: {},
         status_effects:   [],
+        party_active:     true,
       }));
 
       const { data: charData, error: charErr } = await supabase.from("characters").insert(rows).select();
