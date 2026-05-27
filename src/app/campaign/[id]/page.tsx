@@ -205,6 +205,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const pendingActionsRef    = useRef<PendingAction[]>([]);
   const pendingJoinsRef      = useRef<PresencePlayer[]>([]);
   const joinDebounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingLeavesRef     = useRef<PresencePlayer[]>([]);
+  const leaveDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSceneRef      = useRef<string>("tavern");
   const resumeNarrationRef   = useRef<string>("");
   // Ordered narration slot system — ensures sentences always play in the order they were sent
@@ -405,7 +407,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current = channel;
     return () => {
       supabase.removeChannel(channel); channelRef.current = null;
-      if (joinDebounceRef.current) { clearTimeout(joinDebounceRef.current); joinDebounceRef.current = null; }
+      if (joinDebounceRef.current)  { clearTimeout(joinDebounceRef.current);  joinDebounceRef.current  = null; }
+      if (leaveDebounceRef.current) { clearTimeout(leaveDebounceRef.current); leaveDebounceRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, character?.id, params.id]);
@@ -629,9 +632,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       return;
     }
 
-    // Leave / kick — immediate
-    const content = `[Party change — weave naturally into the story: ${player.characterName}, a ${player.characterClass}, has departed from the party]`;
-    fireDmPartyResponse({ role: "player", content });
+    if (type === "kick") {
+      // Kick is a deliberate DM action — announce immediately
+      const content = `[Party change — weave naturally into the story: ${player.characterName}, a ${player.characterClass}, has been removed from the party]`;
+      fireDmPartyResponse({ role: "player", content });
+      return;
+    }
+
+    // Leave — batch departures the same way as arrivals
+    pendingLeavesRef.current = [...pendingLeavesRef.current, player];
+    if (leaveDebounceRef.current) clearTimeout(leaveDebounceRef.current);
+    leaveDebounceRef.current = setTimeout(() => {
+      const leaves = pendingLeavesRef.current;
+      pendingLeavesRef.current = [];
+      leaveDebounceRef.current = null;
+      if (!leaves.length) return;
+      const departures = leaves.map(p => `${p.characterName} (${p.characterClass})`).join(", ");
+      const content = leaves.length === 1
+        ? `[Party change — weave naturally into the story: ${leaves[0].characterName}, a ${leaves[0].characterClass}, has departed from the party]`
+        : `[Party change — weave naturally into the story: ${departures} have all departed from the party — acknowledge each of them]`;
+      fireDmPartyResponse({ role: "player", content });
+    }, 8000);
   }, [fireDmPartyResponse]);
 
   useEffect(() => { narratePartyEventRef.current = narratePartyEvent; }, [narratePartyEvent]);
