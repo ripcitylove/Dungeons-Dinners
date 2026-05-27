@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
@@ -195,6 +195,35 @@ export default function Dashboard() {
   const [selectedChar, setSelectedChar] = useState<Character | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tavernBgUrl, setTavernBgUrl] = useState<string | null>(null);
+  const musicStarted = useRef(false);
+
+  // Auto-start tavern music on first user interaction
+  useEffect(() => {
+    const handleFirstTouch = () => {
+      if (musicStarted.current) return;
+      musicStarted.current = true;
+      window.__dndMusicPlay?.();
+      document.removeEventListener("pointerdown", handleFirstTouch);
+    };
+    document.addEventListener("pointerdown", handleFirstTouch);
+    return () => document.removeEventListener("pointerdown", handleFirstTouch);
+  }, []);
+
+  // Load tavern background (localStorage cache → API → DALL-E)
+  useEffect(() => {
+    const cached = localStorage.getItem("dnd_tavern_bg");
+    if (cached) { setTavernBgUrl(cached); return; }
+    fetch("/api/tavern-bg")
+      .then(r => r.json())
+      .then(({ imageUrl }: { imageUrl: string | null }) => {
+        if (imageUrl) {
+          setTavernBgUrl(imageUrl);
+          localStorage.setItem("dnd_tavern_bg", imageUrl);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -296,7 +325,19 @@ export default function Dashboard() {
   const atLimit = campaigns.length >= campaignLimit;
 
   return (
-    <main style={{ minHeight: "100vh", padding: "40px" }}>
+    <main style={{ minHeight: "100vh", padding: "40px", position: "relative" }}>
+      {/* Tavern background */}
+      {tavernBgUrl && (
+        <div style={{ position: "fixed", inset: 0, zIndex: -1, overflow: "hidden" }}>
+          <img
+            src={tavernBgUrl}
+            alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", opacity: 0.35 }}
+          />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(5,3,15,0.6) 0%, rgba(5,3,15,0.5) 60%, rgba(5,3,15,0.8) 100%)" }} />
+        </div>
+      )}
+
       {/* Character sheet modal */}
       {selectedChar && (
         <CharacterModal

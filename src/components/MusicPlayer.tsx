@@ -42,8 +42,8 @@ export function MusicPlayer() {
   const ambRef      = useRef<HTMLAudioElement | null>(null);
   const [playing,   setPlaying]   = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [volume,    setVolume]    = useState(0.25);
-  const targetVolume = useRef(0.25);
+  const [volume,    setVolume]    = useState(0.15);
+  const targetVolume = useRef(0.15);
   const activeTrack  = useRef<TrackKey>("tavern");
   const fadeTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
 
