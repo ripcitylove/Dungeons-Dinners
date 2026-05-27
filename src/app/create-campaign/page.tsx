@@ -243,8 +243,10 @@ export default function CreateCampaignWizard() {
         wisdom:       c.scores.wisdom,
         charisma:     c.scores.charisma,
         inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", c.trinket || "Mysterious Coin"] },
-        cantrips_known:  c.cantrips,
-        spells_prepared: c.spells,
+        cantrips_known:   c.cantrips,
+        spells_prepared:  c.spells,
+        spell_slots_used: {},
+        status_effects:   [],
       }));
 
       const { data: charData, error: charErr } = await supabase.from("characters").insert(rows).select();

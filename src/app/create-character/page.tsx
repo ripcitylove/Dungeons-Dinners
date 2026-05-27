@@ -203,6 +203,8 @@ export default function CreateCharacter() {
         inventory:        startingInv,
         cantrips_known:   selectedCantrips,
         spells_prepared:  selectedSpells,
+        spell_slots_used: {},
+        status_effects:   [],
       }]).select().single();
 
       if (insertError || !newChar) throw insertError ?? new Error("Insert failed");

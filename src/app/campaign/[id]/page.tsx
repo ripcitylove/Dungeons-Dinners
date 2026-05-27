@@ -960,9 +960,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Party management ─────────────────────────────────────────────────────────
   const addToParty = useCallback(async (char: Character) => {
     if (campaignPartyRef.current.some(c => c.id === char.id)) return;
-    const { error } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", char.id);
+    // Reset to full D&D 5e starting metrics when joining a campaign
+    const ib      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+    const freshHp = char.max_hp + ib.hpMaxAdd;
+    const { error } = await supabase.from("characters").update({
+      campaign_id:      params.id,
+      hp:               freshHp,
+      spell_slots_used: {},
+      status_effects:   [],
+    }).eq("id", char.id);
     if (error) { console.error("[addToParty]", error); return; }
-    const updated = { ...char };
+    const updated = { ...char, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     const newParty = [...campaignPartyRef.current, updated];
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
