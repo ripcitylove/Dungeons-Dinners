@@ -6,31 +6,26 @@ import { usePathname } from "next/navigation";
 // ── Tavern music pool (shuffled each cycle) ───────────────────────────────────
 const TAVERN_MUSIC_POOL = [
   "https://opengameart.org/sites/default/files/Kings_Feast_0.mp3",
-  "https://archive.org/download/medieval-instrumental-background-music/Dancing%20at%20the%20Inn.mp3",
-  "https://archive.org/download/medieval-instrumental-background-music/Royal%20Coupling.mp3",
-  "https://archive.org/download/medieval-instrumental-background-music/Celebration.mp3",
-  "https://opengameart.org/sites/default/files/Rezoner-Pirates-Theme.mp3",
+  "https://archive.org/download/medieval-instrumental-background-music/Through%20The%20Forest.mp3",
+  "https://archive.org/download/medieval-instrumental-background-music/Heroic%20Demise%20%28loopable%29.mp3",
+  "https://opengameart.org/sites/default/files/PiratesTheme_0.mp3",
 ];
 
 // ── Tavern ambiance pool — rotates through different atmosphere sounds ─────────
 const TAVERN_AMBIANCE_POOL = [
-  // Lively tavern crowd
+  // Lively crowd
   "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-06-Congenial%20Crowd.mp3",
-  // Bar atmosphere
-  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-22-Bar%20Sounds.mp3",
-  // Quiet background murmur
-  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-14-Indistinct%20Murmur.mp3",
-  // Dinner party / restaurant chatter
-  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R08-14-Dinner%20Party%20or%20Restaurant.mp3",
-  // Small intimate gathering
-  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R08-41-Small%20Gathering%20of%20Friends.mp3",
+  // Quieter murmur
+  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-01-Quiet%20Indoor%20Crowd.mp3",
+  // Fireplace crackling
+  "https://archive.org/download/fireplace-sounds-for-ambiance/Fireplace%20Crackling%20Loop.mp3",
+  // Rain on window (cozy tavern interior)
+  "https://archive.org/download/rain-sounds-interior-ambiance/Rain%20On%20Window%20Interior.mp3",
 ];
 
 // ── Dungeon music pool ────────────────────────────────────────────────────────
 const DUNGEON_MUSIC_POOL = [
   "https://archive.org/download/medieval-instrumental-background-music/Cold%20Journey.mp3",
-  "https://archive.org/download/medieval-instrumental-background-music/Nordic%20Wist.mp3",
-  "https://archive.org/download/medieval-instrumental-background-music/Toward%20the%20Mountains.mp3",
 ];
 
 const AMBIANCE_VOL = 0.28;
