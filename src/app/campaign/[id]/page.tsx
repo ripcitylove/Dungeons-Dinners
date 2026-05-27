@@ -23,6 +23,7 @@ type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCh
 type Character = {
   id: string; user_id?: string; name: string; race: string; class: string; level: number;
   hp: number; max_hp: number; xp?: number;
+  campaign_id?: string | null;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   background?: string;
@@ -960,38 +961,45 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Party management ─────────────────────────────────────────────────────────
   const addToParty = useCallback(async (char: Character) => {
     if (campaignPartyRef.current.some(c => c.id === char.id)) return;
-    // Reset to full D&D 5e starting metrics when joining a campaign
-    const ib      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
-    const freshHp = char.max_hp + ib.hpMaxAdd;
-    const { error } = await supabase.from("characters").update({
-      campaign_id:      params.id,
-      hp:               freshHp,
-      spell_slots_used: {},
-      status_effects:   [],
-    }).eq("id", char.id);
-    if (error) { console.error("[addToParty]", error); return; }
-    const updated = { ...char, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+
+    let updated: Character;
+
+    if (char.campaign_id !== params.id) {
+      // Joining a new campaign — reset to full D&D 5e starting metrics
+      const ib      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+      const freshHp = char.max_hp + ib.hpMaxAdd;
+      const { error } = await supabase.from("characters").update({
+        campaign_id:      params.id,
+        hp:               freshHp,
+        spell_slots_used: {},
+        status_effects:   [],
+      }).eq("id", char.id);
+      if (error) { console.error("[addToParty]", error); return; }
+      updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+    } else {
+      // Returning to an existing campaign — restore exactly as last saved
+      updated = { ...char };
+    }
+
     const newParty = [...campaignPartyRef.current, updated];
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
-    // If the user has no active character yet, use this one
     if (!characterRef.current || characterRef.current.user_id !== userIdRef.current) {
       setCharacter(updated); characterRef.current = updated;
       setActiveCharIdx(newParty.length - 1);
     }
-    narratePartyEvent("join", { userId: userIdRef.current!, characterName: char.name, characterClass: char.class, hp: char.hp, maxHp: char.max_hp, portraitUrl: char.portrait_url ?? null });
+    narratePartyEvent("join", { userId: userIdRef.current!, characterName: updated.name, characterClass: updated.class, hp: updated.hp, maxHp: updated.max_hp, portraitUrl: updated.portrait_url ?? null });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, narratePartyEvent]);
 
   const leaveParty = useCallback(async (charId: string) => {
     const char = campaignPartyRef.current.find(c => c.id === charId);
     if (!char) return;
-    const { error } = await supabase.from("characters").update({ campaign_id: null }).eq("id", charId);
-    if (error) { console.error("[leaveParty]", error); return; }
+    // Keep campaign_id intact so the character's state persists when they return.
+    // Only remove from the active party for this session.
     const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
-    // If the removed character was active, switch to first remaining character the user owns
     if (characterRef.current?.id === charId) {
       const next = newParty.find(c => c.user_id === userIdRef.current) ?? newParty[0] ?? null;
       setCharacter(next); characterRef.current = next;
