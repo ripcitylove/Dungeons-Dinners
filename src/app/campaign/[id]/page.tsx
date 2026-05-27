@@ -390,7 +390,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       change.spell_slots_used > 0;
     if (!hasChange) return;
 
-    const newHp      = Math.max(0, Math.min(char.max_hp, char.hp + change.hp_delta));
+    const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+    const effectiveMaxHp = char.max_hp + charIb.hpMaxAdd;
+    const newHp          = Math.max(0, Math.min(effectiveMaxHp, char.hp + change.hp_delta));
     const newGold    = Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta);
     const newItems   = [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained];
     const newWeapons = [...(char.inventory?.weapons ?? []), ...change.weapons_gained];
@@ -398,7 +400,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Status effects
     let newStatuses = [...(char.status_effects ?? [])];
     if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
-    if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
+    if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
     change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
     newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
 
@@ -575,11 +577,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleShortRest = useCallback(async () => {
     const char = characterRef.current;
     if (!char) return;
-    const hitDie = CLASS_HIT_DIE[char.class] ?? 8;
-    const roll   = Math.ceil(Math.random() * hitDie);
-    const conMod = Math.floor((char.constitution - 10) / 2);
-    const gained = Math.max(1, roll + conMod);
-    const newHp  = Math.min(char.max_hp, char.hp + gained);
+    const hitDie     = CLASS_HIT_DIE[char.class] ?? 8;
+    const roll       = Math.ceil(Math.random() * hitDie);
+    const conMod     = Math.floor((char.constitution - 10) / 2);
+    const gained     = Math.max(1, roll + conMod);
+    const restIb     = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+    const restMaxHp  = char.max_hp + restIb.hpMaxAdd;
+    const newHp      = Math.min(restMaxHp, char.hp + gained);
     const isWarlock = char.class === "Warlock";
     // Warlock recovers all pact slots on short rest
     const newSlotsUsed = isWarlock ? {} : { ...(char.spell_slots_used ?? {}) };
@@ -598,13 +602,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleLongRest = useCallback(async () => {
     const char = characterRef.current;
     if (!char) return;
-    // Long rest: full HP, all slots, clear non-permanent conditions
+    // Long rest: full HP (including item bonuses), all slots, clear non-permanent conditions
+    const longIb      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+    const longMaxHp   = char.max_hp + longIb.hpMaxAdd;
     const newStatuses = (char.status_effects ?? []).filter(s => s === "Dead" || s === "Petrified");
-    const updated: Character = { ...char, hp: char.max_hp, spell_slots_used: {}, status_effects: newStatuses };
+    const updated: Character = { ...char, hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses };
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
-    await supabase.from("characters").update({ hp: char.max_hp, spell_slots_used: {}, status_effects: newStatuses }).eq("id", char.id);
-    const notice = `Long Rest: HP fully restored (${char.max_hp}), spell slots recovered, conditions cleared`;
+    await supabase.from("characters").update({ hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses }).eq("id", char.id);
+    const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots recovered, conditions cleared`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 6000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
@@ -902,12 +908,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
   const copyInviteLink    = () => { navigator.clipboard.writeText(window.location.href); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
 
-  const hpPercent        = character ? Math.max(0, (character.hp / character.max_hp) * 100) : 0;
-  const hpColor          = hpPercent > 60 ? "#22c55e" : hpPercent > 25 ? "#f59e0b" : "#ef4444";
-  const otherPlayers     = players.filter(p => p.userId !== userId);
+  const otherPlayers        = players.filter(p => p.userId !== userId);
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
-  const isMyTurn         = turnOrder.length === 0 || currentTurnPlayerId === userId;
-  const allPartyCards    = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
+  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId;
+  const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
   const xpPercent  = character ? Math.min(100, ((character.xp ?? 0) / xpToNext) * 100) : 0;
@@ -916,9 +920,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     STR: "strength", DEX: "dexterity", CON: "constitution",
     INT: "intelligence", WIS: "wisdom", CHA: "charisma",
   };
-  const itemBonuses = character
+  const itemBonuses    = character
     ? computeInventoryBonuses(character.inventory?.items ?? [], character.inventory?.weapons ?? [])
     : null;
+  const effectiveMaxHp = character ? character.max_hp + (itemBonuses?.hpMaxAdd ?? 0) : 0;
+  const hpPercent      = character ? Math.max(0, Math.min(100, (character.hp / Math.max(1, effectiveMaxHp)) * 100)) : 0;
+  const hpColor        = hpPercent > 60 ? "#22c55e" : hpPercent > 25 ? "#f59e0b" : "#ef4444";
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -1162,7 +1169,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const isOnline    = players.some(p => p.userId === char.user_id);
                 const isDiceTarget = diceRollTarget === char.name;
                 const isMyChar    = char.user_id === userId;
-                const pct         = Math.max(0, (char.hp / char.max_hp) * 100);
+                const cardInv     = char.inventory ?? { gold: 0, items: [], weapons: [] };
+                const cardIb      = computeInventoryBonuses(cardInv.items, cardInv.weapons);
+                const cardMaxHp   = char.max_hp + cardIb.hpMaxAdd;
+                const pct         = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
                 const color       = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
                 const classEmoji  = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
                 const borderColor = isDiceTarget ? "rgba(251,191,36,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
@@ -1198,7 +1208,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }}>{char.hp}/{char.max_hp} HP</span>
+                      <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
+                        {char.hp}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
+                      </span>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
                           <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
@@ -1412,7 +1424,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "0.85rem" }}>
                     <span style={{ color: "#94a3b8" }}>Hit Points</span>
-                    <span style={{ fontWeight: "bold", color: hpColor }}>{character.hp} / {character.max_hp}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                      <span style={{ fontWeight: "bold", color: hpColor }}>{character.hp} / {effectiveMaxHp}</span>
+                      {(itemBonuses?.hpMaxAdd ?? 0) > 0 && (
+                        <span
+                          title={`Base max HP: ${character.max_hp} · Item bonus: +${itemBonuses!.hpMaxAdd} · Effective max: ${effectiveMaxHp}`}
+                          style={{ fontSize: "0.65rem", color: "#f59e0b", fontWeight: "bold", cursor: "help", background: "rgba(245,158,11,0.15)", borderRadius: "4px", padding: "1px 5px" }}
+                        >✦+{itemBonuses!.hpMaxAdd}</span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ width: "100%", height: "10px", background: "#3f3f46", borderRadius: "5px", overflow: "hidden" }}>
                     <div style={{ width: `${hpPercent}%`, height: "100%", background: hpColor, transition: "width 0.4s ease, background 0.4s ease" }} />

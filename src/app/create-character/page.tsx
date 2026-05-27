@@ -103,6 +103,7 @@ export default function CreateCharacter() {
   const [scores, setScores]             = useState<AbilityScores>(DEFAULT_SCORES);
   const [nameError, setNameError]       = useState('');
   const [saving, setSaving]             = useState(false);
+  const [portraitGenerating, setPortraitGenerating] = useState(false);
   const [hoveredStat, setHoveredStat]   = useState<string | null>(null);
 
   // Spell selection state
@@ -206,21 +207,24 @@ export default function CreateCharacter() {
 
       if (insertError || !newChar) throw insertError ?? new Error("Insert failed");
 
-      // Generate portrait in background (non-blocking redirect)
-      router.push('/dashboard');
+      // Generate portrait synchronously so dashboard loads with portrait already set
+      setSaving(false);
+      setPortraitGenerating(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch('/api/generate-portrait', {
+            method: 'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id }),
+          });
+        }
+      } catch { /* portrait failure is non-critical — character still created */ }
 
-      // Fire-and-forget portrait generation
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        fetch('/api/generate-portrait', {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id }),
-        }).catch(console.error);
-      }
+      router.push('/dashboard');
     } catch (err) {
       console.error("Error saving character:", err);
       alert("Failed to save character. Please try again.");
@@ -250,6 +254,24 @@ export default function CreateCharacter() {
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+
+      {/* Portrait generation overlay */}
+      {portraitGenerating && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,3,15,0.95)', zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
+          <div className="animate-fade-in" style={{ textAlign: 'center', padding: '40px' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '20px' }}>🎨</div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '10px' }}>Painting your portrait…</h2>
+            <p style={{ color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>The artist captures your likeness in ink and magic.<br />This takes about 20 seconds.</p>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', animation: `blink 1.2s step-end ${i * 0.4}s infinite` }} />
+              ))}
+            </div>
+          </div>
+          <style>{`@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }`}</style>
+        </div>
+      )}
+
       <div className="glass-panel" style={{ width: '100%', maxWidth: '860px', padding: '40px', position: 'relative' }}>
 
         {/* Progress bar */}
@@ -474,7 +496,7 @@ export default function CreateCharacter() {
             <button
               className="btn-primary"
               onClick={handleFinish}
-              disabled={saving || (step === 4 && !character.weapon) || (step === 5 && !spellsReady)}
+              disabled={saving || portraitGenerating || (step === 4 && !character.weapon) || (step === 5 && !spellsReady)}
               style={{ background: 'var(--accent)' }}
             >
               {saving ? 'Creating…' : 'Complete Character'}

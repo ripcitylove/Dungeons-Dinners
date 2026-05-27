@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
+import { computeInventoryBonuses } from "../../lib/lootData";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
@@ -50,9 +51,11 @@ function CharacterModal({
   onClose: () => void;
   onDelete: (id: string, name: string) => void;
 }) {
-  const hpPct = Math.max(0, Math.min(100, Math.round((char.hp / char.max_hp) * 100)));
-  const hpColor = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
-  const inv = char.inventory;
+  const modalIb       = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+  const modalMaxHp    = char.max_hp + modalIb.hpMaxAdd;
+  const hpPct         = Math.max(0, Math.min(100, Math.round((char.hp / Math.max(1, modalMaxHp)) * 100)));
+  const hpColor       = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
+  const inv           = char.inventory;
   const [hoveredStat, setHoveredStat] = useState<string | null>(null);
 
   return (
@@ -95,7 +98,12 @@ function CharacterModal({
             {/* HP bar */}
             <div style={{ fontSize: "0.78rem", display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
               <span style={{ color: "#64748b" }}>Hit Points</span>
-              <span style={{ color: hpColor, fontWeight: "bold" }}>{char.hp} / {char.max_hp}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ color: hpColor, fontWeight: "bold" }}>{char.hp} / {modalMaxHp}</span>
+                {modalIb.hpMaxAdd > 0 && (
+                  <span title={`Base max HP: ${char.max_hp} · Item bonus: +${modalIb.hpMaxAdd}`} style={{ fontSize: "0.6rem", color: "#f59e0b", fontWeight: "bold", cursor: "help", background: "rgba(245,158,11,0.15)", borderRadius: "4px", padding: "1px 4px" }}>✦+{modalIb.hpMaxAdd}</span>
+                )}
+              </div>
             </div>
             <div style={{ height: "8px", borderRadius: "4px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${hpPct}%`, background: hpColor, borderRadius: "4px", transition: "width 0.4s ease" }} />
@@ -502,14 +510,16 @@ export default function Dashboard() {
                     {char.race} {char.class} · Lvl {char.level}
                   </p>
                   {/* Mini HP bar */}
-                  <div style={{ marginTop: "5px", height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.08)", overflow: "hidden", width: "80%" }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${Math.max(0, Math.min(100, Math.round((char.hp / char.max_hp) * 100)))}%`,
-                      background: char.hp / char.max_hp > 0.5 ? "#22c55e" : char.hp / char.max_hp > 0.25 ? "#f59e0b" : "#ef4444",
-                      borderRadius: "2px",
-                    }} />
-                  </div>
+                  {(() => {
+                    const rIb  = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+                    const rMax = Math.max(1, char.max_hp + rIb.hpMaxAdd);
+                    const rPct = Math.max(0, Math.min(100, Math.round((char.hp / rMax) * 100)));
+                    return (
+                      <div style={{ marginTop: "5px", height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.08)", overflow: "hidden", width: "80%" }}>
+                        <div style={{ height: "100%", width: `${rPct}%`, background: rPct > 50 ? "#22c55e" : rPct > 25 ? "#f59e0b" : "#ef4444", borderRadius: "2px" }} />
+                      </div>
+                    );
+                  })()}
                 </div>
                 <button
                   onClick={e => { e.stopPropagation(); deleteCharacter(char.id, char.name); }}
