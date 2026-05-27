@@ -977,8 +977,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (error) { console.error("[addToParty]", error); return; }
       updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     } else {
-      // Returning to an existing campaign — restore exactly as last saved
-      updated = { ...char };
+      // Returning to an existing campaign — restore as last saved, but clamp hp to max
+      const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+      const clampedHp = Math.min(char.hp, char.max_hp + ib.hpMaxAdd);
+      updated = { ...char, hp: clampedHp };
+      if (clampedHp !== char.hp) {
+        await supabase.from("characters").update({ hp: clampedHp }).eq("id", char.id);
+      }
     }
 
     const newParty = [...campaignPartyRef.current, updated];
@@ -1313,7 +1318,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
-                        {char.hp}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
+                        {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
                       </span>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
@@ -1529,7 +1534,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "0.85rem" }}>
                     <span style={{ color: "#94a3b8" }}>Hit Points</span>
                     <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                      <span style={{ fontWeight: "bold", color: hpColor }}>{character.hp} / {effectiveMaxHp}</span>
+                      <span style={{ fontWeight: "bold", color: hpColor }}>{Math.min(character.hp, effectiveMaxHp)} / {effectiveMaxHp}</span>
                       {(itemBonuses?.hpMaxAdd ?? 0) > 0 && (
                         <span
                           title={`Base max HP: ${character.max_hp} · Item bonus: +${itemBonuses!.hpMaxAdd} · Effective max: ${effectiveMaxHp}`}
