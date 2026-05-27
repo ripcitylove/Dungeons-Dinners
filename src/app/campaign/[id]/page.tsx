@@ -259,18 +259,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Load ALL of the current user's characters (no limit — used for roster + active char)
         supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
-        supabase.from("characters").select("*").eq("campaign_id", params.id).eq("party_active", true).order("created_at"),
+        // Fetch all characters in this campaign; filter party_active in JS so the
+        // query never fails if the column is NULL or the migration hasn't run yet.
+        supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
         supabase.from("campaigns").select("title").eq("id", params.id).single(),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       else if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
+      if (partyRes.error) console.error("[campaign] party fetch:", partyRes.error.message);
+
       // Roster = all user characters
       if (charRes.data) setUserRoster(charRes.data as Character[]);
 
-      if (partyRes.data?.length) {
-        const party = partyRes.data as Character[];
+      // Include characters where party_active is true OR null (handles missing migration)
+      const rawParty = (partyRes.data ?? []) as Character[];
+      const party    = rawParty.filter(c => c.party_active !== false);
+
+      if (party.length) {
         setCampaignParty(party);
         campaignPartyRef.current = party;
         // Set active character to the current user's own character in the party
