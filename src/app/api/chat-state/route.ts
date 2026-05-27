@@ -42,6 +42,9 @@ Rules:
 - A creature falling to 0 HP = Unconscious (if not dead).
 - Status effects: only add when DM explicitly applies the condition.
 - Spell slots: only count when a leveled spell is explicitly cast.
+- Currency: "a pouch of coins", "a purse of gold", "handful of silver" — estimate the gold value and include in gold_delta. NPC gifts of coins count as positive gold_delta.
+- Items received from NPCs as rewards, gifts, or trades count the same as found loot — include in items_gained or weapons_gained.
+- Use the exact item name the DM stated (e.g. "Potion of Healing", "Longsword +1", "Ring of Protection").
 - No markdown, no explanation — output JSON only.`;
 
 export async function POST(req: NextRequest) {

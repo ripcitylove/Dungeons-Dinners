@@ -8,6 +8,11 @@ import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
 import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle } from "../../../lib/spellData";
+import {
+  getItemByName, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
+  buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
+  type LootItem,
+} from "../../../lib/lootData";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -157,6 +162,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Stat tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
+
+  // Item tooltip hover
+  const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
@@ -605,16 +613,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "dm_typing", payload: { senderId: userId, typing: true } });
 
     try {
+      const charForDM = character ? (() => {
+        const inv = character.inventory ?? { gold: 0, items: [], weapons: [] };
+        const ib  = computeInventoryBonuses(inv.items, inv.weapons);
+        const baseAC = computeAC(character.class, character.dexterity, character.constitution, character.wisdom, inv.items, inv.weapons);
+        return {
+          ...character,
+          strength:     getEffectiveStat(character.strength,     "strength",     ib),
+          dexterity:    getEffectiveStat(character.dexterity,    "dexterity",    ib),
+          constitution: getEffectiveStat(character.constitution, "constitution", ib),
+          intelligence: getEffectiveStat(character.intelligence, "intelligence", ib),
+          wisdom:       getEffectiveStat(character.wisdom,       "wisdom",       ib),
+          charisma:     getEffectiveStat(character.charisma,     "charisma",     ib),
+          ac: baseAC + ib.acAdd,
+          active_item_effects: ib.activeEffects.map(e => `${e.itemName}: ${e.text}`),
+        };
+      })() : null;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: allMessages,
-          character: character ? {
-            ...character,
-            ac: computeAC(character.class, character.dexterity, character.constitution, character.wisdom, character.inventory?.items, character.inventory?.weapons),
-          } : null,
-        }),
+        body: JSON.stringify({ messages: allMessages, character: charForDM }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("DM unavailable");
@@ -754,6 +773,44 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
   }, []);
 
+  const handleUseItem = useCallback(async (itemName: string) => {
+    const char = characterRef.current;
+    if (!char) return;
+    const item = getItemByName(itemName);
+    if (!item || !item.consumable) return;
+
+    const healEffect = item.effects.find(e => e.type === "hp_heal");
+    let newHp = char.hp;
+    const parts: string[] = [`Used ${itemName}`];
+
+    if (healEffect?.diceFormula) {
+      const { total, rolls } = rollDiceFormula(healEffect.diceFormula);
+      const healed = Math.min(char.max_hp - char.hp, total);
+      newHp = char.hp + healed;
+      parts.push(`+${healed} HP (${healEffect.diceFormula}: [${rolls.join("+")}] = ${total})`);
+    } else {
+      const specialFx = item.effects.find(e => e.type === "special")?.description;
+      if (specialFx) parts.push(specialFx.slice(0, 60));
+    }
+    parts.push("(consumed)");
+
+    let removed = false;
+    const newItems = char.inventory.items.filter(i => {
+      if (!removed && i === itemName) { removed = true; return false; }
+      return true;
+    });
+    const newInv = { ...char.inventory, items: newItems };
+    const updatedChar: Character = { ...char, hp: newHp, inventory: newInv };
+    setCharacter(updatedChar);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updatedChar : c));
+    await supabase.from("characters").update({ hp: newHp, inventory: newInv }).eq("id", char.id);
+
+    const notice = parts.join(" · ");
+    setStateNotice(notice);
+    setTimeout(() => setStateNotice(null), 5000);
+    setLogEntries(prev => [...prev, { id: `use-${Date.now()}`, timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
+  }, []);
+
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
   const copyInviteLink    = () => { navigator.clipboard.writeText(window.location.href); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
 
@@ -766,6 +823,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
   const xpPercent  = character ? Math.min(100, ((character.xp ?? 0) / xpToNext) * 100) : 0;
+
+  const STAT_KEY_MAP: Record<string, string> = {
+    STR: "strength", DEX: "dexterity", CON: "constitution",
+    INT: "intelligence", WIS: "wisdom", CHA: "charisma",
+  };
+  const itemBonuses = character
+    ? computeInventoryBonuses(character.inventory?.items ?? [], character.inventory?.weapons ?? [])
+    : null;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -1193,10 +1258,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                 {/* Ability scores */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
-                  {([["STR", character.strength], ["DEX", character.dexterity], ["CON", character.constitution], ["INT", character.intelligence], ["WIS", character.wisdom], ["CHA", character.charisma]] as [string, number][]).map(([label, score]) => {
-                    const m = Math.floor((score - 10) / 2);
-                    const guide = CLASS_STAT_GUIDES[character.class]?.[label];
-                    const tierStyle = guide ? getTierStyle(guide.tier) : null;
+                  {([["STR", character.strength], ["DEX", character.dexterity], ["CON", character.constitution], ["INT", character.intelligence], ["WIS", character.wisdom], ["CHA", character.charisma]] as [string, number][]).map(([label, baseScore]) => {
+                    const statKey    = STAT_KEY_MAP[label];
+                    const effScore   = itemBonuses ? getEffectiveStat(baseScore, statKey, itemBonuses) : baseScore;
+                    const m          = Math.floor((effScore - 10) / 2);
+                    const guide      = CLASS_STAT_GUIDES[character.class]?.[label];
+                    const tierStyle  = guide ? getTierStyle(guide.tier) : null;
+                    const addBonus   = itemBonuses?.statAdd[statKey] ?? 0;
+                    const setBonus   = itemBonuses?.statSet[statKey] ?? 0;
+                    const hasItemBuf = addBonus !== 0 || (setBonus > 0 && setBonus > baseScore);
+                    const netDiff    = effScore - baseScore;
                     return (
                       <div
                         key={label}
@@ -1205,17 +1276,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         onMouseLeave={() => setHoveredStat(null)}
                       >
                         <div style={{ fontSize: "0.65rem", color: "#94a3b8", marginBottom: "2px" }}>{label}</div>
-                        <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{score}</div>
+                        <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{effScore}</div>
                         <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
-                        {tierStyle && (
+                        {hasItemBuf && (
+                          <div style={{ fontSize: "0.5rem", color: netDiff > 0 ? "#f59e0b" : "#ef4444", marginTop: "1px", fontWeight: "bold" }}>
+                            {netDiff > 0 ? `✦+${netDiff}` : `✦${netDiff}`}
+                          </div>
+                        )}
+                        {tierStyle && !hasItemBuf && (
                           <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
                             {tierStyle.label.toUpperCase()}
                           </div>
                         )}
-                        {hoveredStat === label && guide && tierStyle && (
-                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "160px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
-                            <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
-                            {guide.reason}
+                        {hoveredStat === label && (
+                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "170px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                            {hasItemBuf && (
+                              <div style={{ marginBottom: "5px", paddingBottom: "5px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                                <div style={{ color: "#94a3b8", fontSize: "0.65rem", marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
+                                {addBonus !== 0 && <div style={{ color: netDiff > 0 ? "#f59e0b" : "#ef4444" }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
+                                {setBonus > baseScore && <div style={{ color: "#f59e0b" }}>Set to minimum: {setBonus}</div>}
+                              </div>
+                            )}
+                            {guide && tierStyle && (
+                              <>
+                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
+                                {guide.reason}
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1280,24 +1367,70 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     <span>Gold</span>
                     <span style={{ color: "#fbbf24", fontWeight: "bold" }}>{character.inventory?.gold ?? 0}gp</span>
                   </div>
-                  {character.inventory?.weapons?.map((w, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", marginBottom: "4px", fontSize: "0.82rem" }}>
-                      <span>⚔️ {w}</span>
-                      <button onClick={() => dropItem(w, "weapon")} title="Drop to party pool"
-                        style={{ fontSize: "0.6rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
-                        onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}>drop</button>
-                    </div>
-                  ))}
-                  {character.inventory?.items?.map((item, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", marginBottom: "4px", fontSize: "0.82rem" }}>
-                      <span>🎒 {item}</span>
-                      <button onClick={() => dropItem(item, "item")} title="Drop to party pool"
-                        style={{ fontSize: "0.6rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
-                        onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}>drop</button>
-                    </div>
-                  ))}
+                  {[
+                    ...(character.inventory?.weapons ?? []).map(w => ({ name: w, slot: "weapon" as const })),
+                    ...(character.inventory?.items   ?? []).map(i => ({ name: i, slot: "item"   as const })),
+                  ].map(({ name, slot }, idx) => {
+                    const catalogItem: LootItem | undefined = getItemByName(name);
+                    const rarityColor = catalogItem ? RARITY_COLORS[catalogItem.rarity] : "#475569";
+                    const icon        = catalogItem ? ITEM_ICONS[catalogItem.type] : (slot === "weapon" ? "⚔" : "🎒");
+                    const isHovered   = hoveredItem === `${slot}-${idx}`;
+                    return (
+                      <div key={`${slot}-${idx}`} style={{ position: "relative", marginBottom: "4px" }}>
+                        <div
+                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", fontSize: "0.82rem", border: `1px solid ${catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
+                          onMouseEnter={() => setHoveredItem(`${slot}-${idx}`)}
+                          onMouseLeave={() => setHoveredItem(null)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
+                            <span style={{ flexShrink: 0 }}>{icon}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: catalogItem ? rarityColor : "#e2e8f0" }}>{name}</div>
+                              {catalogItem && (
+                                <div style={{ fontSize: "0.58rem", color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
+                                  {RARITY_LABELS[catalogItem.rarity]}{catalogItem.requiresAttunement ? " · Attunement" : ""}{catalogItem.cursed ? " ⚠️" : ""}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "6px" }}>
+                            {catalogItem?.consumable && (
+                              <button
+                                onClick={() => handleUseItem(name)}
+                                style={{ fontSize: "0.58rem", color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
+                              >Use</button>
+                            )}
+                            <button
+                              onClick={() => dropItem(name, slot)}
+                              title="Drop to party pool"
+                              style={{ fontSize: "0.58rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
+                              onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}
+                            >drop</button>
+                          </div>
+                        </div>
+                        {isHovered && catalogItem && (
+                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                              <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
+                              <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
+                            </div>
+                            <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
+                            {catalogItem.effects.map((fx, fi) => fx.description && (
+                              <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
+                                {fx.description}
+                              </div>
+                            ))}
+                            {catalogItem.requiresAttunement && (
+                              <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Rest */}

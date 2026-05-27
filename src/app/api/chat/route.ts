@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { DM_LOOT_GUIDE } from "../../../lib/lootData";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
@@ -16,6 +17,7 @@ type Character = {
   spells_prepared?: string[];
   spell_slots_used?: Record<number, number>;
   inventory: { gold: number; weapons: string[]; items: string[] };
+  active_item_effects?: string[];  // passive magic item effects active on this character
 };
 
 function mod(score: number) {
@@ -68,7 +70,9 @@ MECHANICS (woven into the narrative, not announced)
 - Award gold and items explicitly so players can update their sheet, but thread it into the moment.
 
 PACING
-2–4 paragraphs. Match energy to context: spare and clipped during a chase; slow and atmospheric in a cursed library. Always end on something the player can react to — a choice, a threat, a question hanging in the air.`;
+2–4 paragraphs. Match energy to context: spare and clipped during a chase; slow and atmospheric in a cursed library. Always end on something the player can react to — a choice, a threat, a question hanging in the air.
+
+${DM_LOOT_GUIDE}`;
 
   if (!char) return voice;
 
@@ -92,6 +96,10 @@ PACING
     spellInfo = `\nCantrips: ${cantrips}\nPrepared spells: ${prepared}\nSlots used this session: ${slotLines}`;
   }
 
+  const itemFx = char.active_item_effects?.length
+    ? `\nMagic item effects: ${char.active_item_effects.join("; ")}`
+    : "";
+
   return `${voice}
 
 ACTIVE CHARACTER
@@ -100,9 +108,9 @@ HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 Weapons: ${weapons}
 Items: ${items}${char.background ? `\nBackground: ${char.background}` : ""}
-Status: ${statuses}${spellInfo}
+Status: ${statuses}${spellInfo}${itemFx}
 
-Reference these stats for all checks and combat. Roll attacks against the character's AC (${ac}). Enforce spell slot limits.`;
+Reference these stats for all checks and combat. Roll attacks against the character's AC (${ac}). Enforce spell slot limits. Stats shown are effective values including magic item bonuses.`;
 }
 
 export async function POST(req: NextRequest) {
