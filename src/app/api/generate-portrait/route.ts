@@ -26,9 +26,26 @@ const CLASS_DESC: Record<string, string> = {
   Sorcerer:  "in dramatic robes, crackling magical energy coiling around outstretched fingertips",
 };
 
+// Use service role key server-side to bypass storage RLS.
+// Falls back to user-auth approach if service key is not configured.
+function makeSupabase(authHeader: string | null) {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceKey,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+  }
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    authHeader ? { global: { headers: { Authorization: authHeader } } } : {}
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Accept the user's session token so storage upload respects auth RLS
     const authHeader = req.headers.get("authorization");
     const { race, cls, sex, charId } = (await req.json()) as {
       race: string; cls: string; sex: string; charId: string;
@@ -51,15 +68,10 @@ export async function POST(req: NextRequest) {
     });
 
     const b64 = imgResponse.data?.[0]?.b64_json;
-    if (!b64) throw new Error("No image data returned");
+    if (!b64) throw new Error("No image data returned from OpenAI");
     const imgBuffer = Buffer.from(b64, "base64");
 
-    // Upload to Supabase Storage using the caller's auth token
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      authHeader ? { global: { headers: { Authorization: authHeader } } } : {}
-    );
+    const supabase = makeSupabase(authHeader);
 
     const path = `${charId}.png`;
     const { error: uploadError } = await supabase.storage
@@ -67,14 +79,22 @@ export async function POST(req: NextRequest) {
       .upload(path, imgBuffer, { contentType: "image/png", upsert: true });
 
     if (uploadError) {
-      console.error("[generate-portrait] storage upload:", uploadError.message);
-      return Response.json({ error: "Upload failed" }, { status: 500 });
+      console.error("[generate-portrait] storage upload failed:", uploadError.message);
+      return Response.json({ error: "Upload failed", detail: uploadError.message }, { status: 500 });
     }
 
     const { data: { publicUrl } } = supabase.storage.from("portraits").getPublicUrl(path);
 
-    // Persist portrait URL on the character row
-    await supabase.from("characters").update({ portrait_url: publicUrl }).eq("id", charId);
+    const { error: updateError } = await supabase
+      .from("characters")
+      .update({ portrait_url: publicUrl })
+      .eq("id", charId);
+
+    if (updateError) {
+      console.error("[generate-portrait] character update failed:", updateError.message);
+      // Still return the URL so the client can display it even if DB write failed
+      return Response.json({ url: publicUrl, stored: false });
+    }
 
     return Response.json({ url: publicUrl, stored: true });
   } catch (err) {

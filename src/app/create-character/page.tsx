@@ -212,17 +212,22 @@ export default function CreateCharacter() {
       setPortraitGenerating(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          await fetch('/api/generate-portrait', {
-            method: 'POST',
-            headers: {
-              'Content-Type':  'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id }),
-          });
+        const token = session?.access_token;
+        const res = await fetch('/api/generate-portrait', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.error('[create-character] portrait generation failed:', res.status, body);
         }
-      } catch { /* portrait failure is non-critical — character still created */ }
+      } catch (portraitErr) {
+        console.error('[create-character] portrait fetch error:', portraitErr);
+      }
 
       router.push('/dashboard');
     } catch (err) {

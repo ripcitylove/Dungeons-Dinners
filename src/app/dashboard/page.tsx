@@ -30,6 +30,21 @@ const CAMPAIGN_LIMITS: Record<Tier, number> = {
   free: 1, tavern: 5, dm: Infinity, legendary: Infinity,
 };
 
+const CLASS_COLORS: Record<string, string> = {
+  Fighter:   "#ef4444",
+  Wizard:    "#3b82f6",
+  Rogue:     "#94a3b8",
+  Cleric:    "#f59e0b",
+  Paladin:   "#fbbf24",
+  Ranger:    "#22c55e",
+  Bard:      "#ec4899",
+  Warlock:   "#8b5cf6",
+  Barbarian: "#f97316",
+  Druid:     "#65a30d",
+  Monk:      "#06b6d4",
+  Sorcerer:  "#a855f7",
+};
+
 const ABILITY_LABELS = [
   ["STR", "strength"], ["DEX", "dexterity"], ["CON", "constitution"],
   ["INT", "intelligence"], ["WIS", "wisdom"], ["CHA", "charisma"],
@@ -91,7 +106,7 @@ function CharacterModal({
             }
           </div>
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "4px" }}>{char.name}</h2>
+            <h2 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "4px", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: "12px" }}>
               {char.race} {char.class} · Level {char.level}
             </p>
@@ -505,7 +520,7 @@ export default function Dashboard() {
                   }
                 </div>
                 <div style={{ flex: 1 }}>
-                  <h4 style={{ fontWeight: "bold" }}>{char.name}</h4>
+                  <h4 style={{ fontWeight: "bold", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</h4>
                   <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>
                     {char.race} {char.class} · Lvl {char.level}
                   </p>
