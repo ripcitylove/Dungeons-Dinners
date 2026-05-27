@@ -86,9 +86,7 @@ export async function POST(req: NextRequest) {
 
     if (uploadError) {
       console.warn("[detect-scene] storage upload failed:", uploadError.message);
-      // Cache the DALL-E URL temporarily
-      await supabase.from("scenes").upsert({ name: sceneName, image_url: dalleUrl });
-      return Response.json({ sceneName, imageUrl: dalleUrl });
+      return Response.json({ sceneName, imageUrl: null });
     }
 
     const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(`${sceneName}.png`);
