@@ -54,7 +54,7 @@ export async function GET() {
 
     if (uploadErr) {
       console.warn("[tavern-bg] upload failed:", uploadErr.message);
-      return Response.json({ imageUrl: dalleUrl });
+      return Response.json({ imageUrl: null });
     }
 
     const { data: urlData } = supabase.storage.from("scenes").getPublicUrl("tavern-dashboard.png");

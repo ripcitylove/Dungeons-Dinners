@@ -68,8 +68,7 @@ export async function POST(req: NextRequest) {
 
     if (uploadError) {
       console.error("[generate-portrait] storage upload:", uploadError.message);
-      // Fall back: return the (temporary) DALL-E URL so the client can still display it
-      return Response.json({ url: dalleUrl, stored: false });
+      return Response.json({ error: "Upload failed" }, { status: 500 });
     }
 
     const { data: { publicUrl } } = supabase.storage.from("portraits").getPublicUrl(path);
