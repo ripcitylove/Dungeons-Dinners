@@ -25,6 +25,7 @@ type Character = {
   id: string; user_id?: string; name: string; race: string; class: string; level: number;
   hp: number; max_hp: number; xp?: number;
   campaign_id?: string | null;
+  party_active?: boolean;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   background?: string;
@@ -257,7 +258,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Load ALL of the current user's characters (no limit — used for roster + active char)
         supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
-        supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
+        supabase.from("characters").select("*").eq("campaign_id", params.id).eq("party_active", true).order("created_at"),
         supabase.from("campaigns").select("title").eq("id", params.id).single(),
       ]);
 
@@ -702,7 +703,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   useEffect(() => { narratePartyEventRef.current = narratePartyEvent; }, [narratePartyEvent]);
 
-  const kickPlayer = useCallback((player: PresencePlayer) => {
+  const kickPlayer = useCallback(async (player: PresencePlayer) => {
+    const theirChars = campaignPartyRef.current.filter(c => c.user_id === player.userId);
+    await Promise.all(theirChars.map(c => supabase.from("characters").update({ party_active: false }).eq("id", c.id)));
     channelRef.current?.send({ type: "broadcast", event: "player_kicked", payload: { targetUserId: player.userId } });
     narratePartyEvent("kick", player);
   }, [narratePartyEvent]);
@@ -1054,20 +1057,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const freshHp = char.max_hp + ib.hpMaxAdd;
       const { error } = await supabase.from("characters").update({
         campaign_id:      params.id,
+        party_active:     true,
         hp:               freshHp,
         spell_slots_used: {},
         status_effects:   [],
       }).eq("id", char.id);
       if (error) { console.error("[addToParty]", error); return; }
-      updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+      updated = { ...char, campaign_id: params.id, party_active: true, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     } else {
-      // Returning to an existing campaign — restore as last saved, but clamp hp to max
+      // Returning to this campaign — restore last saved state, clamp hp, mark active
       const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
       const clampedHp = Math.min(char.hp, char.max_hp + ib.hpMaxAdd);
-      updated = { ...char, hp: clampedHp };
-      if (clampedHp !== char.hp) {
-        await supabase.from("characters").update({ hp: clampedHp }).eq("id", char.id);
-      }
+      const dbUpdate: Record<string, unknown> = { party_active: true };
+      if (clampedHp !== char.hp) dbUpdate.hp = clampedHp;
+      await supabase.from("characters").update(dbUpdate).eq("id", char.id);
+      updated = { ...char, party_active: true, hp: clampedHp };
     }
 
     const newParty = [...campaignPartyRef.current, updated];
@@ -1085,8 +1089,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const leaveParty = useCallback(async (charId: string) => {
     const char = campaignPartyRef.current.find(c => c.id === charId);
     if (!char) return;
-    // Keep campaign_id intact so the character's state persists when they return.
-    // Only remove from the active party for this session.
+    // Persist the removal — character keeps campaign_id (state preserved) but is inactive
+    await supabase.from("characters").update({ party_active: false }).eq("id", charId);
     const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
