@@ -317,7 +317,7 @@ export default function CreateCharacter() {
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Race</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                  {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling'].map(race => (
+                  {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
                     <div key={race} onClick={() => setCharacter(c => ({ ...c, race }))}
                       style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.race === race ? 'var(--primary)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
                       {race}

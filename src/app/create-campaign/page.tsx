@@ -427,7 +427,7 @@ export default function CreateCampaignWizard() {
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Race</label>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-                      {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling"].map(race => (
+                      {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
                         <div key={race} onClick={() => setDraft(d => ({ ...d, race }))} style={{
                           padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
                           border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,

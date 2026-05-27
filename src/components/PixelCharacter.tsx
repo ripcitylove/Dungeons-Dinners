@@ -32,6 +32,9 @@ const RACE_PALETTES: Record<string, ColorMap> = {
   Halfling:   { S:"#D4A574", K:"#B07840", H:"#6B3A0A", D:"#4A2008", E:"#7B4F19" },
   Dragonborn: { S:"#4A8040", K:"#2E5828", H:"#1E3A18", D:"#142810", E:"#FF6000" },
   Tiefling:   { S:"#9B4DB5", K:"#7A2E99", H:"#E8E8E8", D:"#C0C0C0", E:"#CC0000" },
+  Gnome:      { S:"#D4B896", K:"#A08060", H:"#7A5030", D:"#4A3018", E:"#20C070" },
+  "Half-Elf": { S:"#F0D0B0", K:"#D0A880", H:"#C0A060", D:"#806830", E:"#60A090" },
+  "Half-Orc": { S:"#7A9060", K:"#506040", H:"#2A2A2A", D:"#181818", E:"#D06020" },
 };
 
 // ── Class palettes ───────────────────────────────────────────────────────────

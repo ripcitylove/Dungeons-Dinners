@@ -9,6 +9,9 @@ const RACE_DESC: Record<string, string> = {
   Halfling:  "halfling — small, nimble, with large curious eyes and curly hair",
   Dragonborn:"dragonborn with reptilian scales, a draconic face, and an imposing presence",
   Tiefling:  "tiefling with small curved horns, solid-colored eyes, and a long tail",
+  Gnome:     "gnome — tiny and quick-witted with large bright eyes and a cheerful energetic face",
+  "Half-Elf":"half-elf with subtly pointed ears, blending human warmth with elven grace and sharp features",
+  "Half-Orc":"half-orc with prominent tusks, a powerful broad-shouldered build, and fierce determined eyes",
 };
 
 const CLASS_DESC: Record<string, string> = {
