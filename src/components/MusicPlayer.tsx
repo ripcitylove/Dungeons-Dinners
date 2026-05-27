@@ -3,94 +3,145 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 
-const TRACKS = {
-  tavern: {
-    src:      "https://opengameart.org/sites/default/files/Kings_Feast_0.mp3",
-    ambiance: "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-06-Congenial%20Crowd.mp3",
-    label:    "Tavern",
-  },
-  dungeon: {
-    src:      "https://archive.org/download/medieval-instrumental-background-music/Cold%20Journey.mp3",
-    ambiance: null,
-    label:    "Dungeon",
-  },
-} as const;
+// ── Tavern music pool (shuffled each cycle) ───────────────────────────────────
+const TAVERN_MUSIC_POOL = [
+  "https://opengameart.org/sites/default/files/Kings_Feast_0.mp3",
+  "https://archive.org/download/medieval-instrumental-background-music/Through%20The%20Forest.mp3",
+  "https://archive.org/download/medieval-instrumental-background-music/Heroic%20Demise%20%28loopable%29.mp3",
+  "https://opengameart.org/sites/default/files/PiratesTheme_0.mp3",
+];
 
-type TrackKey = keyof typeof TRACKS;
+// ── Tavern ambiance pool — rotates through different atmosphere sounds ─────────
+const TAVERN_AMBIANCE_POOL = [
+  // Lively crowd
+  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-06-Congenial%20Crowd.mp3",
+  // Quieter murmur
+  "https://archive.org/download/Red_Library_Crowds_Indoor_1/R05-01-Quiet%20Indoor%20Crowd.mp3",
+  // Fireplace crackling
+  "https://archive.org/download/fireplace-sounds-for-ambiance/Fireplace%20Crackling%20Loop.mp3",
+  // Rain on window (cozy tavern interior)
+  "https://archive.org/download/rain-sounds-interior-ambiance/Rain%20On%20Window%20Interior.mp3",
+];
 
-// Ambient volume is intentionally lower than music so crowd noise sits beneath the melody
+// ── Dungeon music pool ────────────────────────────────────────────────────────
+const DUNGEON_MUSIC_POOL = [
+  "https://archive.org/download/medieval-instrumental-background-music/Cold%20Journey.mp3",
+];
+
 const AMBIANCE_VOL = 0.28;
+const MAX_SKIP = 6; // give up showing music after this many consecutive errors
 
-// Global handle so the campaign page can call play() directly within its
-// own click handler — the only guaranteed way to stay inside a user-gesture
-// call stack across all browsers.
 declare global {
   interface Window { __dndMusicPlay?: () => void; }
 }
 
-function startAmbiance(el: HTMLAudioElement | null, trackKey: TrackKey) {
-  if (!el) return;
-  const src = TRACKS[trackKey].ambiance;
-  if (!src) { el.pause(); el.src = ""; return; }
-  if (el.src !== src) { el.src = src; el.volume = AMBIANCE_VOL; }
-  el.play().catch(() => {});
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function nextFrom(queue: string[], pool: string[]): { src: string; queue: string[] } {
+  const q = queue.length ? queue : shuffle(pool);
+  const [src, ...rest] = q;
+  return { src: src ?? pool[0], queue: rest };
 }
 
 export function MusicPlayer() {
   const pathname = usePathname();
-  const audioRef    = useRef<HTMLAudioElement | null>(null);
-  const ambRef      = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ambRef   = useRef<HTMLAudioElement | null>(null);
+
   const [playing,   setPlaying]   = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [volume,    setVolume]    = useState(0.15);
-  const targetVolume = useRef(0.15);
-  const activeTrack  = useRef<TrackKey>("tavern");
-  const fadeTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const trackKey: TrackKey = pathname?.startsWith("/campaign") ? "dungeon" : "tavern";
+  const targetVolume   = useRef(0.15);
+  const activeTrack    = useRef<"tavern" | "dungeon">("tavern");
+  const fadeTimer      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const musicQueue     = useRef<string[]>([]);
+  const ambianceQueue  = useRef<string[]>([]);
+  const musicErrors    = useRef(0);
+  const ambianceErrors = useRef(0);
 
-  // Expose a direct play function so the campaign page can call it synchronously
-  // inside the "Enter the Tavern" button onClick — guaranteeing user-gesture scope.
+  const trackKey    = pathname?.startsWith("/campaign") ? "dungeon" : "tavern";
+  const musicPool   = trackKey === "dungeon" ? DUNGEON_MUSIC_POOL  : TAVERN_MUSIC_POOL;
+  const ambPool     = trackKey === "dungeon" ? []                  : TAVERN_AMBIANCE_POOL;
+
+  // ── Ambiance helpers ─────────────────────────────────────────────────────────
+  const playNextAmbiance = useCallback(() => {
+    const amb = ambRef.current;
+    if (!amb || !ambPool.length) { amb?.pause(); amb && (amb.src = ""); return; }
+    const { src, queue } = nextFrom(ambianceQueue.current, ambPool);
+    ambianceQueue.current = queue;
+    amb.src = src;
+    amb.volume = AMBIANCE_VOL;
+    amb.load();
+    amb.play().catch(() => {});
+  }, [ambPool]);
+
+  // ── Music helpers ────────────────────────────────────────────────────────────
+  const loadAndPlay = useCallback((src: string, startVol?: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.src = src;
+    audio.volume = startVol ?? targetVolume.current;
+    audio.load();
+    audio.play().catch((err) => { console.error("[music] play blocked:", err); });
+  }, []);
+
+  const playNextMusic = useCallback((startVol?: number) => {
+    const { src, queue } = nextFrom(musicQueue.current, musicPool);
+    musicQueue.current = queue;
+    loadAndPlay(src, startVol);
+  }, [musicPool, loadAndPlay]);
+
+  // ── Expose global play handle (must be called inside a user-gesture) ─────────
   useEffect(() => {
     window.__dndMusicPlay = () => {
       const audio = audioRef.current;
       if (!audio || !audio.paused) return;
       setLoadError(false);
-      if (!audio.src) { audio.src = TRACKS[trackKey].src; audio.volume = targetVolume.current; }
-      audio.play().catch((err) => { console.error("[music] play() blocked:", err); });
-      startAmbiance(ambRef.current, trackKey);
+      if (!audio.src) playNextMusic();
+      else audio.play().catch(() => {});
+      playNextAmbiance();
     };
     return () => { delete window.__dndMusicPlay; };
-  }, [trackKey]);
+  }, [playNextMusic, playNextAmbiance]);
 
-  // Cross-fade music when route changes track; swap ambiance immediately
+  // ── Cross-fade music on route change ─────────────────────────────────────────
   useEffect(() => {
     if (activeTrack.current === trackKey) return;
     activeTrack.current = trackKey;
 
+    // Reset queues so new context gets a fresh shuffle
+    musicQueue.current    = [];
+    ambianceQueue.current = [];
+    musicErrors.current    = 0;
+    ambianceErrors.current = 0;
+
     const audio = audioRef.current;
 
-    // Always swap ambiance immediately on track change
-    if (ambRef.current && !audio?.paused) {
-      startAmbiance(ambRef.current, trackKey);
-    } else if (ambRef.current && TRACKS[trackKey].ambiance === null) {
-      ambRef.current.pause();
+    if (ambRef.current) {
+      if (!audio?.paused && ambPool.length) playNextAmbiance();
+      else { ambRef.current.pause(); ambRef.current.src = ""; }
     }
 
     if (!audio || audio.paused) return;
 
     if (fadeTimer.current) clearInterval(fadeTimer.current);
 
+    // Fade out → swap → fade in
     fadeTimer.current = setInterval(() => {
       if (!audioRef.current) return;
       if (audioRef.current.volume > 0.04) {
         audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.04);
       } else {
         if (fadeTimer.current) clearInterval(fadeTimer.current);
-        audioRef.current.src = TRACKS[trackKey].src;
-        audioRef.current.load();
-        audioRef.current.volume = 0;
-        audioRef.current.play().catch(() => {});
+        playNextMusic(0);
         fadeTimer.current = setInterval(() => {
           if (!audioRef.current) return;
           if (audioRef.current.volume < targetVolume.current - 0.03) {
@@ -104,40 +155,58 @@ export function MusicPlayer() {
     }, 40);
 
     return () => { if (fadeTimer.current) clearInterval(fadeTimer.current); };
-  }, [trackKey]);
+  }, [trackKey, playNextMusic, playNextAmbiance, ambPool.length]);
 
-  // Sync volume knob → music audio element (ambiance stays at its fixed level)
+  // ── Sync volume knob ─────────────────────────────────────────────────────────
   useEffect(() => {
     targetVolume.current = volume;
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
 
+  // ── Toggle play / pause ──────────────────────────────────────────────────────
   const toggle = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
       setLoadError(false);
-      if (!audio.src) { audio.src = TRACKS[trackKey].src; audio.volume = targetVolume.current; }
-      audio.play().catch((err) => { console.error("[music] play() blocked:", err); });
-      startAmbiance(ambRef.current, trackKey);
+      musicErrors.current = 0;
+      if (!audio.src) playNextMusic();
+      else audio.play().catch(() => {});
+      playNextAmbiance();
     } else {
       audio.pause();
       ambRef.current?.pause();
     }
-  }, [trackKey]);
+  }, [playNextMusic, playNextAmbiance]);
 
   return (
     <>
       <audio
         ref={audioRef}
-        loop
         preload="none"
-        onPlay={()  => { setPlaying(true);  setLoadError(false); }}
+        onPlay={()  => { setPlaying(true); setLoadError(false); musicErrors.current = 0; }}
         onPause={()  => { setPlaying(false); ambRef.current?.pause(); }}
-        onError={() => { setPlaying(false); setLoadError(true); console.error("[music] failed to load:", TRACKS[trackKey].src); }}
+        onEnded={() => { playNextMusic(); }}
+        onError={() => {
+          musicErrors.current++;
+          console.warn("[music] track failed, skipping");
+          if (musicErrors.current >= MAX_SKIP) {
+            setPlaying(false);
+            setLoadError(true);
+          } else {
+            setTimeout(() => playNextMusic(), 600);
+          }
+        }}
       />
-      {/* Ambient layer — crowd chatter for tavern, silent for dungeon */}
-      <audio ref={ambRef} loop preload="none" />
+      <audio
+        ref={ambRef}
+        preload="none"
+        onEnded={() => { playNextAmbiance(); }}
+        onError={() => {
+          ambianceErrors.current++;
+          if (ambianceErrors.current < MAX_SKIP) setTimeout(() => playNextAmbiance(), 600);
+        }}
+      />
 
       <div
         style={{
@@ -184,7 +253,7 @@ export function MusicPlayer() {
         {playing && !loadError && (
           <>
             <span style={{ fontSize: "0.65rem", color: "#64748b", whiteSpace: "nowrap" }}>
-              {TRACKS[trackKey].label}
+              {trackKey === "dungeon" ? "Dungeon" : "Tavern"}
             </span>
             <input
               type="range"
