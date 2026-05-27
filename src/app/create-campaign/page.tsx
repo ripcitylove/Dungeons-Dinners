@@ -19,6 +19,18 @@ type CharDraft = {
   weapon: string; trinket: string;
   scores: AbilityScores;
   cantrips: string[]; spells: string[];
+  rosterId?: string;
+  rosterLevel?: number;
+  rosterMaxHp?: number;
+};
+type RosterChar = {
+  id: string; name: string; race: string; class: string; sex: string;
+  level: number; max_hp: number; hp: number;
+  strength: number; dexterity: number; constitution: number;
+  intelligence: number; wisdom: number; charisma: number;
+  inventory: { gold: number; weapons: string[]; items: string[] };
+  cantrips_known: string[]; spells_prepared: string[];
+  campaign_id: string | null;
 };
 type Phase = "count" | "characters" | "review" | "creating";
 
@@ -86,32 +98,30 @@ function SpellCard({ spell, selected, disabled, onToggle }: {
 export default function CreateCampaignWizard() {
   const router = useRouter();
 
-  // Campaign
   const [phase, setPhase] = useState<Phase>("count");
-
-  // Player count
   const [playerCount, setPlayerCount] = useState(1);
-
-  // Current player being built
-  const [currentPlayerIdx,   setCurrentPlayerIdx]   = useState(0);
-  const [charStep,           setCharStep]           = useState(1);
-  const [draft,              setDraft]              = useState<CharDraft>(emptyDraft());
-  const [scores,             setScores]             = useState<AbilityScores>(DEFAULT_SCORES);
-  const [rolling,            setRolling]            = useState(false);
-  const [selectedCantrips,   setSelectedCantrips]   = useState<string[]>([]);
-  const [selectedSpells,     setSelectedSpells]     = useState<string[]>([]);
-  const [charNameErr,        setCharNameErr]        = useState("");
-  const [hoveredStat,        setHoveredStat]        = useState<string | null>(null);
-
-  // Completed characters
+  const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
+  const [charStep, setCharStep] = useState(1);
+  const [draft, setDraft] = useState<CharDraft>(emptyDraft());
+  const [scores, setScores] = useState<AbilityScores>(DEFAULT_SCORES);
+  const [rolling, setRolling] = useState(false);
+  const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
+  const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
+  const [charNameErr, setCharNameErr] = useState("");
+  const [hoveredStat, setHoveredStat] = useState<string | null>(null);
   const [completedChars, setCompletedChars] = useState<CharDraft[]>([]);
+  const [rosterChars, setRosterChars] = useState<RosterChar[] | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
 
-  // Derived
-  const isSpellcaster    = SPELLCASTING_CLASSES.has(draft.class);
-  const totalCharSteps   = isSpellcaster ? 5 : 4;
-  const spellCounts      = getSpellCounts(draft.class, scores);
+  const isSpellcaster     = SPELLCASTING_CLASSES.has(draft.class);
+  const totalCharSteps    = isSpellcaster ? 5 : 4;
+  const spellCounts       = getSpellCounts(draft.class, scores);
   const availableCantrips = CANTRIPS[draft.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[draft.class] ?? [];
+
+  // Characters already picked from roster (to prevent double-picking)
+  const alreadyPickedIds = new Set(completedChars.filter(c => c.rosterId).map(c => c.rosterId!));
+  const availableRoster  = (rosterChars ?? []).filter(c => !alreadyPickedIds.has(c.id));
 
   // ── Helpers ──
   const resetCurrentChar = () => {
@@ -129,10 +139,53 @@ export default function CreateCampaignWizard() {
     setSelectedSpells([]);
   };
 
-  // ── Finalize current character and advance ──
+  const loadRoster = async () => {
+    if (rosterChars !== null) return;
+    setRosterLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("characters")
+        .select("id,name,race,class,sex,level,max_hp,hp,strength,dexterity,constitution,intelligence,wisdom,charisma,inventory,cantrips_known,spells_prepared,campaign_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      setRosterChars((data as RosterChar[]) ?? []);
+    } finally {
+      setRosterLoading(false);
+    }
+  };
+
+  // ── Finalize new character and advance ──
   const finalizeAndAdvance = () => {
     const finalized: CharDraft = { ...draft, scores, cantrips: selectedCantrips, spells: selectedSpells };
     const next = [...completedChars, finalized];
+    setCompletedChars(next);
+    if (next.length < playerCount) {
+      setCurrentPlayerIdx(i => i + 1);
+      resetCurrentChar();
+    } else {
+      setPhase("review");
+    }
+  };
+
+  // ── Select existing character from roster dropdown ──
+  const selectRosterChar = (char: RosterChar) => {
+    const rosterDraft: CharDraft = {
+      name: char.name, race: char.race, sex: char.sex, class: char.class,
+      weapon: char.inventory?.weapons?.[0] ?? "",
+      trinket: "",
+      scores: {
+        strength: char.strength, dexterity: char.dexterity, constitution: char.constitution,
+        intelligence: char.intelligence, wisdom: char.wisdom, charisma: char.charisma,
+      },
+      cantrips: char.cantrips_known ?? [],
+      spells: char.spells_prepared ?? [],
+      rosterId: char.id,
+      rosterLevel: char.level,
+      rosterMaxHp: char.max_hp,
+    };
+    const next = [...completedChars, rosterDraft];
     setCompletedChars(next);
     if (next.length < playerCount) {
       setCurrentPlayerIdx(i => i + 1);
@@ -146,6 +199,7 @@ export default function CreateCampaignWizard() {
   const handleNext = () => {
     if (phase === "count") {
       setPhase("characters");
+      loadRoster();
       return;
     }
 
@@ -173,31 +227,38 @@ export default function CreateCampaignWizard() {
     if (phase === "characters") {
       if (charStep > 1) { setCharStep(s => s - 1); return; }
       if (currentPlayerIdx === 0) { setPhase("count"); return; }
-      // Restore previous player's draft
+      // Restore previous player
       const prev = [...completedChars];
       const prevDraft = prev.pop()!;
       setCompletedChars(prev);
-      setDraft(prevDraft);
-      setScores(prevDraft.scores);
-      setSelectedCantrips(prevDraft.cantrips);
-      setSelectedSpells(prevDraft.spells);
       setCurrentPlayerIdx(i => i - 1);
-      setCharStep(SPELLCASTING_CLASSES.has(prevDraft.class) ? 5 : 4);
+      if (prevDraft.rosterId) {
+        resetCurrentChar(); // roster pick — land at step 1 so they can change
+      } else {
+        setDraft(prevDraft);
+        setScores(prevDraft.scores);
+        setSelectedCantrips(prevDraft.cantrips);
+        setSelectedSpells(prevDraft.spells);
+        setCharStep(SPELLCASTING_CLASSES.has(prevDraft.class) ? 5 : 4);
+      }
       return;
     }
 
     if (phase === "review") {
-      // Restore last completed character for editing
       const prev = [...completedChars];
       const lastDraft = prev.pop()!;
       setCompletedChars(prev);
-      setDraft(lastDraft);
-      setScores(lastDraft.scores);
-      setSelectedCantrips(lastDraft.cantrips);
-      setSelectedSpells(lastDraft.spells);
       setCurrentPlayerIdx(prev.length);
-      setCharStep(SPELLCASTING_CLASSES.has(lastDraft.class) ? 5 : 4);
       setPhase("characters");
+      if (lastDraft.rosterId) {
+        resetCurrentChar();
+      } else {
+        setDraft(lastDraft);
+        setScores(lastDraft.scores);
+        setSelectedCantrips(lastDraft.cantrips);
+        setSelectedSpells(lastDraft.spells);
+        setCharStep(SPELLCASTING_CLASSES.has(lastDraft.class) ? 5 : 4);
+      }
     }
   };
 
@@ -208,7 +269,6 @@ export default function CreateCampaignWizard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth"); return; }
 
-      // Ask the AI DM to name and describe the campaign
       const genRes = await fetch("/api/generate-campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -226,39 +286,50 @@ export default function CreateCampaignWizard() {
         .select().single();
       if (campErr || !campData) throw campErr ?? new Error("Campaign creation failed");
 
-      const rows = completedChars.map(c => ({
-        user_id:      user.id,
-        campaign_id:  campData.id,
-        name:         c.name.trim(),
-        race:         c.race,
-        class:        c.class,
-        sex:          c.sex,
-        level:        1,
-        xp:           0,
-        max_hp:       startingHP(c.class, c.scores.constitution),
-        hp:           startingHP(c.class, c.scores.constitution),
-        strength:     c.scores.strength,
-        dexterity:    c.scores.dexterity,
-        constitution: c.scores.constitution,
-        intelligence: c.scores.intelligence,
-        wisdom:       c.scores.wisdom,
-        charisma:     c.scores.charisma,
-        inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", c.trinket || "Mysterious Coin"] },
-        cantrips_known:   c.cantrips,
-        spells_prepared:  c.spells,
-        spell_slots_used: {},
-        status_effects:   [],
-        party_active:     true,
-      }));
+      const newChars    = completedChars.filter(c => !c.rosterId);
+      const rosterPicks = completedChars.filter(c => !!c.rosterId);
 
-      const { data: charData, error: charErr } = await supabase.from("characters").insert(rows).select();
-      if (charErr || !charData) throw charErr ?? new Error("Character creation failed");
+      let newCharData: { id: string }[] = [];
+      if (newChars.length > 0) {
+        const rows = newChars.map(c => ({
+          user_id:      user.id,
+          campaign_id:  campData.id,
+          name:         c.name.trim(),
+          race:         c.race,
+          class:        c.class,
+          sex:          c.sex,
+          level:        1,
+          xp:           0,
+          max_hp:       startingHP(c.class, c.scores.constitution),
+          hp:           startingHP(c.class, c.scores.constitution),
+          strength:     c.scores.strength,
+          dexterity:    c.scores.dexterity,
+          constitution: c.scores.constitution,
+          intelligence: c.scores.intelligence,
+          wisdom:       c.scores.wisdom,
+          charisma:     c.scores.charisma,
+          inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", c.trinket || "Mysterious Coin"] },
+          cantrips_known:   c.cantrips,
+          spells_prepared:  c.spells,
+          spell_slots_used: {},
+          status_effects:   [],
+          party_active:     true,
+        }));
+        const { data, error: charErr } = await supabase.from("characters").insert(rows).select();
+        if (charErr || !data) throw charErr ?? new Error("Character creation failed");
+        newCharData = data;
+      }
 
-      // Fire portrait generation for all characters (background)
+      for (const c of rosterPicks) {
+        await supabase.from("characters")
+          .update({ campaign_id: campData.id, party_active: true })
+          .eq("id", c.rosterId!);
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        charData.forEach((char, i) => {
-          const c = completedChars[i];
+        newCharData.forEach((char, i) => {
+          const c = newChars[i];
           fetch("/api/generate-portrait", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
@@ -267,7 +338,6 @@ export default function CreateCampaignWizard() {
         });
       }
 
-      // Store AI title so campaign header shows it immediately (no "Loading…" flash)
       sessionStorage.setItem("pendingCampaignTitle", aiTitle);
       router.push(`/campaign/${campData.id}`);
     } catch (err) {
@@ -278,16 +348,14 @@ export default function CreateCampaignWizard() {
   };
 
   // ── Progress ──
-  // Top-level steps: Party Size → Players 1…N → Review
-  const totalTopSteps = 1 + playerCount + 1;
+  const totalTopSteps  = 1 + playerCount + 1;
   const currentTopStep =
     phase === "count"      ? 1 :
     phase === "characters" ? 1 + currentPlayerIdx + 1 :
     totalTopSteps;
-
   const progressPct = (currentTopStep / totalTopSteps) * 100;
 
-  // Next button label
+  // ── Labels ──
   const nextLabel =
     phase === "count"      ? `Build ${playerCount} ${playerCount === 1 ? "Character" : "Characters"} →` :
     phase === "characters" && charStep < totalCharSteps ? "Next Step →" :
@@ -296,16 +364,13 @@ export default function CreateCampaignWizard() {
     phase === "review"     ? "⚔ Launch Campaign" :
     "Next →";
 
-  // Next button disabled
   const nextDisabled =
     (phase === "characters" && charStep === 2 && !draft.class) ||
     (phase === "characters" && charStep === 4 && !draft.weapon);
 
-  // Step title
-  const charSubStepTitles = ["Identity & Origins", "Class & Vocation", "Ability Scores", "Starting Equipment", "Spells & Cantrips"];
   const stepTitle =
     phase === "count"      ? "How Many Adventurers?" :
-    phase === "characters" ? charSubStepTitles[charStep - 1] :
+    phase === "characters" ? ["Identity & Origins", "Class & Vocation", "Ability Scores", "Starting Equipment", "Spells & Cantrips"][charStep - 1] :
     phase === "review"     ? "Ready to Begin" :
     "Forging your world…";
 
@@ -355,7 +420,7 @@ export default function CreateCampaignWizard() {
           {phase === "count" && (
             <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px" }}>
               <p style={{ color: "#94a3b8", textAlign: "center", fontSize: "0.9rem", maxWidth: "420px" }}>
-                Each adventurer will be walked through character creation before your campaign begins.
+                Each adventurer can create a new character or select one from their existing roster.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", width: "100%", maxWidth: "520px" }}>
                 {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
@@ -373,18 +438,69 @@ export default function CreateCampaignWizard() {
               </div>
               <p style={{ color: "#475569", fontSize: "0.82rem" }}>
                 {playerCount === 1 ? "A solo adventure — you control your hero." :
-                 `You'll create ${playerCount} characters, one per adventurer.`}
+                 `You'll set up ${playerCount} characters, one per adventurer.`}
               </p>
             </div>
           )}
 
-          {/* Character creation sub-steps */}
+          {/* Character creation */}
           {phase === "characters" && (
             <div className="animate-fade-in">
 
               {/* Identity */}
               {charStep === 1 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+                  {/* ── Roster import dropdown ── */}
+                  <div style={{ padding: "14px 16px", borderRadius: "10px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "0.82rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em" }}>
+                      📜 Import from Roster <span style={{ color: "#64748b", fontWeight: 400 }}>(optional)</span>
+                    </label>
+                    {rosterLoading ? (
+                      <div style={{ fontSize: "0.78rem", color: "#64748b", padding: "8px 0" }}>Loading your characters…</div>
+                    ) : (
+                      <select
+                        defaultValue=""
+                        onChange={e => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          const char = (rosterChars ?? []).find(c => c.id === id);
+                          if (char) selectRosterChar(char);
+                        }}
+                        style={{
+                          width: "100%", padding: "10px 12px", borderRadius: "8px",
+                          border: "1px solid rgba(245,158,11,0.35)", background: "rgba(0,0,0,0.3)",
+                          color: "white", fontSize: "0.88rem", cursor: "pointer", appearance: "none",
+                          backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
+                          backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
+                          paddingRight: "36px",
+                        }}
+                      >
+                        <option value="">— Select an existing character —</option>
+                        {availableRoster.length === 0 && rosterChars !== null && (
+                          <option disabled value="">No available characters</option>
+                        )}
+                        {availableRoster.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} · {c.race} {c.class} · Lvl {c.level} · {c.max_hp} HP
+                            {c.campaign_id ? " (in campaign)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <p style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "7px" }}>
+                      Selecting a character brings them into this campaign as-is, skipping character creation.
+                    </p>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
+                    <span style={{ fontSize: "0.72rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>or create a new character</span>
+                    <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
+                  </div>
+
+                  {/* Name */}
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Character Name</label>
                     <input
@@ -395,6 +511,8 @@ export default function CreateCampaignWizard() {
                     />
                     {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
                   </div>
+
+                  {/* Race */}
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Race</label>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
@@ -407,6 +525,8 @@ export default function CreateCampaignWizard() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Sex */}
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Sex</label>
                     <div style={{ display: "flex", gap: "12px" }}>
@@ -585,14 +705,20 @@ export default function CreateCampaignWizard() {
               <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "12px" }}>
                 {completedChars.map((c, i) => (
                   <div key={i} className="glass-panel" style={{ padding: "16px", display: "flex", gap: "14px", alignItems: "center" }}>
-                    <div style={{ width: "44px", height: "44px", borderRadius: "8px", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem", flexShrink: 0 }}>🧙</div>
+                    <div style={{ width: "44px", height: "44px", borderRadius: "8px", background: c.rosterId ? "rgba(245,158,11,0.12)" : "rgba(139,92,246,0.12)", border: `1px solid ${c.rosterId ? "rgba(245,158,11,0.3)" : "rgba(139,92,246,0.3)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem", flexShrink: 0 }}>
+                      {c.rosterId ? "📜" : "🧙"}
+                    </div>
                     <div>
                       <div style={{ fontWeight: "bold", fontSize: "0.95rem" }}>{c.name}</div>
-                      <div style={{ color: "#94a3b8", fontSize: "0.78rem" }}>{c.race} {c.class} · Level 1</div>
+                      <div style={{ color: "#94a3b8", fontSize: "0.78rem" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Level 1"}</div>
                       <div style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "2px" }}>
-                        ❤ {startingHP(c.class, c.scores.constitution)} HP · {c.weapon || "Iron Dagger"}
+                        ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
+                        {!c.rosterId && ` · ${c.weapon || "Iron Dagger"}`}
                         {c.cantrips.length > 0 && ` · ${c.cantrips.length} cantrip${c.cantrips.length > 1 ? "s" : ""}`}
                       </div>
+                      {c.rosterId && (
+                        <div style={{ fontSize: "0.62rem", color: "#fbbf24", marginTop: "3px" }}>Returning adventurer</div>
+                      )}
                     </div>
                   </div>
                 ))}

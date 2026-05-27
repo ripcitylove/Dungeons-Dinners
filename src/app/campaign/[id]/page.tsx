@@ -179,6 +179,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [tradeItems,       setTradeItems]         = useState<{ name: string; type: "item" | "weapon" }[]>([]);
   const [tradeGold,        setTradeGold]          = useState(0);
   const [incomingTrade,    setIncomingTrade]      = useState<TradeOffer | null>(null);
+  const [tradingItemKey,   setTradingItemKey]     = useState<string | null>(null);
 
   // Stat tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
@@ -427,6 +428,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (p.fromUserId !== userIdRef.current) return;
         setStateNotice("Your trade offer was declined.");
         setTimeout(() => setStateNotice(null), 3000);
+      })
+      .on("broadcast", { event: "item_gifted" }, ({ payload }) => {
+        const p = payload as { toUserId: string; toCharId: string; itemName: string; itemType: "item" | "weapon"; fromCharName: string };
+        if (p.toUserId !== userIdRef.current) return;
+        const char = characterRef.current;
+        if (!char || char.id !== p.toCharId) return;
+        const newInv = { ...char.inventory,
+          items:   p.itemType === "item"   ? [...char.inventory.items, p.itemName]   : char.inventory.items,
+          weapons: p.itemType === "weapon" ? [...char.inventory.weapons, p.itemName] : char.inventory.weapons,
+        };
+        setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+        setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        setStateNotice(`${p.fromCharName} gave you ${p.itemName}!`);
+        setTimeout(() => setStateNotice(null), 4000);
       })
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -1005,6 +1021,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const declineTrade = useCallback((offer: TradeOffer) => {
     channelRef.current?.send({ type: "broadcast", event: "trade_declined", payload: { id: offer.id, fromUserId: offer.fromUserId } });
     setIncomingTrade(null);
+  }, []);
+
+  const giftItem = useCallback(async (itemName: string, itemType: "item" | "weapon", toChar: Character) => {
+    const char = characterRef.current;
+    if (!char) return;
+    const removeFirst = (arr: string[], name: string) => { const i = arr.indexOf(name); return i !== -1 ? [...arr.slice(0, i), ...arr.slice(i + 1)] : arr; };
+    const newItems   = itemType === "item"   ? removeFirst(char.inventory.items,   itemName) : char.inventory.items;
+    const newWeapons = itemType === "weapon" ? removeFirst(char.inventory.weapons, itemName) : char.inventory.weapons;
+    const newInv = { ...char.inventory, items: newItems, weapons: newWeapons };
+    setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    channelRef.current?.send({ type: "broadcast", event: "item_gifted", payload: {
+      toUserId: toChar.user_id, toCharId: toChar.id, itemName, itemType, fromCharName: char.name,
+    }});
+    setTradingItemKey(null);
+    setStateNotice(`${itemName} sent to ${toChar.name}.`);
+    setTimeout(() => setStateNotice(null), 3000);
   }, []);
 
   const handleUseItem = useCallback(async (itemName: string) => {
@@ -1910,56 +1944,94 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     const rarityColor = catalogItem ? RARITY_COLORS[catalogItem.rarity] : "#475569";
                     const icon        = catalogItem ? ITEM_ICONS[catalogItem.type] : (slot === "weapon" ? "⚔" : "🎒");
                     const isHovered   = hoveredItem === `${slot}-${idx}`;
+                    const itemKey     = `${slot}-${idx}`;
+                    const isTrading   = tradingItemKey === itemKey;
+                    const tradeTargets = campaignParty.filter(c => c.id !== character.id);
                     return (
-                      <div key={`${slot}-${idx}`} style={{ position: "relative", marginBottom: "4px" }}>
-                        <div
-                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", fontSize: "0.82rem", border: `1px solid ${catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
-                          onMouseEnter={() => setHoveredItem(`${slot}-${idx}`)}
-                          onMouseLeave={() => setHoveredItem(null)}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
-                            <span style={{ flexShrink: 0 }}>{icon}</span>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: catalogItem ? rarityColor : "#e2e8f0" }}>{name}</div>
-                              {catalogItem && (
-                                <div style={{ fontSize: "0.58rem", color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
-                                  {RARITY_LABELS[catalogItem.rarity]}{catalogItem.requiresAttunement ? " · Attunement" : ""}{catalogItem.cursed ? " ⚠️" : ""}
+                      <div key={itemKey} style={{ marginBottom: "4px" }}>
+                        <div style={{ position: "relative" }}>
+                          <div
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: isTrading ? "6px 6px 0 0" : "6px", fontSize: "0.82rem", border: `1px solid ${isTrading ? "rgba(139,92,246,0.5)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
+                            onMouseEnter={() => setHoveredItem(itemKey)}
+                            onMouseLeave={() => setHoveredItem(null)}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
+                              <span style={{ flexShrink: 0 }}>{icon}</span>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: catalogItem ? rarityColor : "#e2e8f0" }}>{name}</div>
+                                {catalogItem && (
+                                  <div style={{ fontSize: "0.58rem", color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
+                                    {RARITY_LABELS[catalogItem.rarity]}{catalogItem.requiresAttunement ? " · Attunement" : ""}{catalogItem.cursed ? " ⚠️" : ""}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "6px" }}>
+                              {catalogItem?.consumable && (
+                                <button
+                                  onClick={() => handleUseItem(name)}
+                                  style={{ fontSize: "0.58rem", color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
+                                >Use</button>
+                              )}
+                              {tradeTargets.length > 0 && (
+                                <button
+                                  onClick={() => setTradingItemKey(isTrading ? null : itemKey)}
+                                  title="Trade this item"
+                                  style={{ fontSize: "0.58rem", color: isTrading ? "#a78bfa" : "#64748b", background: isTrading ? "rgba(139,92,246,0.15)" : "none", border: isTrading ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 5px" }}
+                                  onMouseEnter={e => { if (!isTrading) e.currentTarget.style.color = "#a78bfa"; }}
+                                  onMouseLeave={e => { if (!isTrading) e.currentTarget.style.color = "#64748b"; }}
+                                >trade</button>
+                              )}
+                              <button
+                                onClick={() => dropItem(name, slot)}
+                                title="Drop to party pool"
+                                style={{ fontSize: "0.58rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
+                                onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
+                                onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}
+                              >drop</button>
+                            </div>
+                          </div>
+                          {isHovered && !isTrading && catalogItem && (
+                            <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                                <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
+                                <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
+                              </div>
+                              <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
+                              {catalogItem.effects.map((fx, fi) => fx.description && (
+                                <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
+                                  {fx.description}
                                 </div>
+                              ))}
+                              {catalogItem.requiresAttunement && (
+                                <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
                               )}
                             </div>
-                          </div>
-                          <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "6px" }}>
-                            {catalogItem?.consumable && (
-                              <button
-                                onClick={() => handleUseItem(name)}
-                                style={{ fontSize: "0.58rem", color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
-                                onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
-                                onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
-                              >Use</button>
-                            )}
-                            <button
-                              onClick={() => dropItem(name, slot)}
-                              title="Drop to party pool"
-                              style={{ fontSize: "0.58rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
-                              onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
-                              onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}
-                            >drop</button>
-                          </div>
+                          )}
                         </div>
-                        {isHovered && catalogItem && (
-                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                              <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
-                              <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
-                            </div>
-                            <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
-                            {catalogItem.effects.map((fx, fi) => fx.description && (
-                              <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
-                                {fx.description}
+                        {isTrading && (
+                          <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.4)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "6px 8px" }}>
+                            <div style={{ fontSize: "0.62rem", color: "#a78bfa", marginBottom: "5px", fontWeight: "bold" }}>Send to:</div>
+                            {tradeTargets.length === 0 ? (
+                              <div style={{ fontSize: "0.65rem", color: "#64748b" }}>No other party members.</div>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                {tradeTargets.map(tc => (
+                                  <button key={tc.id}
+                                    onClick={() => giftItem(name, slot, tc)}
+                                    style={{ textAlign: "left", padding: "4px 8px", borderRadius: "4px", fontSize: "0.72rem", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#e2e8f0", cursor: "pointer", transition: "background 0.15s" }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.25)"; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.1)"; }}
+                                  >
+                                    {tc.name} <span style={{ color: "#64748b", fontSize: "0.62rem" }}>{tc.race} {tc.class}</span>
+                                  </button>
+                                ))}
+                                <button onClick={() => setTradingItemKey(null)}
+                                  style={{ padding: "3px 8px", borderRadius: "4px", fontSize: "0.65rem", background: "none", border: "none", color: "#64748b", cursor: "pointer", textAlign: "left" }}
+                                >Cancel</button>
                               </div>
-                            ))}
-                            {catalogItem.requiresAttunement && (
-                              <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
                             )}
                           </div>
                         )}
