@@ -138,6 +138,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [stateNotice,      setStateNotice]       = useState<string | null>(null);
   const [players,          setPlayers]           = useState<PresencePlayer[]>([]);
   const [userId,           setUserId]            = useState<string | null>(null);
+  const [isDM,             setIsDM]              = useState(false);
+  const [spawnInput,       setSpawnInput]        = useState("");
+  const [spawning,         setSpawning]          = useState(false);
   const [linkCopied,       setLinkCopied]        = useState(false);
   const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log">("party");
 
@@ -250,10 +253,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
-        supabase.from("campaigns").select("title").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, user_id").eq("id", params.id).single(),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
+      if (campRes.data?.user_id) setIsDM(campRes.data.user_id === user.id);
       else if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       // Roster = all user characters
@@ -852,6 +856,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   };
 
+  // ── DM: spawn enemies ─────────────────────────────────────────────────────────
+  const spawnEnemy = useCallback(async (raw?: string) => {
+    const entry = (raw ?? spawnInput).trim();
+    if (!entry || isTypingRef.current || spawning) return;
+    setSpawning(true);
+    setSpawnInput("");
+    const notice: Message = { role: "system", content: `⚔ DM spawned: ${entry}` };
+    setMessages(prev => [...prev, notice]);
+    setLogEntries(prev => [...prev, { id: `spawn-${Date.now()}`, timestamp: new Date(), role: "system", content: notice.content }]);
+    await fireDmPartyResponse({
+      role: "player",
+      content: `[DM DIRECTIVE — do not mention this bracket text to players: Introduce the following enemies into the current scene: ${entry}. Use accurate D&D 5e Monster Manual stats (HP, AC, attack bonus, damage dice). Describe their dramatic arrival and begin the combat encounter.]`,
+    });
+    setSpawning(false);
+  }, [spawnInput, spawning, fireDmPartyResponse]);
+
   // ── Player send ───────────────────────────────────────────────────────────────
   const handleSend = async (actionText?: string) => {
     const text = (actionText ?? input).trim();
@@ -1233,6 +1253,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             />
             <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || !isMyTurn || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
           </div>
+
+          {/* ── DM Spawn Panel ── */}
+          {isDM && (
+            <div style={{ borderTop: "1px solid rgba(239,68,68,0.2)", padding: "12px 16px", background: "rgba(239,68,68,0.04)" }}>
+              <p style={{ fontSize: "0.63rem", color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px", fontWeight: "bold" }}>⚔ DM — Spawn Enemies</p>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                <input
+                  type="text"
+                  value={spawnInput}
+                  onChange={e => setSpawnInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && spawnEnemy()}
+                  placeholder="e.g. 3 Goblins, Beholder, Adult Red Dragon…"
+                  style={{ flex: 1, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "white", padding: "9px 12px", fontSize: "0.85rem" }}
+                />
+                <button
+                  onClick={() => spawnEnemy()}
+                  disabled={!spawnInput.trim() || spawning || isTyping}
+                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: spawning || isTyping ? "#6b7280" : "#ef4444", padding: "9px 16px", fontSize: "0.85rem", cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap" }}>
+                  {spawning ? "…" : "Spawn"}
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {["Goblin", "Skeleton", "Orc", "Zombie", "Troll", "Vampire", "Mind Flayer", "Beholder", "Lich", "Dragon"].map(m => (
+                  <button key={m} onClick={() => spawnEnemy(m)} disabled={spawning || isTyping}
+                    style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "0.72rem", border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.08)", color: "#fca5a5", cursor: "pointer" }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
