@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
-import { ALLOWED_EMAIL } from "../../lib/allowedUsers";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
@@ -17,8 +16,9 @@ type Character = {
   intelligence: number; wisdom: number; charisma: number;
   inventory: Inventory | null;
   portrait_url?: string | null;
+  campaign_id?: string | null;
 };
-type Campaign = { id: string; title: string; description: string; created_at: string };
+type Campaign = { id: string; title: string; description: string; created_at: string; isOwned: boolean };
 type CampaignMember = { id: string; name: string; race: string; class: string; level: number; portrait_url?: string | null; campaign_id: string };
 
 const CLASS_COLORS: Record<string, string> = {
@@ -86,7 +86,7 @@ function CharacterModal({
           <div style={{ width: "80px", height: "80px", flexShrink: 0, borderRadius: "10px", overflow: "hidden", border: "2px solid var(--border)", background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {char.portrait_url
               ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              : <span style={{ fontSize: "2.2rem" }}>🧙</span>
+              : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[char.class] ?? "#6b7280"}20` }} />
             }
           </div>
           <div style={{ flex: 1 }}>
@@ -195,6 +195,7 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete]   = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting]             = useState(false);
   const [tavernBgUrl, setTavernBgUrl]       = useState<string | null>(null);
+  const [copiedId, setCopiedId]             = useState<string | null>(null);
   const musicStarted = useRef(false);
 
   useEffect(() => {
@@ -227,18 +228,12 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth"); return; }
 
-      if (user.email !== ALLOWED_EMAIL) {
-        await supabase.auth.signOut();
-        router.push("/auth");
-        return;
-      }
-
       setUserId(user.id);
       setUserEmail(user.email ?? "");
 
       const [charsRes, campsRes] = await Promise.all([
         supabase.from("characters")
-          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url")
+          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url, campaign_id")
           .eq("user_id", user.id),
         supabase.from("campaigns")
           .select("id, title, description, created_at")
@@ -247,10 +242,30 @@ export default function Dashboard() {
       ]);
 
       if (charsRes.data) setCharacters(charsRes.data as Character[]);
-      if (campsRes.data) setCampaigns(campsRes.data as Campaign[]);
 
-      if (campsRes.data && campsRes.data.length > 0) {
-        const campIds = campsRes.data.map(c => c.id);
+      const ownedIds = new Set((campsRes.data ?? []).map(c => c.id));
+      const joinedIds = [...new Set(
+        (charsRes.data ?? [])
+          .filter(c => c.campaign_id && !ownedIds.has(c.campaign_id))
+          .map(c => c.campaign_id as string)
+      )];
+
+      let allCamps: Campaign[] = (campsRes.data ?? []).map(c => ({ ...c, isOwned: true }));
+
+      if (joinedIds.length > 0) {
+        const { data: joinedData } = await supabase
+          .from("campaigns")
+          .select("id, title, description, created_at")
+          .in("id", joinedIds);
+        if (joinedData) {
+          allCamps = [...allCamps, ...joinedData.map(c => ({ ...c, isOwned: false }))];
+        }
+      }
+
+      setCampaigns(allCamps);
+
+      if (allCamps.length > 0) {
+        const campIds = allCamps.map(c => c.id);
         const { data: membersData } = await supabase
           .from("characters")
           .select("id, name, race, class, level, portrait_url, campaign_id")
@@ -313,10 +328,21 @@ export default function Dashboard() {
     setSelectedChar(null);
   };
 
+  const copyInvite = (campId: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/campaign/${campId}`);
+    setCopiedId(campId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push("/");
   };
+
+  const userInitials = userEmail
+    ? userEmail.split("@")[0].slice(0, 2).toUpperCase()
+    : "?";
+  const displayName = userEmail.split("@")[0];
 
   if (loading) {
     return (
@@ -327,7 +353,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", padding: "40px", position: "relative" }}>
+    <main style={{ minHeight: "100vh", position: "relative" }}>
 
       {/* Tavern background */}
       {tavernBgUrl && (
@@ -375,164 +401,220 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Nav */}
-      <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "48px" }}>
-        <div style={{ fontSize: "1.5rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ color: "var(--primary)" }}>⬡</span> D&amp;D Legends
-        </div>
-        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-          <span style={{ color: "var(--muted)", fontSize: "0.875rem" }}>{userEmail}</span>
-          <button onClick={signOut} className="btn-secondary" style={{ padding: "8px 18px", fontSize: "0.875rem" }}>Sign Out</button>
-        </div>
-      </nav>
+      {/* Page wrapper */}
+      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "28px 36px 80px" }}>
 
-      <div style={{ display: "grid", gridTemplateColumns: characters.length > 0 ? "2fr 1fr" : "1fr", gap: "32px", maxWidth: "1200px" }}>
+        {/* Nav */}
+        <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "44px" }}>
+          <div style={{ fontSize: "1.4rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ color: "var(--primary)" }}>⬡</span>
+            <span>D&amp;D Legends</span>
+          </div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "rgba(255,255,255,0.04)", borderRadius: "40px", padding: "6px 16px 6px 6px", border: "1px solid var(--border)" }}>
+              <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "linear-gradient(135deg, var(--primary) 0%, #6366f1 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "0.75rem", flexShrink: 0, color: "white" }}>
+                {userInitials}
+              </div>
+              <span style={{ color: "var(--subtle)", fontSize: "0.82rem" }}>{displayName}</span>
+            </div>
+            <button onClick={signOut} className="btn-secondary" style={{ padding: "8px 18px", fontSize: "0.875rem" }}>Sign Out</button>
+          </div>
+        </nav>
 
-        {/* Campaigns */}
-        <section>
-          <h2 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "24px", borderBottom: "1px solid var(--border)", paddingBottom: "14px" }}>
-            Active Campaigns
-          </h2>
+        {/* Two-column layout */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "36px", alignItems: "start" }}>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {campaigns.length === 0 && (
-              <p style={{ color: "var(--subtle)" }}>No campaigns yet — start one below!</p>
-            )}
-
-            {campaigns.map((camp) => {
-              const members = campaignMembers[camp.id] ?? [];
-              return (
-                <div key={camp.id} className="glass-panel animate-fade-in" style={{ padding: "24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "20px" }}>
-                  {/* Title + description */}
-                  <div style={{ minWidth: "180px", maxWidth: "200px" }}>
-                    <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "6px" }}>{camp.title}</h3>
-                    <p style={{ color: "var(--subtle)", fontSize: "0.82rem", marginBottom: "10px", lineHeight: 1.5 }}>{camp.description}</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                      <code style={{ fontSize: "0.7rem", color: "#475569", background: "rgba(0,0,0,0.3)", padding: "3px 8px", borderRadius: "4px" }}>
-                        {camp.id.slice(0, 8)}…
-                      </code>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/campaign/${camp.id}`)}
-                        style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.78rem", padding: 0 }}
-                      >
-                        🔗 Copy invite
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Party roster */}
-                  <div style={{ flex: 1, borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)", padding: "0 20px", alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
-                    <p style={{ fontSize: "0.65rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>
-                      Party · {members.length} {members.length === 1 ? "adventurer" : "adventurers"}
-                    </p>
-                    {members.length === 0 ? (
-                      <p style={{ color: "#334155", fontSize: "0.82rem", fontStyle: "italic" }}>No players yet — share the invite link!</p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
-                        {members.slice(0, 5).map(m => (
-                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <div style={{ width: "32px", height: "32px", flexShrink: 0, borderRadius: "6px", overflow: "hidden", border: `1px solid ${CLASS_COLORS[m.class] ?? "var(--border)"}44`, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              {m.portrait_url
-                                ? <img src={m.portrait_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                : <span style={{ fontSize: "0.9rem" }}>🧙</span>
-                              }
-                            </div>
-                            <div>
-                              <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: CLASS_COLORS[m.class] ?? "white", lineHeight: 1.2 }}>{m.name}</div>
-                              <div style={{ fontSize: "0.68rem", color: "var(--muted)" }}>{m.race} {m.class} · Lvl {m.level}</div>
-                            </div>
-                          </div>
-                        ))}
-                        {members.length > 5 && (
-                          <p style={{ fontSize: "0.72rem", color: "#475569" }}>+{members.length - 5} more…</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
-                    <Link href={`/campaign/${camp.id}`}>
-                      <button className="btn-primary">Resume Session</button>
-                    </Link>
-                    <button onClick={() => deleteCampaign(camp.id, camp.title)} className="btn-danger">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* New campaign */}
-            <div
-              className="glass-panel animate-fade-in"
-              style={{ padding: "24px", display: "flex", justifyContent: "center", alignItems: "center", borderStyle: "dashed" }}
-            >
+          {/* ── Campaigns ── */}
+          <section>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div>
+                <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Campaigns</h2>
+                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
+              </div>
               <button
                 onClick={() => router.push("/create-campaign")}
-                className="btn-secondary"
-                style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.95rem" }}
+                className="btn-primary"
+                style={{ padding: "9px 18px", fontSize: "0.85rem", flexShrink: 0 }}
               >
-                <span style={{ fontSize: "1.5rem", lineHeight: 1 }}>+</span> Start New Campaign
+                + New Campaign
               </button>
             </div>
-          </div>
-        </section>
 
-        {/* Character Roster */}
-        {characters.length > 0 && (
-          <section>
-            <h2 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "24px", borderBottom: "1px solid var(--border)", paddingBottom: "14px" }}>
-              Your Roster
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {characters.map((char) => (
-                <div
-                  key={char.id}
-                  className="glass-panel glass-panel-hover animate-fade-in"
-                  onClick={() => setSelectedChar(char)}
-                  style={{ padding: "16px", display: "flex", gap: "14px", alignItems: "center", cursor: "pointer" }}
-                >
-                  <div style={{ width: "48px", height: "48px", flexShrink: 0, borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {char.portrait_url
-                      ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <span style={{ fontSize: "1.4rem" }}>🧙</span>
-                    }
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4 style={{ fontWeight: "bold", color: CLASS_COLORS[char.class] ?? "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name}</h4>
-                    <p style={{ color: "var(--subtle)", fontSize: "0.78rem" }}>
-                      {char.race} {char.class} · Lvl {char.level}
-                    </p>
-                    {(() => {
-                      const ib   = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
-                      const rMax = Math.max(1, char.max_hp + ib.hpMaxAdd);
-                      const rPct = Math.max(0, Math.min(100, Math.round((char.hp / rMax) * 100)));
-                      return (
-                        <div style={{ marginTop: "5px", height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.07)", overflow: "hidden", width: "80%" }}>
-                          <div style={{ height: "100%", width: `${rPct}%`, background: rPct > 50 ? "#22c55e" : rPct > 25 ? "#f59e0b" : "#ef4444", borderRadius: "2px" }} />
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteCharacter(char.id, char.name); }}
-                    style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "1rem", padding: "4px", lineHeight: 1, flexShrink: 0 }}
-                    title="Delete character"
-                  >
-                    🗑
-                  </button>
-                </div>
-              ))}
+            {campaigns.length === 0 ? (
+              <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center" }}>
+                <div style={{ fontSize: "3rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
+                <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "8px" }}>No campaigns yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "0.88rem", marginBottom: "28px", maxWidth: "340px", margin: "0 auto 28px", lineHeight: 1.6 }}>
+                  Start your first campaign or join one with a friend&apos;s invite link.
+                </p>
+                <button onClick={() => router.push("/create-campaign")} className="btn-primary">
+                  Start a Campaign
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px" }}>
+                {campaigns.map((camp) => {
+                  const members = campaignMembers[camp.id] ?? [];
+                  return (
+                    <div
+                      key={camp.id}
+                      className="glass-panel animate-fade-in"
+                      style={{ padding: "22px", display: "flex", flexDirection: "column", gap: "14px", position: "relative" }}
+                    >
+                      {/* Joined badge */}
+                      {!camp.isOwned && (
+                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "0.65rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em" }}>
+                          Joined
+                        </span>
+                      )}
 
-              <Link href="/create-character" style={{ textDecoration: "none" }}>
-                <div className="glass-panel animate-fade-in" style={{ padding: "16px", display: "flex", justifyContent: "center", alignItems: "center", cursor: "pointer", borderStyle: "dashed" }}>
-                  <span style={{ color: "var(--primary)", fontWeight: "bold" }}>+ Create New Character</span>
-                </div>
-              </Link>
-            </div>
+                      {/* Title + description */}
+                      <div style={{ paddingRight: camp.isOwned ? 0 : 64 }}>
+                        <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "6px" }}>{camp.title}</h3>
+                        <p style={{ color: "var(--subtle)", fontSize: "0.82rem", lineHeight: 1.55, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                          {camp.description}
+                        </p>
+                      </div>
+
+                      {/* Party member portraits */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px", minHeight: "32px" }}>
+                        {members.length === 0 ? (
+                          <span style={{ fontSize: "0.78rem", color: "#475569", fontStyle: "italic" }}>No adventurers yet</span>
+                        ) : (
+                          <>
+                            {members.slice(0, 9).map(m => (
+                              <div
+                                key={m.id}
+                                title={`${m.name} (${m.class})`}
+                                style={{ width: "28px", height: "28px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${CLASS_COLORS[m.class] ?? "var(--border)"}`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}
+                              >
+                                {m.portrait_url
+                                  ? <img src={m.portrait_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[m.class] ?? "#4b5563"}22` }} />
+                                }
+                              </div>
+                            ))}
+                            {members.length > 9 && (
+                              <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "rgba(255,255,255,0.07)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", color: "var(--muted)", flexShrink: 0 }}>
+                                +{members.length - 9}
+                              </div>
+                            )}
+                            <span style={{ fontSize: "0.68rem", color: "var(--muted)", marginLeft: "6px" }}>
+                              {members.length} {members.length === 1 ? "adventurer" : "adventurers"}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "14px", marginTop: "auto" }}>
+                        <button
+                          onClick={() => copyInvite(camp.id)}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", color: copiedId === camp.id ? "#22c55e" : "var(--subtle)", cursor: "pointer", fontSize: "0.78rem", padding: "6px 12px", transition: "all 0.2s", flexShrink: 0 }}
+                        >
+                          {copiedId === camp.id ? "Copied!" : "🔗 Invite"}
+                        </button>
+                        {camp.isOwned && (
+                          <button
+                            onClick={() => deleteCampaign(camp.id, camp.title)}
+                            className="btn-danger"
+                            style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                          >
+                            Delete
+                          </button>
+                        )}
+                        <Link href={`/campaign/${camp.id}`} style={{ marginLeft: "auto", textDecoration: "none" }}>
+                          <button className="btn-primary" style={{ padding: "8px 18px", fontSize: "0.85rem" }}>
+                            Resume
+                          </button>
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
-        )}
+
+          {/* ── Roster ── */}
+          <section>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
+              <div>
+                <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Characters</h2>
+                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Roster</p>
+              </div>
+            </div>
+
+            {characters.length === 0 ? (
+              <div className="glass-panel" style={{ padding: "40px 24px", textAlign: "center" }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "12px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
+                <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "8px" }}>No characters yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "0.82rem", marginBottom: "20px", lineHeight: 1.6 }}>
+                  Create your first hero to start adventuring.
+                </p>
+                <Link href="/create-character" style={{ textDecoration: "none" }}>
+                  <button className="btn-primary" style={{ fontSize: "0.85rem" }}>Create a Character</button>
+                </Link>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "10px" }}>
+                {characters.map((char) => {
+                  const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+                  const rMax = Math.max(1, char.max_hp + ib.hpMaxAdd);
+                  const rPct = Math.max(0, Math.min(100, Math.round((char.hp / rMax) * 100)));
+                  const hpColor = rPct > 50 ? "#22c55e" : rPct > 25 ? "#f59e0b" : "#ef4444";
+                  const classColor = CLASS_COLORS[char.class] ?? "#94a3b8";
+                  return (
+                    <div
+                      key={char.id}
+                      className="glass-panel glass-panel-hover animate-fade-in"
+                      onClick={() => setSelectedChar(char)}
+                      style={{ padding: "10px", cursor: "pointer", display: "flex", flexDirection: "column", gap: "7px" }}
+                    >
+                      {/* Portrait */}
+                      <div style={{ width: "100%", aspectRatio: "1", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: `2px solid ${classColor}33`, position: "relative", flexShrink: 0 }}>
+                        {char.portrait_url
+                          ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <div style={{ width: "100%", height: "100%", background: `${classColor}10` }} />
+                        }
+                        <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.62rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3 }}>
+                          Lv {char.level}
+                        </div>
+                      </div>
+
+                      {/* Name */}
+                      <div style={{ fontWeight: "bold", color: classColor, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+                        {char.name}
+                      </div>
+
+                      {/* Race / Class */}
+                      <div style={{ fontSize: "0.68rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {char.race} {char.class}
+                      </div>
+
+                      {/* HP bar */}
+                      <div style={{ height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.07)" }}>
+                        <div style={{ height: "100%", width: `${rPct}%`, background: hpColor, borderRadius: "2px", transition: "width 0.3s" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Create new character card */}
+                <Link href="/create-character" style={{ textDecoration: "none" }}>
+                  <div
+                    className="glass-panel animate-fade-in"
+                    style={{ padding: "10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", aspectRatio: "1", borderStyle: "dashed", borderColor: "rgba(139,92,246,0.3)", gap: "6px" }}
+                  >
+                    <span style={{ fontSize: "1.4rem", color: "var(--primary)", opacity: 0.6, lineHeight: 1 }}>+</span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--primary)", fontWeight: "bold", opacity: 0.8, textAlign: "center" }}>New Character</span>
+                  </div>
+                </Link>
+              </div>
+            )}
+          </section>
+
+        </div>
       </div>
     </main>
   );
