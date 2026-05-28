@@ -1163,6 +1163,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     pendingActionsRef.current = newPending; currentTurnIndexRef.current = newIndex;
     channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex, pendingActions: newPending } });
 
+    // Rotate to the next party member immediately after this character's action
+    if (campaignPartyRef.current.length > 1) {
+      setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
+    }
+
     if (order.length === 0 || newIndex >= order.length) {
       await sendToAI(updatedMessages);
       setPendingActions([]); setCurrentTurnIndex(0);

@@ -32,6 +32,31 @@ const SCENE_PROMPTS: Record<string, string> = {
   village:    "A small pastoral village under threat — thatched cottages, a muddy square, frightened faces peering through shuttered windows, smoke rising in the wrong direction",
 };
 
+// Visually similar scene groups — used as fallbacks before generating a new image.
+// Order matters: first match wins. Only reused if exact scene has no cached image.
+const SCENE_FALLBACKS: Record<string, string[]> = {
+  cave:       ["dungeon", "prison"],
+  dungeon:    ["cave", "prison"],
+  prison:     ["dungeon", "cave"],
+  graveyard:  ["ruins", "dungeon"],
+  ruins:      ["graveyard", "castle"],
+  castle:     ["ruins", "temple"],
+  temple:     ["castle", "library"],
+  library:    ["temple", "castle"],
+  forest:     ["wilderness", "swamp"],
+  swamp:      ["forest", "wilderness"],
+  wilderness: ["forest", "mountain", "desert"],
+  mountain:   ["wilderness", "desert"],
+  desert:     ["wilderness", "mountain"],
+  village:    ["street", "shop"],
+  street:     ["village", "port"],
+  shop:       ["tavern", "village"],
+  tavern:     ["shop", "street"],
+  port:       ["ship", "street"],
+  ship:       ["port"],
+  arena:      ["ruins", "castle"],
+};
+
 const SCENE_SYSTEM = `You are a scene classifier for a fantasy RPG. Read the DM narrative and return EXACTLY one of these scene keys:
 tavern, dungeon, forest, cave, ruins, castle, street, shop, temple, wilderness, ship, graveyard, prison, arena, port, desert, mountain, swamp, library, village
 
@@ -60,16 +85,23 @@ export async function POST(req: NextRequest) {
     // Same scene — no image change needed
     if (sceneName === currentScene) return Response.json({ sceneName, imageUrl: null });
 
-    // Step 2: Check DB cache
-    const { data: cached } = await supabase
-      .from("scenes")
-      .select("image_url")
-      .eq("name", sceneName)
-      .single();
+    // Step 2: Fetch all cached scene images in one query
+    const { data: allCached } = await supabase.from("scenes").select("name, image_url");
+    const cacheMap = new Map((allCached ?? []).map(s => [s.name as string, s.image_url as string]));
 
-    if (cached?.image_url) return Response.json({ sceneName, imageUrl: cached.image_url });
+    // Exact cache hit
+    const exactUrl = cacheMap.get(sceneName);
+    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl });
 
-    // Step 3: Generate new scene image with DALL-E
+    // Visually similar fallback — reuse an existing image rather than generating
+    const fallbacks = SCENE_FALLBACKS[sceneName] ?? [];
+    const fallbackUrl = fallbacks.map(f => cacheMap.get(f)).find(Boolean);
+    if (fallbackUrl) {
+      console.log(`[detect-scene] reusing ${fallbacks.find(f => cacheMap.get(f))} image for ${sceneName}`);
+      return Response.json({ sceneName, imageUrl: fallbackUrl });
+    }
+
+    // Step 3: No suitable existing image — generate with DALL-E
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const scenePrompt = SCENE_PROMPTS[sceneName];
     const fullPrompt  = `Fantasy RPG environment art. ${scenePrompt}. Wide cinematic landscape view, dramatic fantasy painting style, moody atmosphere, dark fantasy aesthetic, no characters, no text.`;
@@ -83,7 +115,7 @@ export async function POST(req: NextRequest) {
     });
 
     const b64 = imgResponse.data?.[0]?.b64_json;
-    if (!b64) return Response.json({ sceneName, imageUrl: null });
+    if (!b64) return Response.json({ sceneName, imageUrl: fallbackUrl ?? null });
 
     // Step 4: Upload to Supabase Storage
     const imgBuffer = Buffer.from(b64, "base64");
@@ -94,7 +126,7 @@ export async function POST(req: NextRequest) {
 
     if (uploadError) {
       console.warn("[detect-scene] storage upload failed:", uploadError.message);
-      return Response.json({ sceneName, imageUrl: null });
+      return Response.json({ sceneName, imageUrl: fallbackUrl ?? null });
     }
 
     const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(`${sceneName}.png`);
