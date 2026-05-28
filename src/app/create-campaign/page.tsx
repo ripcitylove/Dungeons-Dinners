@@ -148,7 +148,7 @@ export default function CreateCampaignWizard() {
       if (!user) return;
       const { data } = await supabase
         .from("characters")
-        .select("id,name,race,class,sex,level,max_hp,hp,strength,dexterity,constitution,intelligence,wisdom,charisma,inventory,cantrips_known,spells_prepared,campaign_id")
+        .select("id,name,race,class,sex,level,max_hp,hp,strength,dexterity,constitution,intelligence,wisdom,charisma,inventory,cantrips_known,spells_prepared,campaign_id,portrait_url")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       setRosterChars((data as RosterChar[]) ?? []);
@@ -473,9 +473,7 @@ export default function CreateCampaignWizard() {
                               onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
                               {/* Portrait */}
                               <div style={{ width: "60px", height: "60px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}55`, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "9px", flexShrink: 0 }}>
-                                {c.portrait_url
-                                  ? <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-                                  : <span style={{ fontSize: "1.6rem" }}>{c.class === "Wizard" ? "🧙" : c.class === "Rogue" ? "🗡️" : c.class === "Cleric" ? "⛪" : c.class === "Paladin" ? "🛡️" : c.class === "Ranger" ? "🏹" : c.class === "Bard" ? "🎵" : "⚔️"}</span>}
+                                {c.portrait_url && <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />}
                               </div>
                               {/* Name */}
                               <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: classColor, marginBottom: "2px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{c.name}</div>
