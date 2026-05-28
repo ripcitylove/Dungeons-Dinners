@@ -253,3 +253,62 @@ input::placeholder, textarea::placeholder {
 .pc-anim-ranger  { animation: pc-idle   2.2s ease-in-out infinite; }
 .pc-anim-bard    { animation: pc-groove 0.85s ease-in-out infinite; }
 .pc-anim-warlock { animation: pc-drift  4.0s ease-in-out infinite; }
+
+/* ── Tavern / Landing page theme ──────────────────────────────────────────── */
+
+.btn-amber {
+  background: linear-gradient(135deg, #8a500e, #c47c2a, #d9962e, #8a500e);
+  background-size: 200%;
+  color: #f8e8c8;
+  padding: 15px 52px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 800;
+  font-size: 1.1rem;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 28px rgba(180, 100, 20, 0.45), 0 0 0 1px rgba(220, 160, 60, 0.22), inset 0 1px 0 rgba(255, 220, 100, 0.15);
+  transition: transform 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.btn-amber:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 36px rgba(200, 120, 20, 0.6), 0 0 0 1px rgba(220, 160, 60, 0.38), inset 0 1px 0 rgba(255, 220, 100, 0.22);
+}
+
+.btn-amber:active { transform: translateY(0); }
+
+.btn-tavern-outline {
+  background: none;
+  border: 1px solid rgba(180, 120, 40, 0.55);
+  color: #c47c2a;
+  padding: 9px 22px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.btn-tavern-outline:hover {
+  background: rgba(180, 120, 40, 0.1);
+  border-color: rgba(200, 140, 60, 0.75);
+  color: #d4922a;
+}
+
+.tavern-card {
+  background: linear-gradient(160deg, rgba(35, 20, 8, 0.92) 0%, rgba(20, 12, 4, 0.97) 100%);
+  border: 1px solid rgba(155, 95, 28, 0.3);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(200, 140, 50, 0.08);
+  transition: border-color 0.22s, box-shadow 0.22s;
+}
+
+.tavern-card:hover {
+  border-color: rgba(180, 120, 40, 0.52);
+  box-shadow: inset 0 1px 0 rgba(200, 140, 50, 0.12), 0 4px 24px rgba(0, 0, 0, 0.35);
+}
