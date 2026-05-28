@@ -6,6 +6,13 @@ const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").
 
 type MsgRole = "player" | "dm" | "system";
 type FrontendMessage = { role: MsgRole; content: string; sender?: string };
+type ActiveEnemy = {
+  name: string; enemy_type: string; cr: number; ac: number;
+  attack_bonus: number; damage_dice: string; max_hp: number;
+  condition: string; abilities: string[];
+  loot: { gold?: number; items?: string[]; weapons?: string[] };
+  xp_value: number;
+};
 type Character = {
   user_id?: string;
   name: string; race: string; class: string; level: number;
@@ -134,9 +141,25 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[]): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
+    : "";
+
+  const enemyBlock = enemies?.length
+    ? `\nACTIVE ENEMIES IN COMBAT\n${enemies.map(e => {
+        const lootLine = [
+          e.loot.gold ? `${e.loot.gold}gp` : "",
+          ...(e.loot.weapons ?? []),
+          ...(e.loot.items   ?? []),
+        ].filter(Boolean).join(", ");
+        return `${e.name} — ${e.enemy_type} | CR ${e.cr} | AC ${e.ac} | ATK +${e.attack_bonus} (${e.damage_dice}) | HP: ${e.condition.toUpperCase()} | XP: ${e.xp_value}
+  Abilities: ${e.abilities.join(", ") || "none"}
+  Loot on defeat: ${lootLine || "none"}`;
+      }).join("\n\n")}
+
+Use enemy AC values when players attack them. Use enemy ATK bonus and damage dice when enemies attack players.
+When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
   const isMulti = party && party.length > 1;
 
@@ -167,7 +190,7 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}
-${campaignBlock}
+${campaignBlock}${enemyBlock}
 PARTY (${partySize} adventurers)
 ${partyBlock}
 
@@ -175,7 +198,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   }
 
   // ── Solo mode: show single character ────────────────────────────────────────
-  if (!char) return `${VOICE_AND_RULES}${campaignBlock}`;
+  if (!char) return `${VOICE_AND_RULES}${campaignBlock}${enemyBlock}`;
 
   const inv      = char.inventory ?? { gold: 0, weapons: [], items: [] };
   const weapons  = inv.weapons?.join(", ") || "none";
@@ -199,7 +222,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     : "";
 
   return `${VOICE_AND_RULES}
-${campaignBlock}
+${campaignBlock}${enemyBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
@@ -213,11 +236,12 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
       campaignContext?: { title: string; description: string };
+      enemies?: ActiveEnemy[];
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -239,7 +263,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 1200,
-      system:     buildSystemPrompt(character, party, campaignContext),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies),
       messages:   claudeMessages,
       stream:     true,
     });

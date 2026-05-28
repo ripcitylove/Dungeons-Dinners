@@ -43,6 +43,49 @@ type PresencePlayer = {
   hp: number; maxHp: number; portraitUrl?: string | null;
 };
 
+type EnemyCondition = "healthy" | "wounded" | "bloodied" | "critical" | "defeated";
+
+type CampaignEnemy = {
+  id:             string;
+  campaign_id:    string;
+  name:           string;
+  enemy_type:     string;
+  cr:             number;
+  max_hp:         number;
+  ac:             number;
+  attack_bonus:   number;
+  damage_dice:    string;
+  abilities:      string[];
+  xp_value:       number;
+  loot:           { gold?: number; items?: string[]; weapons?: string[] };
+  portrait_emoji: string;
+  status_effects: string[];
+  condition:      EnemyCondition;
+  is_defeated:    boolean;
+};
+
+const CONDITION_COLORS: Record<EnemyCondition, string> = {
+  healthy:  "#22c55e",
+  wounded:  "#84cc16",
+  bloodied: "#f59e0b",
+  critical: "#ef4444",
+  defeated: "#6b7280",
+};
+const CONDITION_LABELS: Record<EnemyCondition, string> = {
+  healthy:  "Healthy",
+  wounded:  "Wounded",
+  bloodied: "Bloodied",
+  critical: "Critical",
+  defeated: "Defeated",
+};
+const CONDITION_PCT: Record<EnemyCondition, number> = {
+  healthy:  100,
+  wounded:  68,
+  bloodied: 38,
+  critical: 12,
+  defeated: 0,
+};
+
 const CLASS_HIT_DIE: Record<string, number> = {
   Barbarian: 12, Fighter: 10, Paladin: 10, Ranger: 10,
   Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8,
@@ -141,7 +184,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [userId,           setUserId]            = useState<string | null>(null);
   const [partyChangePending, setPartyChangePending] = useState(false);
   const [linkCopied,       setLinkCopied]        = useState(false);
-  const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log">("party");
+  const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log" | "combat">("party");
+  const [enemies,          setEnemies]           = useState<CampaignEnemy[]>([]);
+  const [combatActive,     setCombatActive]      = useState(false);
 
   // Narration
   const [narrationEnabled, setNarrationEnabled]  = useState(true);
@@ -224,6 +269,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const pendingLeavesRef     = useRef<PresencePlayer[]>([]);
   const leaveDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSceneRef      = useRef<string>("");
+  const enemiesRef           = useRef<CampaignEnemy[]>([]);
   const resumeNarrationRef   = useRef<string>("");
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
@@ -244,6 +290,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { currentTurnIndexRef.current = currentTurnIndex; }, [currentTurnIndex]);
   useEffect(() => { pendingActionsRef.current      = pendingActions;      }, [pendingActions]);
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
+  useEffect(() => { enemiesRef.current             = enemies;             }, [enemies]);
 
   // When the active character index changes, sync the character sheet
   useEffect(() => {
@@ -262,7 +309,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!user) return;
       setUserId(user.id);
 
-      const [charRes, historyRes, partyRes, campRes] = await Promise.all([
+      const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
         // Load ALL of the current user's characters (no limit — used for roster + active char)
         supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
@@ -270,6 +317,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // query never fails if the column is NULL or the migration hasn't run yet.
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
         supabase.from("campaigns").select("title, description").eq("id", params.id).single(),
+        supabase.from("campaign_enemies").select("*").eq("campaign_id", params.id).eq("is_defeated", false).order("created_at"),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
@@ -278,6 +326,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         campaignDescriptionRef.current = campRes.data.description;
       }
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
+
+      // Load any active enemies (e.g. campaign resumed mid-combat)
+      if (enemiesRes.data?.length) {
+        const active = enemiesRes.data as CampaignEnemy[];
+        setEnemies(active);
+        enemiesRef.current = active;
+        setCombatActive(true);
+      }
 
       if (partyRes.error) console.error("[campaign] party fetch:", partyRes.error.message);
 
@@ -422,6 +478,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "character_hp_update" }, ({ payload }) => {
         const { charId, newHp, newMaxHp } = payload as { charId: string; newHp: number; newMaxHp: number };
         setCampaignParty(prev => prev.map(c => c.id === charId ? { ...c, hp: newHp, max_hp: newMaxHp } : c));
+      })
+      .on("broadcast", { event: "enemies_spawned" }, ({ payload }) => {
+        const spawned = payload.enemies as CampaignEnemy[];
+        setEnemies(spawned);
+        enemiesRef.current = spawned;
+        setCombatActive(true);
+        setSidebarTab("combat");
+      })
+      .on("broadcast", { event: "enemies_updated" }, ({ payload }) => {
+        const { changes, combat_ended } = payload as {
+          changes: { name: string; condition: EnemyCondition; is_defeated: boolean; status_effects_gained: string[]; status_effects_lost: string[] }[];
+          combat_ended: boolean;
+        };
+        setEnemies(prev => {
+          const updated = prev.map(e => {
+            const ch = changes.find(c => c.name === e.name);
+            if (!ch) return e;
+            return {
+              ...e,
+              condition:      ch.condition,
+              is_defeated:    ch.is_defeated || e.is_defeated,
+              status_effects: [...e.status_effects.filter(s => !ch.status_effects_lost?.includes(s)), ...(ch.status_effects_gained ?? [])],
+            };
+          });
+          enemiesRef.current = updated;
+          return updated;
+        });
+        if (combat_ended) setCombatActive(false);
       })
       .on("broadcast", { event: "item_dropped" }, ({ payload }) => {
         if (payload.fromUserId === userIdRef.current) return;
@@ -807,6 +891,65 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
   }, []);
 
+  // ── Combat: enemy generation and state tracking ───────────────────────────────
+  const detectCombatStart = (text: string): boolean =>
+    /\b(roll(?:s)? (?:for )?initiative|initiative (?:order|is rolled|begins)|combat begins?|battle begins?|fights? break(?:s)? out)\b/i.test(text);
+
+  const spawnEnemies = useCallback(async (context: string) => {
+    const party = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class, level: c.level }));
+    if (!party.length) return;
+    try {
+      const res = await fetch("/api/enemies/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign_id: params.id, party, context }),
+      });
+      const { enemies: spawned } = await res.json() as { enemies: CampaignEnemy[] };
+      if (!spawned.length) return;
+      setEnemies(spawned);
+      enemiesRef.current = spawned;
+      setCombatActive(true);
+      setSidebarTab("combat");
+      channelRef.current?.send({ type: "broadcast", event: "enemies_spawned", payload: { enemies: spawned } });
+    } catch (err) {
+      console.error("[spawnEnemies]", err);
+    }
+  }, [params.id]);
+
+  const updateEnemyStates = useCallback(async (narrative: string) => {
+    const active = enemiesRef.current.filter(e => !e.is_defeated);
+    if (!active.length) return;
+    try {
+      const res = await fetch("/api/enemies/state", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ narrative, enemies: active.map(e => ({ id: e.id, name: e.name })) }),
+      });
+      const { changes, combat_ended } = await res.json() as {
+        changes: { name: string; condition: EnemyCondition; is_defeated: boolean; status_effects_gained: string[]; status_effects_lost: string[] }[];
+        combat_ended: boolean;
+      };
+      if (changes.length) {
+        setEnemies(prev => {
+          const updated = prev.map(e => {
+            const ch = changes.find(c => c.name === e.name);
+            if (!ch) return e;
+            return {
+              ...e,
+              condition:      ch.condition,
+              is_defeated:    ch.is_defeated || e.is_defeated,
+              status_effects: [...e.status_effects.filter(s => !ch.status_effects_lost?.includes(s)), ...(ch.status_effects_gained ?? [])],
+            };
+          });
+          enemiesRef.current = updated;
+          return updated;
+        });
+        channelRef.current?.send({ type: "broadcast", event: "enemies_updated", payload: { changes, combat_ended } });
+      }
+      if (combat_ended) setCombatActive(false);
+    } catch (err) {
+      console.error("[updateEnemyStates]", err);
+    }
+  }, []);
+
   // ── Dice-roll target detection ────────────────────────────────────────────────
   const detectDiceRollTarget = useCallback((narrative: string): string | null => {
     const names = campaignPartyRef.current.map(c => c.name).filter(Boolean);
@@ -883,10 +1026,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         ? { title: campaignTitle, description: campaignDescriptionRef.current }
         : undefined;
 
+      const activeEnemiesForDM = enemiesRef.current
+        .filter(e => !e.is_defeated)
+        .map(e => ({
+          name: e.name, enemy_type: e.enemy_type, cr: e.cr, ac: e.ac,
+          attack_bonus: e.attack_bonus, damage_dice: e.damage_dice,
+          max_hp: e.max_hp, condition: e.condition,
+          abilities: e.abilities, loot: e.loot, xp_value: e.xp_value,
+        }));
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, character: charForDM, party: partyForDM, campaignContext: campaignCtx }),
+        body: JSON.stringify({
+          messages: allMessages, character: charForDM, party: partyForDM,
+          campaignContext: campaignCtx,
+          enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("DM unavailable");
@@ -917,6 +1073,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Detect which character the DM is asking to roll dice
       const rollTarget = detectDiceRollTarget(full);
       setDiceRollTarget(rollTarget);
+
+      // Enemy combat: spawn enemies when combat starts, or update existing enemy states
+      const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
+      if (activeEnemies.length > 0) {
+        updateEnemyStates(full);
+      } else if (detectCombatStart(full)) {
+        spawnEnemies(full);
+      }
 
       const lastPlayerMsg = allMessages[allMessages.length - 1];
       supabase.from("campaign_messages").insert([
@@ -1435,6 +1599,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               {tab === "party" ? "Party" : tab === "sheet" ? "Character" : "Log"}
             </button>
           ))}
+          {enemies.length > 0 && (
+            <button onClick={() => setSidebarTab("combat")}
+              style={{ flex: 1, padding: "12px 4px", fontSize: "0.68rem", fontWeight: "bold", position: "relative",
+                background: sidebarTab === "combat" ? "rgba(239,68,68,0.15)" : "transparent",
+                borderTop: "none", borderLeft: "none", borderRight: "none",
+                borderBottom: sidebarTab === "combat" ? "2px solid #ef4444" : "2px solid transparent",
+                color: sidebarTab === "combat" ? "#ef4444" : "#64748b",
+                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s" }}>
+              ⚔ Combat
+              {combatActive && enemies.some(e => !e.is_defeated) && (
+                <span style={{ position: "absolute", top: "6px", right: "4px", width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", animation: "blink 1s step-end infinite" }} />
+              )}
+            </button>
+          )}
         </div>
 
         {/* ── Party tab ── */}
@@ -2138,6 +2316,76 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 );
               })}
               <div ref={logEndRef} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Combat tab ── */}
+        {sidebarTab === "combat" && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+              <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                ⚔ Enemies {combatActive && enemies.some(e => !e.is_defeated) ? `(${enemies.filter(e => !e.is_defeated).length} active)` : "(combat ended)"}
+              </h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {enemies.map(e => {
+                const cond  = e.condition ?? "healthy";
+                const color = CONDITION_COLORS[cond];
+                const pct   = CONDITION_PCT[cond];
+                const label = CONDITION_LABELS[cond];
+                return (
+                  <div key={e.id} style={{
+                    padding: "12px 14px", borderRadius: "10px",
+                    background: e.is_defeated ? "rgba(0,0,0,0.15)" : "rgba(60,0,0,0.45)",
+                    border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : "rgba(239,68,68,0.35)"}`,
+                    opacity: e.is_defeated ? 0.45 : 1, transition: "all 0.4s ease",
+                  }}>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
+                      <span style={{ fontSize: "1.7rem", lineHeight: 1, filter: e.is_defeated ? "grayscale(1)" : "none" }}>
+                        {e.portrait_emoji}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: "bold", fontSize: "0.88rem", color: e.is_defeated ? "#6b7280" : "#fca5a5", textDecoration: e.is_defeated ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {e.name}
+                        </div>
+                        <div style={{ fontSize: "0.68rem", color: "#94a3b8" }}>
+                          {e.enemy_type} · CR {e.cr} · AC {e.ac}
+                        </div>
+                      </div>
+                      {e.is_defeated
+                        ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px", flexShrink: 0 }}>DEFEATED</span>
+                        : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", flexShrink: 0, fontWeight: "bold" }}>{label}</span>
+                      }
+                    </div>
+
+                    {/* Condition bar — shows health state, not exact HP */}
+                    {!e.is_defeated && (
+                      <>
+                        <div style={{ width: "100%", height: "5px", background: "#1f2937", borderRadius: "3px", overflow: "hidden", marginBottom: "5px" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: "3px", transition: "width 0.6s ease, background 0.4s ease" }} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "0.65rem", color: "#64748b" }}>ATK +{e.attack_bonus} · {e.damage_dice}</span>
+                          {e.status_effects.length > 0 && (
+                            <span style={{ fontSize: "0.62rem", color: "#f59e0b" }}>{e.status_effects.join(", ")}</span>
+                          )}
+                        </div>
+                        {e.abilities.length > 0 && (
+                          <div style={{ marginTop: "5px", fontSize: "0.65rem", color: "#475569" }}>
+                            ⚡ {e.abilities.join(" · ")}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {enemies.length === 0 && (
+                <p style={{ color: "#475569", fontSize: "0.85rem", textAlign: "center", marginTop: "40px" }}>
+                  No enemies in the area.
+                </p>
+              )}
             </div>
           </div>
         )}
