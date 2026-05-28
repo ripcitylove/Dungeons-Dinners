@@ -282,7 +282,7 @@ export default function CreateCampaignWizard() {
 
       const { data: campData, error: campErr } = await supabase
         .from("campaigns")
-        .insert([{ title: aiTitle, description: aiDescription, user_id: user.id, party_leader_id: user.id }])
+        .insert([{ title: aiTitle, description: aiDescription, user_id: user.id }])
         .select().single();
       if (campErr || !campData) throw campErr ?? new Error("Campaign creation failed");
 

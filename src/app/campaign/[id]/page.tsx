@@ -381,7 +381,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCampaignDescription(campRes.data.description);
         campaignDescriptionRef.current = campRes.data.description;
       }
-      setPartyLeaderId((campRes.data as { party_leader_id?: string; user_id?: string } | null)?.party_leader_id ?? campRes.data?.user_id ?? null);
+      const loadedLeaderCharId = (campRes.data as { party_leader_id?: string } | null)?.party_leader_id ?? null;
+      setPartyLeaderId(loadedLeaderCharId);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       // Load any active enemies (e.g. campaign resumed mid-combat)
@@ -407,6 +408,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const myIdx  = party.findIndex(c => c.user_id === user.id);
         if (myChar) { setCharacter(myChar); characterRef.current = myChar; }
         if (myIdx >= 0) setActiveCharIdx(myIdx);
+
+        // Auto-assign party leader to first character if unset — only campaign owner does this to avoid races
+        if (!loadedLeaderCharId && user.id === campRes.data?.user_id) {
+          const firstCharId = party[0].id;
+          supabase.from("campaigns").update({ party_leader_id: firstCharId }).eq("id", params.id).then(() => {});
+          setPartyLeaderId(firstCharId);
+        }
       } else if (charRes.data?.[0]) {
         setCharacter(charRes.data[0] as Character);
       }
@@ -929,11 +937,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setCampaignParty(prev => { const next = prev.filter(c => c.id !== char.id); campaignPartyRef.current = next; return next; });
   }, [narratePartyEvent]);
 
-  const transferLeadership = useCallback(async (targetUserId: string) => {
-    const { error } = await supabase.from("campaigns").update({ party_leader_id: targetUserId }).eq("id", params.id);
+  const transferLeadership = useCallback(async (targetCharId: string) => {
+    const { error } = await supabase.from("campaigns").update({ party_leader_id: targetCharId }).eq("id", params.id);
     if (error) { console.error("[transfer leader]", error.message); return; }
-    setPartyLeaderId(targetUserId);
-    channelRef.current?.send({ type: "broadcast", event: "leader_changed", payload: { newLeaderId: targetUserId } });
+    setPartyLeaderId(targetCharId);
+    channelRef.current?.send({ type: "broadcast", event: "leader_changed", payload: { newLeaderId: targetCharId } });
   }, [params.id]);
 
   const handleShortRest = useCallback(async () => {
@@ -1286,7 +1294,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const text = (actionText ?? input).trim();
     if (!text || isTyping) return;
     const order    = turnOrderRef.current;
-    const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId || userId === partyLeaderId;
+    const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId || characterRef.current?.id === partyLeaderId;
     if (!isMyTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
@@ -1584,7 +1592,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       ]);
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       if (campRes.data?.description) { setCampaignDescription(campRes.data.description); campaignDescriptionRef.current = campRes.data.description; }
-      setPartyLeaderId((campRes.data as { party_leader_id?: string; user_id?: string } | null)?.party_leader_id ?? campRes.data?.user_id ?? null);
+      setPartyLeaderId((campRes.data as { party_leader_id?: string } | null)?.party_leader_id ?? null);
 
       if (historyRes.data?.length) {
         const hist = historyRes.data as (Message & { created_at?: string })[];
@@ -1618,7 +1626,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const otherPlayers        = players.filter(p => p.userId !== userId);
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
-  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId || userId === partyLeaderId;
+  const isPartyLeader       = !!character && character.id === partyLeaderId;
+  const leaderChar          = campaignParty.find(c => c.id === partyLeaderId) ?? null;
+  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId || isPartyLeader;
   const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
@@ -2036,6 +2046,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
+                          {char.id === partyLeaderId && (
+                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
+                          )}
                           {isActive && campaignParty.length > 1 && (
                             <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
@@ -2077,7 +2090,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; }}
                           >⇄</button>
                         )}
-                        {!isMyChar && userId === partyLeaderId && (
+                        {!isMyChar && isPartyLeader && (
                           <button
                             onClick={e => { e.stopPropagation(); kickCharacter(char); }}
                             title={`Kick ${char.name}`}
@@ -2169,7 +2182,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[p.characterClass] ?? "white" }}>{p.characterName}</span>
-                          {p.userId === partyLeaderId && (
+                          {p.userId === leaderChar?.user_id && (
                             <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
                           )}
                           {isMe && <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.3)", color: "#c4b5fd", borderRadius: "3px", padding: "1px 4px", flexShrink: 0 }}>You</span>}
@@ -2178,7 +2191,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                         <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 5px #22c55e" }} />
-                        {!isMe && userId === partyLeaderId && (
+                        {!isMe && isPartyLeader && (
                           <button onClick={() => kickPlayer(p)} title={`Remove ${p.characterName}`}
                             style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.85rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
@@ -2211,7 +2224,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
 
             {/* Manage party — party leader only */}
-            {userId === partyLeaderId && (
+            {isPartyLeader && (
             <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
               <button
                 onClick={() => setManagePartyOpen(o => !o)}
@@ -2669,25 +2682,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                 {/* Party Leadership */}
                 <div style={{ paddingTop: "4px", borderTop: "1px solid var(--border)" }}>
-                  {userId === partyLeaderId ? (
+                  {isPartyLeader ? (
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
                         <span style={{ fontSize: "1rem", filter: "drop-shadow(0 0 5px rgba(251,191,36,0.8))" }}>👑</span>
                         <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#fbbf24" }}>Party Leader</span>
                       </div>
-                      {players.filter(p => p.userId !== userId).length > 0 && (
+                      {campaignParty.filter(c => c.id !== partyLeaderId).length > 0 && (
                         <div>
                           <p style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer Leadership</p>
                           <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                            {players.filter(p => p.userId !== userId).map(p => (
-                              <button key={p.userId} onClick={() => transferLeadership(p.userId)}
+                            {campaignParty.filter(c => c.id !== partyLeaderId).map(c => (
+                              <button key={c.id} onClick={() => transferLeadership(c.id)}
                                 style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "7px", border: "1px solid rgba(251,191,36,0.2)", background: "rgba(251,191,36,0.04)", cursor: "pointer", transition: "all 0.15s", textAlign: "left" }}
                                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(251,191,36,0.12)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.5)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.background = "rgba(251,191,36,0.04)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.2)"; }}>
                                 <span style={{ fontSize: "0.8rem" }}>👑</span>
                                 <div>
-                                  <div style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#e2e8f0" }}>{p.characterName}</div>
-                                  <div style={{ fontSize: "0.62rem", color: "#64748b" }}>Make Party Leader</div>
+                                  <div style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#e2e8f0" }}>{c.name}</div>
+                                  <div style={{ fontSize: "0.62rem", color: "#64748b" }}>{c.race} {c.class} · Make Leader</div>
                                 </div>
                               </button>
                             ))}
@@ -2695,13 +2708,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       )}
                     </div>
-                  ) : partyLeaderId ? (
+                  ) : leaderChar ? (
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
                       <span style={{ fontSize: "0.9rem", filter: "drop-shadow(0 0 4px rgba(251,191,36,0.6))" }}>👑</span>
                       <div>
-                        <div style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold" }}>
-                          {players.find(p => p.userId === partyLeaderId)?.characterName ?? "Party Leader"}
-                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold" }}>{leaderChar.name}</div>
                         <div style={{ fontSize: "0.62rem", color: "#64748b" }}>is leading the party</div>
                       </div>
                     </div>
