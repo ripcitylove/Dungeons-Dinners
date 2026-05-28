@@ -250,16 +250,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [diceRollTarget,   setDiceRollTarget]     = useState<string | null>(null);
 
   // Guest join (invite link flow)
-  const [showGuestJoin, setShowGuestJoin] = useState(false);
-  const [guestName,     setGuestName]     = useState("");
-  const [guestClass,    setGuestClass]    = useState("Fighter");
-  const [guestRace,     setGuestRace]     = useState("Human");
-  const [guestJoining,  setGuestJoining]  = useState(false);
-  const [guestError,    setGuestError]    = useState<string | null>(null);
-
+  const [showGuestJoin,      setShowGuestJoin]      = useState(false);
+  const [guestJoining,       setGuestJoining]       = useState(false);
+  const [guestError,         setGuestError]         = useState<string | null>(null);
   const [guestRosterChars,   setGuestRosterChars]   = useState<Character[]>([]);
   const [selectedRosterChar, setSelectedRosterChar] = useState<Character | null>(null);
-  const [guestJoinMode,      setGuestJoinMode]      = useState<"pick" | "create">("create");
 
   // Read once from URL — stable across renders
   const inviteToken = useMemo(() => {
@@ -277,7 +272,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         .then(({ data }) => {
           const available = ((data ?? []) as Character[]).filter(c => c.campaign_id !== params.id);
           setGuestRosterChars(available);
-          if (available.length > 0) setGuestJoinMode("pick");
         });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,25 +338,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        if (inviteToken) { setShowGuestJoin(true); return; }
-        router.push("/auth");
-        return;
-      }
-      // Anonymous users and guest accounts bypass the email gate
-      if (!(user as { is_anonymous?: boolean }).is_anonymous && user.email !== ALLOWED_EMAIL) {
-        const isGuest = (user.user_metadata as { is_guest?: boolean })?.is_guest === true;
-        if (isGuest) {
-          // Returning guest with a valid server-created session — load normally
-        } else if (inviteToken) {
-          setShowGuestJoin(true);
-          return;
-        } else {
-          await supabase.auth.signOut();
-          router.push("/auth");
-          return;
-        }
-      }
+      if (!user) { router.push("/auth"); return; }
       setUserId(user.id);
 
       const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
@@ -399,6 +375,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (charRes.data) setUserRoster(charRes.data as Character[]);
 
       const party = (partyRes.data ?? []) as Character[];
+
+      // Gate access: only campaign owner or party members may enter without an invite
+      const userInParty = party.some(c => c.user_id === user.id);
+      const isOwner     = campRes.data?.user_id === user.id;
+      if (!userInParty && !isOwner) {
+        if (inviteToken) { setShowGuestJoin(true); return; }
+        router.push("/dashboard");
+        return;
+      }
 
       if (party.length) {
         setCampaignParty(party);
@@ -1517,12 +1502,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
 
   const handleGuestJoin = async () => {
-    if (guestJoinMode === "create" && !guestName.trim()) { setGuestError("Please enter your character name."); return; }
-    if (guestJoinMode === "pick" && !selectedRosterChar) { setGuestError("Select a character or create a new one."); return; }
+    if (!selectedRosterChar) { setGuestError("Select a character to continue."); return; }
     setGuestJoining(true);
     setGuestError(null);
     try {
-      // Verify the invite token server-side
       const verifyRes = await fetch("/api/campaign-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1530,48 +1513,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       });
       if (!verifyRes.ok) { setGuestError("This invite link is invalid. Ask for a new one."); return; }
 
-      let joinUserId: string;
-      let char: Character;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setGuestError("Session expired. Please refresh."); return; }
 
-      if (guestJoinMode === "pick" && selectedRosterChar) {
-        // ── Joining with an existing character ──────────────────────────────
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setGuestError("Session expired. Please refresh."); return; }
-        joinUserId = user.id;
-        const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
-        if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
-        char = { ...selectedRosterChar, campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] };
-      } else {
-        // ── Creating a new character ─────────────────────────────────────────
-        let authUser = (await supabase.auth.getUser()).data.user;
-        if (!authUser) {
-          // Create a guest account server-side (bypasses captcha + anonymous sign-in settings)
-          const sessionRes = await fetch("/api/guest-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: inviteToken, campaignId: params.id }),
-          });
-          if (!sessionRes.ok) { setGuestError("Could not create a guest session."); return; }
-          const { email: guestEmail, password: guestPassword } = await sessionRes.json() as { email: string; password: string };
-          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email: guestEmail, password: guestPassword });
-          if (signInErr || !signInData.user) { setGuestError("Could not create a guest session."); return; }
-          authUser = signInData.user;
-        }
-        joinUserId = authUser.id;
-        const hitDie = CLASS_HIT_DIE[guestClass] ?? 8;
-        const newChar = {
-          user_id: joinUserId, name: guestName.trim(), race: guestRace, class: guestClass,
-          level: 1, hp: hitDie, max_hp: hitDie, xp: 0,
-          strength: 10, dexterity: 10, constitution: 10,
-          intelligence: 10, wisdom: 10, charisma: 10,
-          background: "Wandering Adventurer",
-          inventory: { gold: 10, weapons: [], items: [] },
-          campaign_id: params.id,
-        };
-        const { data: charData, error: charErr } = await supabase.from("characters").insert([newChar]).select().single();
-        if (charErr || !charData) { setGuestError("Could not create your character. Try again."); return; }
-        char = charData as Character;
-      }
+      const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
+      if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
+
+      const char: Character = { ...selectedRosterChar, campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] };
+      const joinUserId = user.id;
 
       // ── Shared: wire up state and load campaign data ─────────────────────
       setUserId(joinUserId);
@@ -1651,32 +1600,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       <audio ref={narrateAudioRef} />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} />}
 
-      {/* Guest join overlay — shown when arriving via invite link without an account */}
+      {/* Join overlay — shown when arriving via invite link; requires a roster character */}
       {showGuestJoin && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)", overflowY: "auto", padding: "24px 16px" }}>
           <div className="animate-fade-in" style={{ width: "100%", maxWidth: "460px", background: "rgba(15,10,30,0.9)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: "16px", overflow: "hidden" }}>
-            {/* Header */}
             <div style={{ textAlign: "center", padding: "32px 32px 20px" }}>
               <div style={{ fontSize: "2.4rem", marginBottom: "10px" }}>🗡️</div>
               <h1 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "6px" }}>Join the Adventure</h1>
-              <p style={{ color: "#64748b", fontSize: "0.85rem" }}>You&apos;ve been invited to join the party.</p>
+              <p style={{ color: "#64748b", fontSize: "0.85rem" }}>Select a character from your roster to bring into this campaign.</p>
             </div>
 
-            {/* Tabs — only shown when there are existing characters */}
-            {guestRosterChars.length > 0 && (
-              <div style={{ display: "flex", borderBottom: "1px solid var(--border)", margin: "0 0 0 0" }}>
-                {(["pick", "create"] as const).map(mode => (
-                  <button key={mode} onClick={() => { setGuestJoinMode(mode); setSelectedRosterChar(null); setGuestError(null); }}
-                    style={{ flex: 1, padding: "10px", fontSize: "0.75rem", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", background: guestJoinMode === mode ? "rgba(139,92,246,0.15)" : "transparent", borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: guestJoinMode === mode ? "2px solid var(--primary)" : "2px solid transparent", color: guestJoinMode === mode ? "var(--primary)" : "#64748b", cursor: "pointer", transition: "all 0.15s" }}>
-                    {mode === "pick" ? "My Characters" : "Create New"}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div style={{ padding: "20px 28px 28px" }}>
-              {/* ── Pick from roster ── */}
-              {guestJoinMode === "pick" && (
+            <div style={{ padding: "4px 28px 28px" }}>
+              {guestRosterChars.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "24px 0" }}>
+                  <div style={{ fontSize: "2rem", marginBottom: "12px" }}>📜</div>
+                  <p style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: "16px", lineHeight: 1.6 }}>
+                    You need at least one character on your roster to join a campaign.
+                  </p>
+                  <a href="/create-character" style={{ display: "inline-block", padding: "10px 24px", borderRadius: "8px", background: "rgba(139,92,246,0.2)", border: "1px solid rgba(139,92,246,0.4)", color: "#c4b5fd", fontSize: "0.88rem", fontWeight: "bold", textDecoration: "none" }}>
+                    Create a Character →
+                  </a>
+                </div>
+              ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
                   {guestRosterChars.map(rc => {
                     const isSelected = selectedRosterChar?.id === rc.id;
@@ -1706,42 +1651,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 </div>
               )}
 
-              {/* ── Create new character ── */}
-              {guestJoinMode === "create" && (
-                <>
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Character Name</label>
-                    <input value={guestName} onChange={e => setGuestName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleGuestJoin()}
-                      placeholder="Enter your name…" maxLength={40} autoFocus
-                      style={{ width: "100%", padding: "10px 14px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", fontSize: "0.92rem", outline: "none", boxSizing: "border-box" }} />
-                  </div>
-                  <div style={{ marginBottom: "14px" }}>
-                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "7px" }}>Race</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                      {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
-                        <button key={race} onClick={() => setGuestRace(race)}
-                          style={{ padding: "4px 9px", borderRadius: "6px", fontSize: "0.75rem", border: `1px solid ${guestRace === race ? "rgba(139,92,246,0.8)" : "var(--border)"}`, background: guestRace === race ? "rgba(139,92,246,0.25)" : "transparent", color: guestRace === race ? "#e9d5ff" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>{race}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: "20px" }}>
-                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "7px" }}>Class</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                      {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
-                        <button key={cls} onClick={() => setGuestClass(cls)}
-                          style={{ padding: "4px 9px", borderRadius: "6px", fontSize: "0.75rem", border: `1px solid ${guestClass === cls ? (CLASS_COLORS[cls] ?? "rgba(139,92,246,0.8)") : "var(--border)"}`, background: guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.25)"}22` : "transparent", color: guestClass === cls ? (CLASS_COLORS[cls] ?? "#e9d5ff") : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>{cls}</button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
               {guestError && <p style={{ color: "#ef4444", fontSize: "0.82rem", marginBottom: "14px", textAlign: "center" }}>{guestError}</p>}
 
-              <button onClick={handleGuestJoin} disabled={guestJoining} className="btn-primary"
-                style={{ width: "100%", padding: "13px", fontSize: "0.95rem", borderRadius: "10px", opacity: guestJoining ? 0.6 : 1 }}>
-                {guestJoining ? "Entering the world…" : guestJoinMode === "pick" && selectedRosterChar ? `Enter as ${selectedRosterChar.name}` : "Join Adventure"}
-              </button>
+              {guestRosterChars.length > 0 && (
+                <button onClick={handleGuestJoin} disabled={guestJoining || !selectedRosterChar} className="btn-primary"
+                  style={{ width: "100%", padding: "13px", fontSize: "0.95rem", borderRadius: "10px", opacity: (guestJoining || !selectedRosterChar) ? 0.5 : 1 }}>
+                  {guestJoining ? "Entering the world…" : selectedRosterChar ? `Enter as ${selectedRosterChar.name}` : "Select a character above"}
+                </button>
+              )}
             </div>
           </div>
         </div>

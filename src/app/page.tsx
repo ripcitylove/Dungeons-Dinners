@@ -14,7 +14,6 @@ export default function Home() {
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
           <Link href="/auth"><button className="btn-secondary">Log In</button></Link>
-          <Link href="/auth"><button className="btn-primary">Play Free</button></Link>
         </div>
       </nav>
 
@@ -39,7 +38,7 @@ export default function Home() {
         {/* Badge */}
         <div className="animate-fade-in">
           <span style={{ padding: '6px 18px', background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600, border: '1px solid rgba(139, 92, 246, 0.25)', letterSpacing: '0.02em' }}>
-            AI Dungeon Master · Free to Play
+            AI Dungeon Master
           </span>
         </div>
 
@@ -63,11 +62,6 @@ export default function Home() {
         <div className="animate-fade-in delay-300" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <Link href="/auth">
             <button className="btn-primary" style={{ fontSize: '1.1rem', padding: '16px 36px' }}>
-              Forge Your Legend
-            </button>
-          </Link>
-          <Link href="/auth">
-            <button className="btn-secondary" style={{ fontSize: '1.1rem', padding: '16px 36px' }}>
               Enter the Tavern
             </button>
           </Link>
