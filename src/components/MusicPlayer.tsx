@@ -74,8 +74,9 @@ export function MusicPlayer() {
   // ── Ambiance helpers ─────────────────────────────────────────────────────────
   const playNextAmbiance = useCallback(() => {
     const amb = ambRef.current;
-    if (!amb || !ambPool.length) { amb?.pause(); amb && (amb.src = ""); return; }
+    if (!amb || !ambPool.length) { amb?.pause(); return; }
     const { src, queue } = nextFrom(ambianceQueue.current, ambPool);
+    if (!src) return;
     ambianceQueue.current = queue;
     amb.src = src;
     amb.volume = AMBIANCE_VOL;
@@ -86,11 +87,11 @@ export function MusicPlayer() {
   // ── Music helpers ────────────────────────────────────────────────────────────
   const loadAndPlay = useCallback((src: string, startVol?: number) => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !src) return;
     audio.src = src;
     audio.volume = startVol ?? targetVolume.current;
     audio.load();
-    audio.play().catch((err) => { console.error("[music] play blocked:", err); });
+    audio.play().catch(() => {});
   }, []);
 
   const playNextMusic = useCallback((startVol?: number) => {
@@ -127,7 +128,7 @@ export function MusicPlayer() {
 
     if (ambRef.current) {
       if (!audio?.paused && ambPool.length) playNextAmbiance();
-      else { ambRef.current.pause(); ambRef.current.src = ""; }
+      else { ambRef.current.pause(); }
     }
 
     if (!audio || audio.paused) return;
@@ -189,7 +190,6 @@ export function MusicPlayer() {
         onEnded={() => { playNextMusic(); }}
         onError={() => {
           musicErrors.current++;
-          console.warn("[music] track failed, skipping");
           if (musicErrors.current >= MAX_SKIP) {
             setPlaying(false);
             setLoadError(true);

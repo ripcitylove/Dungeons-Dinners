@@ -112,11 +112,12 @@ function exportLog(entries: LogEntry[], campaignId: string) {
 }
 
 const VOICES = [
-  { id: "onyx",   label: "Gravedigger", desc: "Deep & foreboding"   },
-  { id: "fable",  label: "Bard",        desc: "British storyteller" },
-  { id: "echo",   label: "Herald",      desc: "Clear & resonant"    },
-  { id: "ash",    label: "Rogue",       desc: "Gritty & measured"   },
-  { id: "ballad", label: "Sage",        desc: "Warm narrator"       },
+  { id: "chronicler", label: "Chronicler", desc: "Ancient wizard — gravelly & slow" },
+  { id: "onyx",       label: "Gravedigger", desc: "Deep & foreboding"               },
+  { id: "fable",      label: "Bard",        desc: "British storyteller"             },
+  { id: "echo",       label: "Herald",      desc: "Clear & resonant"                },
+  { id: "ash",        label: "Rogue",       desc: "Gritty & measured"               },
+  { id: "ballad",     label: "Sage",        desc: "Warm narrator"                   },
 ] as const;
 
 // ── Colored narrative — red for damage, green for healing ─────────────────────
@@ -272,6 +273,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const currentSceneRef      = useRef<string>("");
   const enemiesRef           = useRef<CampaignEnemy[]>([]);
   const resumeNarrationRef   = useRef<string>("");
+  const autoOpenedRef        = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
@@ -346,9 +348,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Roster = all user characters
       if (charRes.data) setUserRoster(charRes.data as Character[]);
 
-      // Include characters where party_active is true OR null (handles missing migration)
-      const rawParty = (partyRes.data ?? []) as Character[];
-      const party    = rawParty.filter(c => c.party_active !== false);
+      const party = (partyRes.data ?? []) as Character[];
 
       if (party.length) {
         setCampaignParty(party);
@@ -362,7 +362,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCharacter(charRes.data[0] as Character);
       }
 
-      const desc = campRes.data?.description ?? campaignDescriptionRef.current;
       if (historyRes.data && historyRes.data.length > 0) {
         const hist = historyRes.data as (Message & { created_at?: string })[];
         setMessages([...OPENING_MESSAGES, ...hist]);
@@ -371,12 +370,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           role: m.role, sender: m.sender, content: m.content,
         })));
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
-        if (lastDm) resumeNarrationRef.current = lastDm.content;
-      } else if (desc) {
-        // No history — use the AI-generated campaign description as the opening DM hook
-        const openingMsg: Message = { role: "dm", content: desc };
-        setMessages([...OPENING_MESSAGES, openingMsg]);
-        resumeNarrationRef.current = desc;
+        if (lastDm) {
+          resumeNarrationRef.current = lastDm.content;
+          // Restore the scene image — detect-scene hits its DB cache so this is fast
+          fetch("/api/detect-scene", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ narrative: lastDm.content, currentScene: "" }),
+          })
+            .then(r => r.json())
+            .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
+              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); }
+            })
+            .catch(() => {});
+        }
+      } else {
+        // New campaign — DM will narrate the opening scene when the session starts
+        setMessages(OPENING_MESSAGES);
       }
     }
     load();
@@ -850,7 +860,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const kickPlayer = useCallback(async (player: PresencePlayer) => {
     const theirChars = campaignPartyRef.current.filter(c => c.user_id === player.userId);
-    await Promise.all(theirChars.map(c => supabase.from("characters").update({ party_active: false }).eq("id", c.id)));
+    await Promise.all(theirChars.map(c => supabase.from("characters").update({ campaign_id: null }).eq("id", c.id)));
     channelRef.current?.send({ type: "broadcast", event: "player_kicked", payload: { targetUserId: player.userId } });
     narratePartyEvent("kick", player);
   }, [narratePartyEvent]);
@@ -974,7 +984,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[]) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1048,6 +1058,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           messages: allMessages, character: charForDM, party: partyForDM,
           campaignContext: campaignCtx,
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
+          ...(isOpeningScene && { openingScene: true }),
         }),
         signal: controller.signal,
       });
@@ -1066,12 +1077,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         narBuf += chunk;
         setStreamingContent(full);
         // Sentence-level streaming narration — fires TTS as each sentence completes
-        if (narrationEnabled) {
+        if (narrationEnabledRef.current) {
           const m = narBuf.match(/^([\s\S]{60,}?[.!?…]["']?)\s+/);
           if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
         }
       }
-      if (narrationEnabled && narBuf.trim().length > 10) enqueueNarration(narBuf.trim());
+      if (narrationEnabledRef.current && narBuf.trim().length > 10) enqueueNarration(narBuf.trim());
 
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
@@ -1304,21 +1315,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const freshHp = char.max_hp + ib.hpMaxAdd;
       const { error } = await supabase.from("characters").update({
         campaign_id:      params.id,
-        party_active:     true,
         hp:               freshHp,
         spell_slots_used: {},
         status_effects:   [],
       }).eq("id", char.id);
       if (error) { console.error("[addToParty]", error); return; }
-      updated = { ...char, campaign_id: params.id, party_active: true, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+      updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     } else {
-      // Returning to this campaign — restore last saved state, clamp hp, mark active
+      // Returning to this campaign — restore last saved state, clamp hp
       const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
       const clampedHp = Math.min(char.hp, char.max_hp + ib.hpMaxAdd);
-      const dbUpdate: Record<string, unknown> = { party_active: true };
-      if (clampedHp !== char.hp) dbUpdate.hp = clampedHp;
-      await supabase.from("characters").update(dbUpdate).eq("id", char.id);
-      updated = { ...char, party_active: true, hp: clampedHp };
+      if (clampedHp !== char.hp) await supabase.from("characters").update({ hp: clampedHp }).eq("id", char.id);
+      updated = { ...char, hp: clampedHp };
     }
 
     const newParty = [...campaignPartyRef.current, updated];
@@ -1336,8 +1344,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const leaveParty = useCallback(async (charId: string) => {
     const char = campaignPartyRef.current.find(c => c.id === charId);
     if (!char) return;
-    // Persist the removal — character keeps campaign_id (state preserved) but is inactive
-    await supabase.from("characters").update({ party_active: false }).eq("id", charId);
+    // Persist the removal — clear campaign_id so they don't appear on future loads
+    await supabase.from("characters").update({ campaign_id: null }).eq("id", charId);
     const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
@@ -1391,24 +1399,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
-                // Unlock the narration <audio> element synchronously inside this click handler.
-                // Browsers gate audio.play() on user-gesture call-stack proximity — once we
-                // play (even a silent clip) here, future async play() calls on this element
-                // are allowed for the rest of the session.
+                // Unlock narration audio synchronously — browser requires user-gesture call-stack.
                 const narAudio = narrateAudioRef.current;
                 if (narAudio) {
                   narAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
                   narAudio.play().catch(() => {});
                 }
 
-                // Start background music — must be called synchronously within this click
-                // handler so it counts as a user gesture in all browsers.
+                // Start background music — must be synchronous for user-gesture gate.
                 window.__dndMusicPlay?.();
 
-                // Narrate the last DM line on resume, or the opening line for new campaigns.
-                enqueueNarration(resumeNarrationRef.current || OPENING_MESSAGES[1].content);
+                // Resumed campaign: narrate the last DM line.
+                if (resumeNarrationRef.current) {
+                  enqueueNarration(resumeNarrationRef.current);
+                }
+
+                // New campaign: auto-trigger DM opening scene.
+                const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
+                if (isNewCampaign && !autoOpenedRef.current) {
+                  autoOpenedRef.current = true;
+                  setTimeout(() => {
+                    if (isTypingRef.current) return;
+                    const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
+                    sendToAI([...messagesRef.current, trigger], true);
+                  }, 400);
+                }
               }}>
-              Enter the Tavern
+              Begin Adventure
             </button>
           </div>
         </div>

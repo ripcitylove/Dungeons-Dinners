@@ -313,7 +313,6 @@ export default function CreateCampaignWizard() {
           spells_prepared:  c.spells,
           spell_slots_used: {},
           status_effects:   [],
-          party_active:     true,
         }));
         const { data, error: charErr } = await supabase.from("characters").insert(rows).select();
         if (charErr || !data) throw charErr ?? new Error("Character creation failed");
@@ -321,9 +320,10 @@ export default function CreateCampaignWizard() {
       }
 
       for (const c of rosterPicks) {
-        await supabase.from("characters")
-          .update({ campaign_id: campData.id, party_active: true })
+        const { error: rErr } = await supabase.from("characters")
+          .update({ campaign_id: campData.id })
           .eq("id", c.rosterId!);
+        if (rErr) throw rErr;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
