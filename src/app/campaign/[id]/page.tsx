@@ -889,6 +889,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narratePartyEvent("kick", player);
   }, [narratePartyEvent]);
 
+  const kickCharacter = useCallback(async (char: Character) => {
+    await supabase.from("characters").update({ campaign_id: null }).eq("id", char.id);
+    if (char.user_id) {
+      channelRef.current?.send({ type: "broadcast", event: "player_kicked", payload: { targetUserId: char.user_id } });
+    }
+    const asPresence: PresencePlayer = { userId: char.user_id ?? "", characterName: char.name, characterClass: char.class, hp: char.hp, maxHp: char.max_hp, portraitUrl: char.portrait_url ?? null };
+    narratePartyEvent("kick", asPresence);
+    setCampaignParty(prev => { const next = prev.filter(c => c.id !== char.id); campaignPartyRef.current = next; return next; });
+  }, [narratePartyEvent]);
+
   const handleShortRest = useCallback(async () => {
     const char = characterRef.current;
     if (!char) return;
@@ -1913,6 +1923,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.15)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; }}
                           >⇄</button>
+                        )}
+                        {!isMyChar && userId === partyLeaderId && (
+                          <button
+                            onClick={e => { e.stopPropagation(); kickCharacter(char); }}
+                            title={`Kick ${char.name}`}
+                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: "0.75rem", padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "#3f3f46"; }}
+                          >✕</button>
                         )}
                       </div>
                     </div>
