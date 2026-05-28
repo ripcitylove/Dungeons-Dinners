@@ -244,6 +244,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
   const [managePartyOpen,  setManagePartyOpen]    = useState(false);
+  const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
 
   // Dice-roll targeting — character name the DM just asked to roll
   const [diceRollTarget,   setDiceRollTarget]     = useState<string | null>(null);
@@ -344,7 +345,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Fetch all characters in this campaign; filter party_active in JS so the
         // query never fails if the column is NULL or the migration hasn't run yet.
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
-        supabase.from("campaigns").select("title, description").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, description, user_id").eq("id", params.id).single(),
         supabase.from("campaign_enemies").select("*").eq("campaign_id", params.id).eq("is_defeated", false).order("created_at"),
       ]);
 
@@ -353,6 +354,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCampaignDescription(campRes.data.description);
         campaignDescriptionRef.current = campRes.data.description;
       }
+      if (campRes.data?.user_id) setPartyLeaderId(campRes.data.user_id);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       // Load any active enemies (e.g. campaign resumed mid-combat)
@@ -1443,7 +1445,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Load campaign meta + history
       const [historyRes, campRes] = await Promise.all([
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
-        supabase.from("campaigns").select("title, description").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, description, user_id").eq("id", params.id).single(),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
@@ -1839,6 +1841,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const isOnline    = players.some(p => p.userId === char.user_id);
                 const isDiceTarget = diceRollTarget === char.name;
                 const isMyChar    = char.user_id === userId;
+                const isLeader    = char.user_id === partyLeaderId;
                 const cardInv     = char.inventory ?? { gold: 0, items: [], weapons: [] };
                 const cardIb      = computeInventoryBonuses(cardInv.items, cardInv.weapons);
                 const cardMaxHp   = char.max_hp + cardIb.hpMaxAdd;
@@ -1867,6 +1870,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
+                          {isLeader && (
+                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
+                          )}
                           {isActive && campaignParty.length > 1 && (
                             <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
@@ -1991,13 +1997,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[p.characterClass] ?? "white" }}>{p.characterName}</span>
+                          {p.userId === partyLeaderId && (
+                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
+                          )}
                           {isMe && <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.3)", color: "#c4b5fd", borderRadius: "3px", padding: "1px 4px", flexShrink: 0 }}>You</span>}
                         </div>
                         <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{p.characterClass}</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                         <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 5px #22c55e" }} />
-                        {!isMe && (
+                        {!isMe && userId === partyLeaderId && (
                           <button onClick={() => kickPlayer(p)} title={`Remove ${p.characterName}`}
                             style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.85rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
@@ -2029,7 +2038,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               )}
             </div>
 
-            {/* Manage party — add/remove characters from roster */}
+            {/* Manage party — party leader only */}
+            {userId === partyLeaderId && (
             <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
               <button
                 onClick={() => setManagePartyOpen(o => !o)}
@@ -2082,6 +2092,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 </div>
               )}
             </div>
+            )}
 
             {/* Party item pool */}
             {droppedItems.length > 0 && (
