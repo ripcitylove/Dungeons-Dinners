@@ -372,7 +372,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Fetch all characters in this campaign; filter party_active in JS so the
         // query never fails if the column is NULL or the migration hasn't run yet.
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
-        supabase.from("campaigns").select("title, description, user_id").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, description, user_id, party_leader_id").eq("id", params.id).single(),
         supabase.from("campaign_enemies").select("*").eq("campaign_id", params.id).eq("is_defeated", false).order("created_at"),
       ]);
 
@@ -381,7 +381,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCampaignDescription(campRes.data.description);
         campaignDescriptionRef.current = campRes.data.description;
       }
-      if (campRes.data?.user_id) setPartyLeaderId(campRes.data.user_id);
+      setPartyLeaderId((campRes.data as { party_leader_id?: string; user_id?: string } | null)?.party_leader_id ?? campRes.data?.user_id ?? null);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       // Load any active enemies (e.g. campaign resumed mid-combat)
@@ -508,6 +508,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "player_kicked" }, ({ payload }) => {
         if (payload.targetUserId === userIdRef.current) router.push("/dashboard");
+      })
+      .on("broadcast", { event: "leader_changed" }, ({ payload }) => {
+        setPartyLeaderId(payload.newLeaderId as string);
       })
       .on("broadcast", { event: "player_action" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -925,6 +928,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narratePartyEvent("kick", asPresence);
     setCampaignParty(prev => { const next = prev.filter(c => c.id !== char.id); campaignPartyRef.current = next; return next; });
   }, [narratePartyEvent]);
+
+  const transferLeadership = useCallback(async (targetUserId: string) => {
+    const { error } = await supabase.from("campaigns").update({ party_leader_id: targetUserId }).eq("id", params.id);
+    if (error) { console.error("[transfer leader]", error.message); return; }
+    setPartyLeaderId(targetUserId);
+    channelRef.current?.send({ type: "broadcast", event: "leader_changed", payload: { newLeaderId: targetUserId } });
+  }, [params.id]);
 
   const handleShortRest = useCallback(async () => {
     const char = characterRef.current;
@@ -1570,11 +1580,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       const [historyRes, campRes] = await Promise.all([
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
-        supabase.from("campaigns").select("title, description, user_id").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, description, user_id, party_leader_id").eq("id", params.id).single(),
       ]);
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       if (campRes.data?.description) { setCampaignDescription(campRes.data.description); campaignDescriptionRef.current = campRes.data.description; }
-      if (campRes.data?.user_id) setPartyLeaderId(campRes.data.user_id);
+      setPartyLeaderId((campRes.data as { party_leader_id?: string; user_id?: string } | null)?.party_leader_id ?? campRes.data?.user_id ?? null);
 
       if (historyRes.data?.length) {
         const hist = historyRes.data as (Message & { created_at?: string })[];
@@ -2172,6 +2182,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                         <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 5px #22c55e" }} />
+                        {!isMe && userId === partyLeaderId && (
+                          <button onClick={() => transferLeadership(p.userId)} title={`Make ${p.characterName} Party Leader`}
+                            style={{ background: "none", border: "1px solid rgba(251,191,36,0.25)", color: "#78716c", cursor: "pointer", fontSize: "0.7rem", padding: "1px 4px", borderRadius: "4px", lineHeight: 1, transition: "all 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#fbbf24"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.6)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "#78716c"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.25)"; }}>👑</button>
+                        )}
                         {!isMe && userId === partyLeaderId && (
                           <button onClick={() => kickPlayer(p)} title={`Remove ${p.characterName}`}
                             style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.85rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
