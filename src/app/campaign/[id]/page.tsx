@@ -257,12 +257,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [guestJoining,  setGuestJoining]  = useState(false);
   const [guestError,    setGuestError]    = useState<string | null>(null);
 
+  const [guestRosterChars,   setGuestRosterChars]   = useState<Character[]>([]);
+  const [selectedRosterChar, setSelectedRosterChar] = useState<Character | null>(null);
+  const [guestJoinMode,      setGuestJoinMode]      = useState<"pick" | "create">("create");
+
   // Read once from URL — stable across renders
   const inviteToken = useMemo(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("invite");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the invite overlay opens, pre-load any characters this user already owns
+  useEffect(() => {
+    if (!showGuestJoin) return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
+        .then(({ data }) => {
+          const available = ((data ?? []) as Character[]).filter(c => c.campaign_id !== params.id);
+          setGuestRosterChars(available);
+          if (available.length > 0) setGuestJoinMode("pick");
+        });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGuestJoin]);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
@@ -330,8 +349,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         router.push("/auth");
         return;
       }
-      // Anonymous users arrived via a valid invite link — skip the email check
+      // Anonymous users and invited authenticated users bypass the email gate
       if (!(user as { is_anonymous?: boolean }).is_anonymous && user.email !== ALLOWED_EMAIL) {
+        if (inviteToken) { setShowGuestJoin(true); return; }
         await supabase.auth.signOut();
         router.push("/auth");
         return;
@@ -1472,11 +1492,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
 
   const handleGuestJoin = async () => {
-    if (!guestName.trim()) { setGuestError("Please enter your character name."); return; }
+    if (guestJoinMode === "create" && !guestName.trim()) { setGuestError("Please enter your character name."); return; }
+    if (guestJoinMode === "pick" && !selectedRosterChar) { setGuestError("Select a character or create a new one."); return; }
     setGuestJoining(true);
     setGuestError(null);
     try {
-      // Verify the token server-side
+      // Verify the invite token server-side
       const verifyRes = await fetch("/api/campaign-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1484,55 +1505,63 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       });
       if (!verifyRes.ok) { setGuestError("This invite link is invalid. Ask for a new one."); return; }
 
-      // Sign in anonymously
-      const { data: authData, error: authErr } = await supabase.auth.signInAnonymously();
-      if (authErr || !authData.user) { setGuestError("Could not create a guest session."); return; }
-      const guestUser = authData.user;
+      let joinUserId: string;
+      let char: Character;
 
-      // Create a level-1 character for the guest
-      const hitDie = CLASS_HIT_DIE[guestClass] ?? 8;
-      const newChar = {
-        user_id:      guestUser.id,
-        name:         guestName.trim(),
-        race:         guestRace,
-        class:        guestClass,
-        level:        1,
-        hp:           hitDie,
-        max_hp:       hitDie,
-        xp:           0,
-        strength:     10, dexterity: 10, constitution: 10,
-        intelligence: 10, wisdom:     10, charisma:    10,
-        background:   "Wandering Adventurer",
-        inventory:    { gold: 10, weapons: [], items: [] },
-        campaign_id:  params.id,
-      };
+      if (guestJoinMode === "pick" && selectedRosterChar) {
+        // ── Joining with an existing character ──────────────────────────────
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setGuestError("Session expired. Please refresh."); return; }
+        joinUserId = user.id;
+        const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", selectedRosterChar.id);
+        if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
+        char = { ...selectedRosterChar, campaign_id: params.id };
+      } else {
+        // ── Creating a new character ─────────────────────────────────────────
+        let authUser = (await supabase.auth.getUser()).data.user;
+        if (!authUser) {
+          const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
+          if (anonErr || !anonData.user) { setGuestError("Could not create a guest session."); return; }
+          authUser = anonData.user;
+        }
+        joinUserId = authUser.id;
+        const hitDie = CLASS_HIT_DIE[guestClass] ?? 8;
+        const newChar = {
+          user_id: joinUserId, name: guestName.trim(), race: guestRace, class: guestClass,
+          level: 1, hp: hitDie, max_hp: hitDie, xp: 0,
+          strength: 10, dexterity: 10, constitution: 10,
+          intelligence: 10, wisdom: 10, charisma: 10,
+          background: "Wandering Adventurer",
+          inventory: { gold: 10, weapons: [], items: [] },
+          campaign_id: params.id,
+        };
+        const { data: charData, error: charErr } = await supabase.from("characters").insert([newChar]).select().single();
+        if (charErr || !charData) { setGuestError("Could not create your character. Try again."); return; }
+        char = charData as Character;
+      }
 
-      const { data: charData, error: charErr } = await supabase.from("characters").insert([newChar]).select().single();
-      if (charErr || !charData) { setGuestError("Could not create your character. Try again."); return; }
-
-      const char = charData as Character;
-      setUserId(guestUser.id);
-      userIdRef.current = guestUser.id;
+      // ── Shared: wire up state and load campaign data ─────────────────────
+      setUserId(joinUserId);
+      userIdRef.current = joinUserId;
       setCharacter(char);
       characterRef.current = char;
-      setUserRoster([char]);
-      setCampaignParty(prev => { const next = [...prev, char]; campaignPartyRef.current = next; return next; });
-      setActiveCharIdx(prev => {
-        const party = campaignPartyRef.current;
-        const idx   = party.findIndex(c => c.id === char.id);
-        return idx >= 0 ? idx : prev;
+      setUserRoster(prev => prev.some(c => c.id === char.id) ? prev.map(c => c.id === char.id ? char : c) : [...prev, char]);
+      setCampaignParty(prev => {
+        const next = prev.some(c => c.id === char.id) ? prev.map(c => c.id === char.id ? char : c) : [...prev, char];
+        campaignPartyRef.current = next;
+        return next;
       });
+      setActiveCharIdx(campaignPartyRef.current.findIndex(c => c.id === char.id));
 
-      // Load campaign meta + history
       const [historyRes, campRes] = await Promise.all([
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
         supabase.from("campaigns").select("title, description, user_id").eq("id", params.id).single(),
       ]);
-
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       if (campRes.data?.description) { setCampaignDescription(campRes.data.description); campaignDescriptionRef.current = campRes.data.description; }
+      if (campRes.data?.user_id) setPartyLeaderId(campRes.data.user_id);
 
-      if (historyRes.data && historyRes.data.length > 0) {
+      if (historyRes.data?.length) {
         const hist = historyRes.data as (Message & { created_at?: string })[];
         setMessages([...OPENING_MESSAGES, ...hist]);
         setLogEntries(hist.map((m, i) => ({ id: `hist-${i}`, timestamp: m.created_at ? new Date(m.created_at) : new Date(), role: m.role as MsgRole, sender: m.sender, content: m.content })));
@@ -1545,7 +1574,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             .catch(() => {});
         }
       }
-
       setShowGuestJoin(false);
     } finally {
       setGuestJoining(false);
@@ -1590,63 +1618,96 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* Guest join overlay — shown when arriving via invite link without an account */}
       {showGuestJoin && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
-          <div className="animate-fade-in" style={{ width: "100%", maxWidth: "440px", padding: "40px", background: "rgba(15,10,30,0.9)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: "16px" }}>
-            <div style={{ textAlign: "center", marginBottom: "28px" }}>
-              <div style={{ fontSize: "2.8rem", marginBottom: "12px" }}>🗡️</div>
-              <h1 style={{ fontSize: "1.8rem", fontWeight: "bold", marginBottom: "8px" }}>Join the Adventure</h1>
-              <p style={{ color: "#64748b", fontSize: "0.88rem", lineHeight: 1.5 }}>You&apos;ve been invited. Create a quick character to join the party.</p>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)", overflowY: "auto", padding: "24px 16px" }}>
+          <div className="animate-fade-in" style={{ width: "100%", maxWidth: "460px", background: "rgba(15,10,30,0.9)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: "16px", overflow: "hidden" }}>
+            {/* Header */}
+            <div style={{ textAlign: "center", padding: "32px 32px 20px" }}>
+              <div style={{ fontSize: "2.4rem", marginBottom: "10px" }}>🗡️</div>
+              <h1 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "6px" }}>Join the Adventure</h1>
+              <p style={{ color: "#64748b", fontSize: "0.85rem" }}>You&apos;ve been invited to join the party.</p>
             </div>
 
-            {/* Name */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Character Name</label>
-              <input
-                value={guestName}
-                onChange={e => setGuestName(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleGuestJoin()}
-                placeholder="Enter your name…"
-                maxLength={40}
-                autoFocus
-                style={{ width: "100%", padding: "10px 14px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", fontSize: "0.95rem", outline: "none", boxSizing: "border-box" }}
-              />
-            </div>
-
-            {/* Race */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Race</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
-                  <button key={race} onClick={() => setGuestRace(race)}
-                    style={{ padding: "5px 10px", borderRadius: "6px", fontSize: "0.78rem", border: `1px solid ${guestRace === race ? "rgba(139,92,246,0.8)" : "var(--border)"}`, background: guestRace === race ? "rgba(139,92,246,0.25)" : "transparent", color: guestRace === race ? "#e9d5ff" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
-                    {race}
+            {/* Tabs — only shown when there are existing characters */}
+            {guestRosterChars.length > 0 && (
+              <div style={{ display: "flex", borderBottom: "1px solid var(--border)", margin: "0 0 0 0" }}>
+                {(["pick", "create"] as const).map(mode => (
+                  <button key={mode} onClick={() => { setGuestJoinMode(mode); setSelectedRosterChar(null); setGuestError(null); }}
+                    style={{ flex: 1, padding: "10px", fontSize: "0.75rem", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", background: guestJoinMode === mode ? "rgba(139,92,246,0.15)" : "transparent", borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: guestJoinMode === mode ? "2px solid var(--primary)" : "2px solid transparent", color: guestJoinMode === mode ? "var(--primary)" : "#64748b", cursor: "pointer", transition: "all 0.15s" }}>
+                    {mode === "pick" ? "My Characters" : "Create New"}
                   </button>
                 ))}
               </div>
+            )}
+
+            <div style={{ padding: "20px 28px 28px" }}>
+              {/* ── Pick from roster ── */}
+              {guestJoinMode === "pick" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
+                  {guestRosterChars.map(rc => {
+                    const isSelected = selectedRosterChar?.id === rc.id;
+                    const hpPct      = Math.max(0, Math.min(100, (rc.hp / Math.max(1, rc.max_hp)) * 100));
+                    const hpCol      = hpPct > 60 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
+                    return (
+                      <div key={rc.id} onClick={() => setSelectedRosterChar(rc)}
+                        style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "10px", border: `1.5px solid ${isSelected ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: isSelected ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)", cursor: "pointer", transition: "all 0.15s" }}>
+                        <div style={{ width: "40px", height: "40px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isSelected ? "rgba(139,92,246,0.6)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+                          {rc.portrait_url ? <img src={rc.portrait_url} alt={rc.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (rc.class === "Wizard" ? "🧙" : rc.class === "Rogue" ? "🗡️" : rc.class === "Cleric" ? "✝" : "⚔")}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+                            <span style={{ fontSize: "0.9rem", fontWeight: "bold", color: CLASS_COLORS[rc.class] ?? "white" }}>{rc.name}</span>
+                            <span style={{ fontSize: "0.65rem", color: "#64748b" }}>Lvl {rc.level}</span>
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "4px" }}>{rc.race} {rc.class}</div>
+                          <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden" }}>
+                            <div style={{ width: `${hpPct}%`, height: "100%", background: hpCol }} />
+                          </div>
+                          <div style={{ fontSize: "0.62rem", color: hpCol, marginTop: "2px" }}>{rc.hp}/{rc.max_hp} HP</div>
+                        </div>
+                        {isSelected && <div style={{ fontSize: "1rem", color: "#8b5cf6", flexShrink: 0 }}>✓</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Create new character ── */}
+              {guestJoinMode === "create" && (
+                <>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Character Name</label>
+                    <input value={guestName} onChange={e => setGuestName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleGuestJoin()}
+                      placeholder="Enter your name…" maxLength={40} autoFocus
+                      style={{ width: "100%", padding: "10px 14px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", fontSize: "0.92rem", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                  <div style={{ marginBottom: "14px" }}>
+                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "7px" }}>Race</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                      {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
+                        <button key={race} onClick={() => setGuestRace(race)}
+                          style={{ padding: "4px 9px", borderRadius: "6px", fontSize: "0.75rem", border: `1px solid ${guestRace === race ? "rgba(139,92,246,0.8)" : "var(--border)"}`, background: guestRace === race ? "rgba(139,92,246,0.25)" : "transparent", color: guestRace === race ? "#e9d5ff" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>{race}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <label style={{ display: "block", fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "7px" }}>Class</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                      {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
+                        <button key={cls} onClick={() => setGuestClass(cls)}
+                          style={{ padding: "4px 9px", borderRadius: "6px", fontSize: "0.75rem", border: `1px solid ${guestClass === cls ? (CLASS_COLORS[cls] ?? "rgba(139,92,246,0.8)") : "var(--border)"}`, background: guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.25)"}22` : "transparent", color: guestClass === cls ? (CLASS_COLORS[cls] ?? "#e9d5ff") : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>{cls}</button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {guestError && <p style={{ color: "#ef4444", fontSize: "0.82rem", marginBottom: "14px", textAlign: "center" }}>{guestError}</p>}
+
+              <button onClick={handleGuestJoin} disabled={guestJoining} className="btn-primary"
+                style={{ width: "100%", padding: "13px", fontSize: "0.95rem", borderRadius: "10px", opacity: guestJoining ? 0.6 : 1 }}>
+                {guestJoining ? "Entering the world…" : guestJoinMode === "pick" && selectedRosterChar ? `Enter as ${selectedRosterChar.name}` : "Join Adventure"}
+              </button>
             </div>
-
-            {/* Class */}
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Class</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
-                  <button key={cls} onClick={() => setGuestClass(cls)}
-                    style={{ padding: "5px 10px", borderRadius: "6px", fontSize: "0.78rem", border: `1px solid ${guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.8)"}` : "var(--border)"}`, background: guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.25)"}22` : "transparent", color: guestClass === cls ? (CLASS_COLORS[cls] ?? "#e9d5ff") : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
-                    {cls}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {guestError && <p style={{ color: "#ef4444", fontSize: "0.82rem", marginBottom: "14px", textAlign: "center" }}>{guestError}</p>}
-
-            <button
-              onClick={handleGuestJoin}
-              disabled={guestJoining}
-              className="btn-primary"
-              style={{ width: "100%", padding: "14px", fontSize: "1rem", borderRadius: "10px", opacity: guestJoining ? 0.6 : 1 }}>
-              {guestJoining ? "Entering the world…" : "Join Adventure"}
-            </button>
           </div>
         </div>
       )}
