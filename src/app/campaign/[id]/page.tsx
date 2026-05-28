@@ -247,7 +247,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
 
   // Dice-roll targeting — character name the DM just asked to roll
-  const [diceRollTarget,   setDiceRollTarget]     = useState<string | null>(null);
+  const [diceRollTarget,    setDiceRollTarget]    = useState<string | null>(null);
+  // Which die type the DM is requesting (4, 6, 8, 10, 12, 20, 100 — null = player's choice)
+  const [requiredDiceType,  setRequiredDiceType]  = useState<number | null>(null);
 
   // Guest join (invite link flow)
   const [showGuestJoin,      setShowGuestJoin]      = useState(false);
@@ -309,6 +311,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const narPlaySlotRef       = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef  = useRef<number>(0);
+  const playersRef           = useRef<PresencePlayer[]>([]);
 
   // ── Ref sync effects ─────────────────────────────────────────────────────────
   useEffect(() => { characterRef.current        = character;        }, [character]);
@@ -323,6 +326,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { pendingActionsRef.current      = pendingActions;      }, [pendingActions]);
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
   useEffect(() => { enemiesRef.current             = enemies;             }, [enemies]);
+  useEffect(() => { playersRef.current            = players;             }, [players]);
 
   // When the active character index changes, sync the character sheet
   useEffect(() => {
@@ -517,6 +521,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "dm", content: payload.content }]);
         const rollTarget = detectDiceRollTarget(payload.content as string);
         setDiceRollTarget(rollTarget);
+        setRequiredDiceType(detectRequiredDiceType(payload.content as string));
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       })
@@ -1118,6 +1123,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return null;
   }, []);
 
+  // ── Dice type detection ──────────────────────────────────────────────────────
+  const detectRequiredDiceType = useCallback((narrative: string): number | null => {
+    // Explicit die mention: "roll a d6", "roll 2d8", "d20 check"
+    const explicit = narrative.match(/\broll\s+(?:\d+)?d(\d+)\b/i)
+      ?? narrative.match(/\bd(\d+)\b/i);
+    if (explicit) {
+      const n = parseInt(explicit[1]);
+      if ([4, 6, 8, 10, 12, 20, 100].includes(n)) return n;
+    }
+    // Ability checks / saving throws / attack rolls / initiative = d20
+    const d20 = [
+      /\broll\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|attack roll|attack|initiative)\b/i,
+      /\bmake\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|roll)\b/i,
+      /\bgive me\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|roll)\b/i,
+      /\broll\s+(?:for\s+)?(?:initiative|stealth|perception|athletics|acrobatics|persuasion|deception|insight|investigation|arcana|history|nature|religion|survival|medicine|performance|intimidation)\b/i,
+    ];
+    if (d20.some(p => p.test(narrative))) return 20;
+    return null;
+  }, []);
+
   // ── AI call ───────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[], isOpeningScene = false) => {
     abortRef.current?.abort();
@@ -1153,9 +1178,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         };
       })() : null;
 
-      // Build full party context for the DM (effective stats)
-      const partyForDM = campaignPartyRef.current.length > 1
-        ? campaignPartyRef.current.map(c => {
+      // Build full party context for the DM — only include currently online players
+      const onlineUserIds = new Set([
+        ...playersRef.current.map(p => p.userId),
+        userId, // always include the current user
+      ].filter(Boolean));
+      const onlineParty = campaignPartyRef.current.filter(
+        c => !c.user_id || onlineUserIds.has(c.user_id)
+      );
+
+      const partyForDM = onlineParty.length > 1
+        ? onlineParty.map(c => {
             const inv  = c.inventory ?? { gold: 0, items: [], weapons: [] };
             const ib   = computeInventoryBonuses(inv.items, inv.weapons);
             const baseAC = computeAC(c.class, c.dexterity, c.constitution, c.wisdom, inv.items, inv.weapons);
@@ -1172,6 +1205,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             };
           })
         : undefined;
+
 
       const campaignCtx = campaignDescriptionRef.current
         ? { title: campaignTitle, description: campaignDescriptionRef.current }
@@ -1222,9 +1256,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
-      // Detect which character the DM is asking to roll dice
+      // Detect which character the DM is asking to roll, and what die type
       const rollTarget = detectDiceRollTarget(full);
       setDiceRollTarget(rollTarget);
+      setRequiredDiceType(detectRequiredDiceType(full));
 
       // Enemy combat: spawn enemies when combat starts, or update existing enemy states
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
@@ -1252,7 +1287,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       // Scene detection (non-blocking — updates background when ready)
       setSceneLoading(true);
-      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current }) })
+      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: enemiesRef.current.some(e => !e.is_defeated) }) })
         .then(r => r.json())
         .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
           if (imageUrl && sceneName !== currentSceneRef.current) {
@@ -1261,6 +1296,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
           }
         })
+
         .catch(() => {})
         .finally(() => setSceneLoading(false));
 
@@ -1499,7 +1535,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narratePartyEvent]);
 
-  const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
+  const handleDiceResult = (result: number, diceType: number) => {
+    setShowDice(false);
+    setRequiredDiceType(null);
+    handleSend(`[Rolled a ${result} on a d${diceType}]`);
+  };
 
   const handleGuestJoin = async () => {
     if (!selectedRosterChar) { setGuestError("Select a character to continue."); return; }
@@ -1598,7 +1638,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
       <audio ref={narrateAudioRef} />
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
 
       {/* Join overlay — shown when arriving via invite link; requires a roster character */}
       {showGuestJoin && (

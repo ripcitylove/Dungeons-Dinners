@@ -90,7 +90,7 @@ MULTI-PLAYER TURNS
 
 MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll your thieves' tools against DC 13."
-- Award gold and items explicitly so players can update their sheet, but thread it into the moment.
+- Treasure is contextual — award it when it makes sense and feels earned. Not every fight ends with loot. Not every NPC carries coin. The world runs on more than gold. Items appear when the DM decides, not on a schedule.
 
 CHARACTER SPOTLIGHT
 Before crafting any scene, scan the full party sheet: spells, cantrips, inventory, race, class, background, and sex. Then design the environment so that one or two characters' specific abilities become quietly, naturally relevant — without ever announcing it.
@@ -114,7 +114,7 @@ Never name the ability or item in the scene setup. Let the player discover the c
 Rotate the spotlight — if a character was centre-stage last response, favour someone else this time.
 
 PACING
-2–4 paragraphs. Match energy to context: spare and clipped during a chase; slow and atmospheric in a cursed library. Always end on something the player can react to — a choice, a threat, a question hanging in the air.
+Keep responses short. 1–2 tight paragraphs is the target. Combat exchanges are one punchy paragraph — name the hit, the damage number, the enemy's reaction, the next threat. Dialogue and exploration can breathe a little but never past 2 short paragraphs. Reserve length only for campaign-opening scenes and pivotal dramatic moments. Always end on something the player can react to.
 
 ${DM_LOOT_GUIDE}`;
 
@@ -195,7 +195,8 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
 
     return `${VOICE_AND_RULES}${openingBlock}
 ${campaignBlock}${enemyBlock}
-PARTY (${partySize} adventurers)
+PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
+Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
 
 ${partyScaleHint(partySize, avgLevel)}`;
@@ -267,7 +268,7 @@ export async function POST(req: NextRequest) {
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
-      max_tokens: 1200,
+      max_tokens: 700,
       system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene),
       messages:   claudeMessages,
       stream:     true,

@@ -10,51 +10,69 @@ const supabase  = createClient(
 );
 
 const SCENE_PROMPTS: Record<string, string> = {
-  tavern:     "A dimly lit medieval tavern interior — stone walls, wooden beams, flickering candles, smoke-stained oak tables, ale mugs, a roaring hearth",
-  dungeon:    "A dark stone dungeon corridor — flickering torchlight casting shadows on mossy blocks, iron doors, chains on walls, an ancient oppressive silence",
-  forest:     "A dense mystical forest — towering ancient trees, rays of dim light piercing the canopy, twisted roots, glowing mushrooms, an eerie mist",
-  cave:       "A vast underground cave — crystalline formations, an underground lake reflecting dark water, stalactites, bioluminescent fungi, ancient silence",
-  ruins:      "Ancient crumbling ruins — broken stone arches, vines reclaiming carved pillars, moonlight through collapsed ceilings, scattered rubble",
-  castle:     "A grand medieval castle interior — vaulted stone halls, tapestried walls, high stained-glass windows, flickering torches, heavy shadows",
-  street:     "A cobblestone medieval city street at night — lantern-lit storefronts, cloaked figures in doorways, rain-slick stones, shadows between buildings",
-  shop:       "A cluttered merchant's shop interior — shelves of potions and curiosities, hanging herbs, candlelight, a mysterious proprietor behind a counter",
-  temple:     "An ancient stone temple interior — rows of ceremonial columns, incense smoke drifting through shafts of light, an imposing altar, rune-carved floors",
-  wilderness: "A dramatic wilderness landscape — rugged mountains under storm clouds, a winding dirt path, wild grass, distant dark horizon",
-  ship:       "The deck and interior of a dark fantasy sailing vessel — creaking wood, lanterns swaying in sea wind, rope rigging, dark churning water below",
-  graveyard:  "An old moonlit graveyard — crooked tombstones, bare gnarled trees, mist curling across the ground, the distant howl of wind",
-  prison:     "A grim stone prison cell block — iron-barred cells, damp torchlit corridors, distant sounds of chains and dripping water, a guard tower visible through a slit window",
-  arena:      "A vast open-air gladiatorial arena — packed sand floor stained with old battles, roaring crowds in tiered stone seats, iron portcullises, a merciless midday sun",
-  port:       "A bustling fantasy port at dusk — tall ships moored at weathered docks, seagulls crying overhead, barrels of cargo, salty mist, the clamour of sailors and merchants",
-  desert:     "A vast scorched desert landscape — rolling dunes under a blazing sun, heat shimmering on the horizon, bleached bones half-buried in sand, a lone caravan trail",
-  mountain:   "A treacherous mountain pass at altitude — sheer cliffs dropping into fog, icy ledges, howling wind, a distant fortress carved into the rock face",
-  swamp:      "A murky swampland at dusk — twisted black trees rising from black water, fireflies drifting through hanging moss, the croak of unseen things, a faint putrid smell",
-  library:    "A vast arcane library — towering shelves of leather-bound tomes, floating candles, dust motes hanging in still air, the scratch of quill on parchment, a sense of ancient secrets",
-  village:    "A small pastoral village under threat — thatched cottages, a muddy square, frightened faces peering through shuttered windows, smoke rising in the wrong direction",
+  tavern:            "A dimly lit medieval tavern interior — stone walls, wooden beams, flickering candles, smoke-stained oak tables, ale mugs, a roaring hearth, warm amber light",
+  tavern_combat:     "A medieval tavern brawl in full chaos — overturned tables, shattered mugs, chairs flying, combatants clashing in wild torchlight, a barrel rolling across the floor",
+  dungeon:           "A dark stone dungeon corridor — flickering torchlight casting long shadows on mossy blocks, iron doors, chains on damp walls, an ancient oppressive silence",
+  dungeon_combat:    "A dungeon chamber mid-battle — stone floor scattered with weapons, torchlight strobing from the violence, dark silhouettes locked in desperate combat, blood on the stone",
+  forest:            "A dense mystical forest — towering ancient trees, shafts of dim light piercing the canopy, twisted roots, glowing mushrooms, ethereal mist curling along the ground",
+  forest_combat:     "A forest clearing erupting in battle — broken branches, leaves torn by movement, dappled lethal light through the canopy, the chaos of combat among the ancient trees",
+  cave:              "A vast underground cave — crystalline formations catching light, an underground lake reflecting dark water, stalactites hanging like teeth, bioluminescent fungi",
+  cave_combat:       "A cavern fight — stalactites overhead, the echoing crash of weapons, glowing crystals casting wild colors on battling figures, shadows dancing across wet stone",
+  ruins:             "Ancient crumbling ruins — broken stone arches, vines reclaiming carved pillars, moonlight through collapsed ceilings, scattered rubble and forgotten grandeur",
+  ruins_combat:      "Ancient ruins consumed by battle — crumbling stone spraying from weapon impacts, fighters using broken arches for cover, dust and debris in the air, desperate combat",
+  castle:            "A grand medieval castle interior — vaulted stone halls, tapestried walls, high stained-glass windows, flickering torches throwing long shadows on the stone floors",
+  castle_combat:     "A castle great hall in the heat of battle — toppled banners, armored fighters clashing, steel ringing off stone walls, the echoing chaos of castle siege",
+  street:            "A cobblestone medieval city street at night — lantern-lit storefronts, cloaked figures in doorways, rain-slick stones, the tension of dark alleys",
+  street_combat:     "A city street ambush — cloaked fighters clashing under swinging lanterns, shutters slamming, citizens fleeing, lantern-light catching drawn steel in the rain",
+  shop:              "A cluttered merchant's shop — shelves of potions and curiosities, hanging herbs, warm candlelight, a mysterious proprietor behind a counter of wonders",
+  temple:            "An ancient stone temple — ceremonial columns rising into shadow, incense smoke drifting through shafts of divine light, a rune-carved altar radiating quiet power",
+  temple_combat:     "A sacred temple defiled by battle — holy statues cracked, altar fire flickering wild, divine symbols clashing with darkness, desperate combat in the incense smoke",
+  wilderness:        "A dramatic wilderness landscape — rugged mountains under storming skies, a winding dirt path through wild grass, the dark horizon full of unnamed danger",
+  wilderness_combat: "An open battlefield in the wilderness — fighters locked in combat among rocks and grass, dramatic stormy sky above, earth torn up by the struggle, raw violent energy",
+  ship:              "The deck of a dark fantasy sailing vessel — creaking wood, swaying lanterns in sea wind, rope rigging catching moonlight, dark churning water below",
+  ship_combat:       "A ship deck battle — combatants fighting across heaving planks, rigging swinging overhead, salt spray and cannon smoke, chaos on the dark churning sea",
+  graveyard:         "An old moonlit graveyard — crooked tombstones, bare gnarled trees, mist curling across the cold ground, the distant howl of wind through iron gates",
+  prison:            "A grim stone prison — iron-barred cells, damp torchlit corridors, distant sounds of chains and dripping water, the hopeless weight of captivity",
+  arena:             "A vast open-air gladiatorial arena — packed sand floor stained with old battles, roaring crowd in stone seats, iron portcullises, merciless midday sun",
+  port:              "A fantasy port at dusk — tall ships moored at weathered docks, seagulls crying, barrels of cargo, salty mist, the clamour of sailors and merchants",
+  desert:            "A vast scorched desert — rolling dunes under a blazing sun, heat shimmering on the horizon, bleached bones half-buried in sand, a lone caravan trail",
+  mountain:          "A treacherous mountain pass — sheer cliffs dropping into fog, icy ledges, howling wind, a distant fortress carved into the rock face above the clouds",
+  swamp:             "A murky swampland at dusk — twisted black trees rising from dark water, fireflies drifting through hanging moss, the croak of unseen creatures, eerie stillness",
+  library:           "A vast arcane library — towering shelves of leather-bound tomes, floating candles, dust motes in still air, the scratch of quill on parchment, ancient secrets",
+  village:           "A small pastoral village under threat — thatched cottages, a muddy square, frightened faces at shuttered windows, smoke rising from the wrong direction",
 };
 
-// Visually similar scene groups — used as fallbacks before generating a new image.
-// Order matters: first match wins. Only reused if exact scene has no cached image.
 const SCENE_FALLBACKS: Record<string, string[]> = {
-  cave:       ["dungeon", "prison"],
-  dungeon:    ["cave", "prison"],
-  prison:     ["dungeon", "cave"],
-  graveyard:  ["ruins", "dungeon"],
-  ruins:      ["graveyard", "castle"],
-  castle:     ["ruins", "temple"],
-  temple:     ["castle", "library"],
-  library:    ["temple", "castle"],
-  forest:     ["wilderness", "swamp"],
-  swamp:      ["forest", "wilderness"],
-  wilderness: ["forest", "mountain", "desert"],
-  mountain:   ["wilderness", "desert"],
-  desert:     ["wilderness", "mountain"],
-  village:    ["street", "shop"],
-  street:     ["village", "port"],
-  shop:       ["tavern", "village"],
-  tavern:     ["shop", "street"],
-  port:       ["ship", "street"],
-  ship:       ["port"],
-  arena:      ["ruins", "castle"],
+  cave:              ["dungeon", "prison"],
+  dungeon:           ["cave", "prison"],
+  cave_combat:       ["dungeon_combat"],
+  dungeon_combat:    ["cave_combat", "ruins_combat"],
+  prison:            ["dungeon", "cave"],
+  graveyard:         ["ruins", "dungeon"],
+  ruins:             ["graveyard", "castle"],
+  ruins_combat:      ["dungeon_combat", "castle_combat"],
+  castle:            ["ruins", "temple"],
+  castle_combat:     ["ruins_combat", "dungeon_combat"],
+  temple:            ["castle", "library"],
+  temple_combat:     ["castle_combat", "ruins_combat"],
+  library:           ["temple", "castle"],
+  forest:            ["wilderness", "swamp"],
+  forest_combat:     ["wilderness_combat"],
+  swamp:             ["forest", "wilderness"],
+  wilderness:        ["forest", "mountain", "desert"],
+  wilderness_combat: ["forest_combat", "ruins_combat"],
+  mountain:          ["wilderness", "desert"],
+  desert:            ["wilderness", "mountain"],
+  village:           ["street", "shop"],
+  street:            ["village", "port"],
+  street_combat:     ["tavern_combat", "ruins_combat"],
+  shop:              ["tavern", "village"],
+  tavern:            ["shop", "street"],
+  tavern_combat:     ["street_combat"],
+  port:              ["ship", "street"],
+  ship:              ["port"],
+  ship_combat:       ["arena", "wilderness_combat"],
+  arena:             ["ruins", "castle"],
 };
 
 const SCENE_SYSTEM = `You are a scene classifier for a fantasy RPG. Read the DM narrative and return EXACTLY one of these scene keys:
@@ -65,13 +83,13 @@ Return ONLY the single word. No explanation, no punctuation.`;
 export async function POST(req: NextRequest) {
   let currentScene = "wilderness";
   try {
-    const body = (await req.json()) as { narrative: string; currentScene: string };
-    const { narrative } = body;
+    const body = (await req.json()) as { narrative: string; currentScene: string; isCombat?: boolean };
+    const { narrative, isCombat } = body;
     currentScene = body.currentScene ?? "wilderness";
 
     if (!narrative?.trim()) return Response.json({ sceneName: currentScene });
 
-    // Step 1: Detect scene name
+    // Step 1: Detect base scene type
     const detect = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
       max_tokens: 10,
@@ -79,13 +97,16 @@ export async function POST(req: NextRequest) {
       messages:   [{ role: "user", content: narrative.slice(0, 800) }],
     });
 
-    const raw       = detect.content[0].type === "text" ? detect.content[0].text.trim().toLowerCase() : "";
-    const sceneName = Object.keys(SCENE_PROMPTS).includes(raw) ? raw : (currentScene ?? "wilderness");
+    const raw      = detect.content[0].type === "text" ? detect.content[0].text.trim().toLowerCase() : "";
+    const baseScene = Object.keys(SCENE_PROMPTS).includes(raw) ? raw : (currentScene.replace("_combat", "") ?? "wilderness");
+
+    // Use combat variant when in active combat
+    const sceneName = isCombat ? `${baseScene}_combat` : baseScene;
 
     // Same scene — no image change needed
     if (sceneName === currentScene) return Response.json({ sceneName, imageUrl: null });
 
-    // Step 2: Fetch all cached scene images in one query
+    // Step 2: Fetch all cached scene images
     const { data: allCached } = await supabase.from("scenes").select("name, image_url");
     const cacheMap = new Map((allCached ?? []).map(s => [s.name as string, s.image_url as string]));
 
@@ -93,17 +114,16 @@ export async function POST(req: NextRequest) {
     const exactUrl = cacheMap.get(sceneName);
     if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl });
 
-    // Visually similar fallback — reuse an existing image rather than generating
+    // Visually similar fallback
     const fallbacks = SCENE_FALLBACKS[sceneName] ?? [];
     const fallbackUrl = fallbacks.map(f => cacheMap.get(f)).find(Boolean);
     if (fallbackUrl) {
-      console.log(`[detect-scene] reusing ${fallbacks.find(f => cacheMap.get(f))} image for ${sceneName}`);
       return Response.json({ sceneName, imageUrl: fallbackUrl });
     }
 
-    // Step 3: No suitable existing image — generate with DALL-E
+    // Step 3: No suitable image — generate with DALL-E
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const scenePrompt = SCENE_PROMPTS[sceneName];
+    const scenePrompt = SCENE_PROMPTS[sceneName] ?? SCENE_PROMPTS[baseScene];
     const fullPrompt  = `Fantasy RPG environment art. ${scenePrompt}. Wide cinematic landscape view, dramatic fantasy painting style, moody atmosphere, dark fantasy aesthetic, no characters, no text.`;
 
     const imgResponse = await openai.images.generate({
@@ -117,7 +137,6 @@ export async function POST(req: NextRequest) {
     const b64 = imgResponse.data?.[0]?.b64_json;
     if (!b64) return Response.json({ sceneName, imageUrl: fallbackUrl ?? null });
 
-    // Step 4: Upload to Supabase Storage
     const imgBuffer = Buffer.from(b64, "base64");
 
     const { error: uploadError } = await supabase.storage
@@ -131,7 +150,6 @@ export async function POST(req: NextRequest) {
 
     const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(`${sceneName}.png`);
 
-    // Step 5: Cache in DB
     await supabase.from("scenes").upsert({ name: sceneName, image_url: publicUrl });
 
     return Response.json({ sceneName, imageUrl: publicUrl });
