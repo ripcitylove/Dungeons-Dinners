@@ -349,12 +349,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         router.push("/auth");
         return;
       }
-      // Anonymous users and invited authenticated users bypass the email gate
+      // Anonymous users and guest accounts bypass the email gate
       if (!(user as { is_anonymous?: boolean }).is_anonymous && user.email !== ALLOWED_EMAIL) {
-        if (inviteToken) { setShowGuestJoin(true); return; }
-        await supabase.auth.signOut();
-        router.push("/auth");
-        return;
+        const isGuest = (user.user_metadata as { is_guest?: boolean })?.is_guest === true;
+        if (isGuest) {
+          // Returning guest with a valid server-created session — load normally
+        } else if (inviteToken) {
+          setShowGuestJoin(true);
+          return;
+        } else {
+          await supabase.auth.signOut();
+          router.push("/auth");
+          return;
+        }
       }
       setUserId(user.id);
 
@@ -1520,9 +1527,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // ── Creating a new character ─────────────────────────────────────────
         let authUser = (await supabase.auth.getUser()).data.user;
         if (!authUser) {
-          const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
-          if (anonErr || !anonData.user) { setGuestError("Could not create a guest session."); return; }
-          authUser = anonData.user;
+          // Create a guest account server-side (bypasses captcha + anonymous sign-in settings)
+          const sessionRes = await fetch("/api/guest-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: inviteToken, campaignId: params.id }),
+          });
+          if (!sessionRes.ok) { setGuestError("Could not create a guest session."); return; }
+          const { email: guestEmail, password: guestPassword } = await sessionRes.json() as { email: string; password: string };
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email: guestEmail, password: guestPassword });
+          if (signInErr || !signInData.user) { setGuestError("Could not create a guest session."); return; }
+          authUser = signInData.user;
         }
         joinUserId = authUser.id;
         const hitDie = CLASS_HIT_DIE[guestClass] ?? 8;
