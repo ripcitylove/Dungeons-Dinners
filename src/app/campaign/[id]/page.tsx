@@ -372,7 +372,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Fetch all characters in this campaign; filter party_active in JS so the
         // query never fails if the column is NULL or the migration hasn't run yet.
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
-        supabase.from("campaigns").select("title, description, user_id, party_leader_id").eq("id", params.id).single(),
+        supabase.from("campaigns").select("*").eq("id", params.id).single(),
         supabase.from("campaign_enemies").select("*").eq("campaign_id", params.id).eq("is_defeated", false).order("created_at"),
       ]);
 
@@ -1580,7 +1580,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       const [historyRes, campRes] = await Promise.all([
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
-        supabase.from("campaigns").select("title, description, user_id, party_leader_id").eq("id", params.id).single(),
+        supabase.from("campaigns").select("*").eq("id", params.id).single(),
       ]);
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       if (campRes.data?.description) { setCampaignDescription(campRes.data.description); campaignDescriptionRef.current = campRes.data.description; }
