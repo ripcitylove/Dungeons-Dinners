@@ -1,138 +1,96 @@
+import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
 
 export default function Home() {
   return (
-    <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative", background: "#0d0906" }}>
+    <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Override the global purple-tinted body gradient */}
-      <div style={{ position: "fixed", inset: 0, zIndex: -3, background: "#0d0906" }} />
-
-      {/* Warm firelight radial glow — centre of page */}
-      <div style={{
-        position: "fixed", inset: 0, zIndex: -2, pointerEvents: "none",
-        background: "radial-gradient(ellipse at 50% 44%, rgba(200, 82, 14, 0.2) 0%, transparent 62%)"
-      }} />
-
-      {/* Edge vignette */}
-      <div style={{
-        position: "fixed", inset: 0, zIndex: -1, pointerEvents: "none",
-        background: "radial-gradient(ellipse at 50% 50%, transparent 32%, rgba(4, 2, 1, 0.68) 100%)"
-      }} />
-
-      {/* ── Drink & Play Publishing badge (bottom-right) ── */}
-      <div style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 50 }}>
-        <div style={{
-          background: "rgba(244, 237, 218, 0.97)",
-          borderRadius: "14px",
-          padding: "8px",
-          boxShadow: "0 6px 24px rgba(0,0,0,0.55), 0 0 0 1px rgba(155, 110, 40, 0.4)",
-        }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/DrinkPlayLogo.jpg"
-            alt="Drink and Play Publishing"
-            style={{ width: "86px", display: "block", borderRadius: "6px" }}
-          />
+      {/* Navigation */}
+      <nav className="glass-panel" style={{ margin: '20px', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ color: 'var(--primary)' }}>⬡</span>
+          <span>D&amp;D Legends</span>
         </div>
-      </div>
-
-      {/* ── Nav ── */}
-      <nav style={{ position: "relative", zIndex: 10, padding: "20px 36px", display: "flex", justifyContent: "flex-end" }}>
-        <Link href="/auth">
-          <button className="btn-tavern-outline">Log In</button>
-        </Link>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <Link href="/auth"><button className="btn-secondary">Log In</button></Link>
+        </div>
       </nav>
 
-      {/* ── Hero ── */}
-      <section style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        textAlign: "center",
-        padding: "0 20px 80px",
-        position: "relative",
-        zIndex: 10,
-      }}>
+      {/* Hero Section */}
+      <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 20px 80px', position: 'relative' }}>
 
-        {/* Game logo */}
-        <div className="animate-fade-in" style={{ position: "relative", marginBottom: "32px" }}>
-          {/* Amber halo */}
-          <div style={{
-            position: "absolute", inset: "-40px", borderRadius: "50%", zIndex: -1,
-            background: "radial-gradient(circle, rgba(215, 100, 18, 0.28) 0%, transparent 68%)",
-            filter: "blur(28px)",
-          }} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/DNDLegendsLogo.png"
-            alt="Dungeons and Dinner Legends — A Drink and Play Game"
-            style={{
-              width: "100%",
-              maxWidth: "500px",
-              maxHeight: "80vh",
-              objectFit: "contain",
-              display: "block",
-              filter: "drop-shadow(0 0 44px rgba(205, 98, 16, 0.55)) drop-shadow(0 10px 40px rgba(0,0,0,0.85))",
-            }}
+        {/* Background Image */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: -2 }}>
+          <Image
+            src="/hero_bg.png"
+            alt=""
+            fill
+            style={{ objectFit: 'cover', opacity: 0.12, mixBlendMode: 'screen' }}
+            priority
           />
         </div>
 
-        {/* Subtitle */}
-        <p
+        {/* Decorative glows */}
+        <div style={{ position: 'absolute', top: '5%', left: '10%', width: '400px', height: '400px', background: 'var(--primary)', filter: 'blur(160px)', opacity: 0.15, zIndex: -1, borderRadius: '50%' }} />
+        <div style={{ position: 'absolute', bottom: '5%', right: '10%', width: '350px', height: '350px', background: 'var(--secondary)', filter: 'blur(160px)', opacity: 0.08, zIndex: -1, borderRadius: '50%' }} />
+
+        {/* Badge */}
+        <div className="animate-fade-in">
+          <span style={{ padding: '6px 18px', background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', borderRadius: '20px', fontSize: '0.875rem', fontWeight: 600, border: '1px solid rgba(139, 92, 246, 0.25)', letterSpacing: '0.02em' }}>
+            AI Dungeon Master
+          </span>
+        </div>
+
+        {/* Headline */}
+        <h1
           className="animate-fade-in delay-100"
-          style={{ color: "#9a7850", fontSize: "1.05rem", maxWidth: "480px", lineHeight: 1.8, marginBottom: "40px", letterSpacing: "0.01em" }}
+          style={{ fontSize: 'clamp(2.5rem, 7vw, 4.5rem)', fontWeight: 800, maxWidth: '820px', margin: '28px 0 20px', lineHeight: 1.1, background: 'linear-gradient(160deg, #fff 30%, #c4b5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
         >
-          AI Dungeon Master · Full D&amp;D 5e rules · Real-time multiplayer
-          <br />
-          <span style={{ color: "#6b5035", fontSize: "0.9rem" }}>Forge your party. Let the story begin.</span>
+          Your Next Great Adventure Awaits
+        </h1>
+
+        {/* Sub-headline */}
+        <p
+          className="animate-fade-in delay-200"
+          style={{ fontSize: '1.2rem', color: 'var(--subtle)', maxWidth: '580px', marginBottom: '44px', lineHeight: 1.7 }}
+        >
+          D&amp;D 5e powered by a true AI Dungeon Master. Forge your hero, join your party, and let the story unfold — no human DM required.
         </p>
 
-        {/* CTA */}
-        <div className="animate-fade-in delay-200">
+        {/* CTAs */}
+        <div className="animate-fade-in delay-300" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <Link href="/auth">
-            <button className="btn-amber">Enter the Tavern</button>
+            <button className="btn-primary" style={{ fontSize: '1.1rem', padding: '16px 36px' }}>
+              Enter the Tavern
+            </button>
           </Link>
         </div>
 
-        {/* Divider */}
+        {/* Feature Cards */}
         <div
           className="animate-fade-in delay-300"
-          style={{ display: "flex", alignItems: "center", gap: "18px", margin: "72px 0 36px", width: "100%", maxWidth: "860px" }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', marginTop: '80px', maxWidth: '1000px', width: '100%' }}
         >
-          <div style={{ flex: 1, height: "1px", background: "linear-gradient(to right, transparent, rgba(155, 95, 28, 0.35))" }} />
-          <span style={{ color: "#6b5035", fontSize: "1rem" }}>⚔</span>
-          <div style={{ flex: 1, height: "1px", background: "linear-gradient(to left, transparent, rgba(155, 95, 28, 0.35))" }} />
-        </div>
-
-        {/* Feature cards */}
-        <div
-          className="animate-fade-in delay-300"
-          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", maxWidth: "860px", width: "100%" }}
-        >
-          <div className="tavern-card" style={{ padding: "28px 24px", textAlign: "left" }}>
-            <div style={{ fontSize: "1.8rem", marginBottom: "14px" }}>🧙‍♂️</div>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: "8px", color: "#e8c88a" }}>Expert AI DM</h3>
-            <p style={{ color: "#7a6040", fontSize: "0.88rem", lineHeight: 1.65 }}>
+          <div className="glass-panel" style={{ padding: '28px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🧙‍♂️</div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Expert AI DM</h3>
+            <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
               Knows every rule, monster, and spell. Crafts dynamic encounters and unforgettable narrative on the fly.
             </p>
           </div>
-
-          <div className="tavern-card animate-float" style={{ padding: "28px 24px", textAlign: "left" }}>
-            <div style={{ fontSize: "1.8rem", marginBottom: "14px" }}>🎲</div>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: "8px", color: "#e8c88a" }}>Live Combat &amp; Dice</h3>
-            <p style={{ color: "#7a6040", fontSize: "0.88rem", lineHeight: 1.65 }}>
-              Real-time encounters with tracked enemies, dice rolls, loot, and XP — everything your party needs.
+          <div className="glass-panel animate-float" style={{ padding: '28px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🎲</div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Live Combat & Dice</h3>
+            <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
+              Real-time encounters with tracked enemies, dice rolls, loot, XP — everything your party needs at the table.
             </p>
           </div>
-
-          <div className="tavern-card" style={{ padding: "28px 24px", textAlign: "left" }}>
-            <div style={{ fontSize: "1.8rem", marginBottom: "14px" }}>🌍</div>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: "8px", color: "#e8c88a" }}>Multiplayer Worlds</h3>
-            <p style={{ color: "#7a6040", fontSize: "0.88rem", lineHeight: 1.65 }}>
-              Play solo or with your party. Share a campaign link and every hero joins the same living world.
+          <div className="glass-panel" style={{ padding: '28px', textAlign: 'left' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🌍</div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Multiplayer Worlds</h3>
+            <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
+              Play solo or with up to 10 friends. Share a campaign link and every hero joins the same living world.
             </p>
           </div>
         </div>
