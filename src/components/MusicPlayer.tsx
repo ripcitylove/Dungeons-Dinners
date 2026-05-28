@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 
-const TAVERN_TRACK  = "/Tavern_Theme.mp3";
+const TAVERN_TRACK       = "/Tavern_Theme.mp3";
+const TAVERN_MUSIC_POOL  = [TAVERN_TRACK];
 
 // ── Dungeon music pool ────────────────────────────────────────────────────────
 const DUNGEON_MUSIC_POOL = [
@@ -37,16 +38,16 @@ export function MusicPlayer() {
 
   const [playing,   setPlaying]   = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [volume,    setVolume]    = useState(0.10);
+  const [volume,    setVolume]    = useState(0.25);
 
-  const targetVolume = useRef(0.10);
+  const targetVolume = useRef(0.25);
   const activeTrack  = useRef<"tavern" | "dungeon">("tavern");
   const fadeTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
   const musicQueue   = useRef<string[]>([]);
   const musicErrors  = useRef(0);
 
   const trackKey  = pathname?.startsWith("/campaign") ? "dungeon" : "tavern";
-  const musicPool = trackKey === "dungeon" ? DUNGEON_MUSIC_POOL : [TAVERN_TRACK];
+  const musicPool = trackKey === "dungeon" ? DUNGEON_MUSIC_POOL : TAVERN_MUSIC_POOL;
 
   // ── Music helpers ────────────────────────────────────────────────────────────
   const loadAndPlay = useCallback((src: string, startVol?: number) => {

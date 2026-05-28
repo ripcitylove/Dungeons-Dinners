@@ -19,6 +19,10 @@ export default function AuthPage() {
     setLoading(true);
     setErrorMsg('');
 
+    // Trigger music while still in the user-gesture context (before any awaits).
+    // MusicPlayer persists across routes so the track continues into the dashboard.
+    window.__dndMusicPlay?.();
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
