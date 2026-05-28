@@ -31,6 +31,7 @@ type RosterChar = {
   inventory: { gold: number; weapons: string[]; items: string[] };
   cantrips_known: string[]; spells_prepared: string[];
   campaign_id: string | null;
+  portrait_url?: string | null;
 };
 type Phase = "count" | "characters" | "review" | "creating";
 
@@ -452,47 +453,48 @@ export default function CreateCampaignWizard() {
               {charStep === 1 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
-                  {/* ── Roster import dropdown ── */}
-                  <div style={{ padding: "14px 16px", borderRadius: "10px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)" }}>
-                    <label style={{ display: "block", marginBottom: "8px", fontSize: "0.82rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em" }}>
-                      📜 Import from Roster <span style={{ color: "#64748b", fontWeight: 400 }}>(optional)</span>
-                    </label>
-                    {rosterLoading ? (
-                      <div style={{ fontSize: "0.78rem", color: "#64748b", padding: "8px 0" }}>Loading your characters…</div>
-                    ) : (
-                      <select
-                        defaultValue=""
-                        onChange={e => {
-                          const id = e.target.value;
-                          if (!id) return;
-                          const char = (rosterChars ?? []).find(c => c.id === id);
-                          if (char) selectRosterChar(char);
-                        }}
-                        style={{
-                          width: "100%", padding: "10px 12px", borderRadius: "8px",
-                          border: "1px solid rgba(245,158,11,0.35)", background: "rgba(0,0,0,0.3)",
-                          color: "white", fontSize: "0.88rem", cursor: "pointer", appearance: "none",
-                          backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
-                          backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
-                          paddingRight: "36px",
-                        }}
-                      >
-                        <option value="">— Select an existing character —</option>
-                        {availableRoster.length === 0 && rosterChars !== null && (
-                          <option disabled value="">No available characters</option>
-                        )}
-                        {availableRoster.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} · {c.race} {c.class} · Lvl {c.level} · {c.max_hp} HP
-                            {c.campaign_id ? " (in campaign)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <p style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "7px" }}>
-                      Selecting a character brings them into this campaign as-is, skipping character creation.
-                    </p>
-                  </div>
+                  {/* ── Roster import cards ── */}
+                  {rosterLoading ? (
+                    <div style={{ padding: "18px 0", textAlign: "center", fontSize: "0.82rem", color: "#475569" }}>Loading your roster…</div>
+                  ) : availableRoster.length > 0 ? (
+                    <div>
+                      <p style={{ fontSize: "0.78rem", color: "#fbbf24", fontWeight: "bold", marginBottom: "12px", letterSpacing: "0.03em" }}>
+                        📜 Import from Roster <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — click a character to skip creation)</span>
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: "10px" }}>
+                        {availableRoster.map(c => {
+                          const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.max_hp)) * 100));
+                          const hpCol = hpPct > 60 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
+                          const classColor = ({ Fighter:"#ef4444",Wizard:"#3b82f6",Rogue:"#94a3b8",Cleric:"#f59e0b",Paladin:"#fbbf24",Ranger:"#22c55e",Bard:"#ec4899",Warlock:"#a78bfa",Barbarian:"#f97316",Druid:"#84cc16",Monk:"#06b6d4",Sorcerer:"#8b5cf6" } as Record<string,string>)[c.class] ?? "#c4b5fd";
+                          return (
+                            <div key={c.id} onClick={() => selectRosterChar(c)}
+                              style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 10px 12px", borderRadius: "12px", border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.04)", cursor: "pointer", transition: "all 0.18s", textAlign: "center", userSelect: "none" }}
+                              onMouseEnter={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.55)"; e.currentTarget.style.background = "rgba(245,158,11,0.1)"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(245,158,11,0.15)"; }}
+                              onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+                              {/* Portrait */}
+                              <div style={{ width: "60px", height: "60px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}55`, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "9px", flexShrink: 0 }}>
+                                {c.portrait_url
+                                  ? <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                                  : <span style={{ fontSize: "1.6rem" }}>{c.class === "Wizard" ? "🧙" : c.class === "Rogue" ? "🗡️" : c.class === "Cleric" ? "⛪" : c.class === "Paladin" ? "🛡️" : c.class === "Ranger" ? "🏹" : c.class === "Bard" ? "🎵" : "⚔️"}</span>}
+                              </div>
+                              {/* Name */}
+                              <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: classColor, marginBottom: "2px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{c.name}</div>
+                              {/* Race · Class */}
+                              <div style={{ fontSize: "0.65rem", color: "#64748b", marginBottom: "6px" }}>{c.race} {c.class}</div>
+                              {/* Level badge */}
+                              <div style={{ fontSize: "0.62rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "10px", padding: "1px 7px", marginBottom: "7px" }}>Lvl {c.level}</div>
+                              {/* HP bar */}
+                              <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginBottom: "3px" }}>
+                                <div style={{ width: `${hpPct}%`, height: "100%", background: hpCol, transition: "width 0.3s" }} />
+                              </div>
+                              <div style={{ fontSize: "0.58rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</div>
+                              {c.campaign_id && <div style={{ fontSize: "0.55rem", color: "#475569", marginTop: "4px" }}>In campaign</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : rosterChars !== null ? null : null}
 
                   {/* Divider */}
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
