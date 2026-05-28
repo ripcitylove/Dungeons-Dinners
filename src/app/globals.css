@@ -85,6 +85,49 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 8px 28px rgba(0,0,0,0.5) !important;
 }
 
+/* ── Landing page ──────────────────────────────────────────────────────────── */
+
+.portrait-ring {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.portrait-ring:hover {
+  transform: translateY(-8px) scale(1.08);
+}
+
+.feature-card-lg {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+  transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+}
+
+.feature-card-lg:hover {
+  border-color: rgba(139, 92, 246, 0.45);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 56px rgba(0,0,0,0.6);
+}
+
+.step-card {
+  padding: 36px 28px;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.step-card:hover {
+  border-color: rgba(139, 92, 246, 0.35);
+  transform: translateY(-3px);
+}
+
 .glass-panel-hover {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
