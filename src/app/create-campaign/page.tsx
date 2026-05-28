@@ -321,7 +321,7 @@ export default function CreateCampaignWizard() {
 
       for (const c of rosterPicks) {
         const { error: rErr } = await supabase.from("characters")
-          .update({ campaign_id: campData.id })
+          .update({ campaign_id: campData.id, hp: c.rosterMaxHp, spell_slots_used: {}, status_effects: [] })
           .eq("id", c.rosterId!);
         if (rErr) throw rErr;
       }

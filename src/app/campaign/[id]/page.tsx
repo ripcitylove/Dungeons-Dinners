@@ -1538,9 +1538,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setGuestError("Session expired. Please refresh."); return; }
         joinUserId = user.id;
-        const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", selectedRosterChar.id);
+        const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
         if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
-        char = { ...selectedRosterChar, campaign_id: params.id };
+        char = { ...selectedRosterChar, campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] };
       } else {
         // ── Creating a new character ─────────────────────────────────────────
         let authUser = (await supabase.auth.getUser()).data.user;
