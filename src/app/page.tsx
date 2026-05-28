@@ -72,21 +72,21 @@ export default function Home() {
           className="animate-fade-in delay-300"
           style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', marginTop: '80px', maxWidth: '1000px', width: '100%' }}
         >
-          <div className="glass-panel" style={{ padding: '28px', textAlign: 'left' }}>
+          <div className="glass-panel animate-float" style={{ padding: '28px', textAlign: 'left', animationDelay: '0s' }}>
             <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🧙‍♂️</div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Expert AI DM</h3>
             <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
               Knows every rule, monster, and spell. Crafts dynamic encounters and unforgettable narrative on the fly.
             </p>
           </div>
-          <div className="glass-panel animate-float" style={{ padding: '28px', textAlign: 'left' }}>
+          <div className="glass-panel animate-float" style={{ padding: '28px', textAlign: 'left', animationDelay: '2s' }}>
             <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🎲</div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Live Combat & Dice</h3>
             <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
               Real-time encounters with tracked enemies, dice rolls, loot, XP — everything your party needs at the table.
             </p>
           </div>
-          <div className="glass-panel" style={{ padding: '28px', textAlign: 'left' }}>
+          <div className="glass-panel animate-float" style={{ padding: '28px', textAlign: 'left', animationDelay: '4s' }}>
             <div style={{ fontSize: '2rem', marginBottom: '14px' }}>🌍</div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '8px' }}>Multiplayer Worlds</h3>
             <p style={{ color: 'var(--subtle)', fontSize: '0.9rem', lineHeight: 1.6 }}>
