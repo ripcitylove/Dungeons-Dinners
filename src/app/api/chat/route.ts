@@ -10,6 +10,7 @@ type Character = {
   user_id?: string;
   name: string; race: string; class: string; level: number;
   hp: number; max_hp: number; xp?: number; ac?: number;
+  sex?: string;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   background?: string;
@@ -84,6 +85,27 @@ MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll your thieves' tools against DC 13."
 - Award gold and items explicitly so players can update their sheet, but thread it into the moment.
 
+CHARACTER SPOTLIGHT
+Before crafting any scene, scan the full party sheet: spells, cantrips, inventory, race, class, background, and sex. Then design the environment so that one or two characters' specific abilities become quietly, naturally relevant — without ever announcing it.
+
+The world should feel like it was built for this exact party:
+- A character with Light or Dancing Lights → a passage where torches won't stay lit; a mine with no lanterns left
+- A character with Speak with Animals → a spooked horse blocking the gate; livestock that fled into the fog
+- A character with Healing Word or Cure Wounds → a wounded courier who collapses at the party's feet
+- A Ranger → a blizzard erasing the trail; tracks only a trained eye can read
+- A Rogue with Thieves' Tools → a locked strongbox the fleeing guard left behind; a mark in a crowd that only Stealth can tail
+- A Bard → a noble who grants audience only to those who can impress them; a locked-down tavern that opens for the right song
+- A Cleric or Paladin → a desecrated shrine that radiates dread; a dying villager who recognises a holy symbol
+- An Elf, Half-Elf, or any race with Darkvision → a lightless cellar; a sunless catacomb; a moonless road
+- A Dwarf → a suspicious wall that might be hollow; an underground passage where stonecunning matters
+- A Wizard or Sorcerer → a locked tome, an arcane seal, a magical trap that needs identifying
+- A character with a noble or sage background → a court gate, a family name the steward recognises, an old debt
+- A character carrying rope, grappling hook, or a specific potion → a cliff face, a gap in the floor, a poisoned well
+- A female character in a rigid social setting → a lord who dismisses her; a guild that refuses to deal with men; an informant who only trusts women
+
+Never name the ability or item in the scene setup. Let the player discover the connection. Reward clever use naturally.
+Rotate the spotlight — if a character was centre-stage last response, favour someone else this time.
+
 PACING
 2–4 paragraphs. Match energy to context: spare and clipped during a chase; slow and atmospheric in a cursed library. Always end on something the player can react to — a choice, a threat, a question hanging in the air.
 
@@ -124,16 +146,24 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
     const partySize = party.length;
 
     const partyBlock = party.map(c => {
-      const inv     = c.inventory ?? { gold: 0, weapons: [], items: [] };
-      const weapons = inv.weapons?.join(", ") || "none";
-      const ac      = c.ac ?? "?";
-      const pb      = profBonus(c.level);
+      const inv      = c.inventory ?? { gold: 0, weapons: [], items: [] };
+      const weapons  = inv.weapons?.join(", ") || "none";
+      const items    = inv.items?.join(", ")   || "none";
+      const ac       = c.ac ?? "?";
+      const pb       = profBonus(c.level);
       const statuses = c.status_effects?.length ? ` [${c.status_effects.join(", ")}]` : "";
-      const itemFx  = c.active_item_effects?.length ? `\n    Item effects: ${c.active_item_effects.join("; ")}` : "";
-      return `${c.name} — Level ${c.level} ${c.race} ${c.class} (Prof ${pb})
+      const itemFx   = c.active_item_effects?.length ? `\n  Item effects: ${c.active_item_effects.join("; ")}` : "";
+      const sexStr   = c.sex ? `${c.sex} ` : "";
+      const bgStr    = c.background ? `\n  Background: ${c.background}` : "";
+      const cantStr  = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
+      const spellStr = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
+      const spellLine = (cantStr || spellStr)
+        ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
+        : "";
+      return `${c.name} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${bgStr}
   HP ${c.hp}/${c.max_hp} | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
-  Weapons: ${weapons}${itemFx}`;
+  Weapons: ${weapons}  |  Items: ${items}${spellLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}
