@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, use, useCallback } from "react";
+import React, { useState, useEffect, useRef, use, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
@@ -248,6 +248,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Dice-roll targeting — character name the DM just asked to roll
   const [diceRollTarget,   setDiceRollTarget]     = useState<string | null>(null);
 
+  // Guest join (invite link flow)
+  const [showGuestJoin, setShowGuestJoin] = useState(false);
+  const [guestName,     setGuestName]     = useState("");
+  const [guestClass,    setGuestClass]    = useState("Fighter");
+  const [guestRace,     setGuestRace]     = useState("Human");
+  const [guestJoining,  setGuestJoining]  = useState(false);
+  const [guestError,    setGuestError]    = useState<string | null>(null);
+
+  // Read once from URL — stable across renders
+  const inviteToken = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("invite");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const logEndRef            = useRef<HTMLDivElement>(null);
@@ -309,8 +324,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth"); return; }
-      if (user.email !== ALLOWED_EMAIL) {
+      if (!user) {
+        if (inviteToken) { setShowGuestJoin(true); return; }
+        router.push("/auth");
+        return;
+      }
+      // Anonymous users arrived via a valid invite link — skip the email check
+      if (!(user as { is_anonymous?: boolean }).is_anonymous && user.email !== ALLOWED_EMAIL) {
         await supabase.auth.signOut();
         router.push("/auth");
         return;
@@ -801,6 +821,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
         .then(({ error }) => { if (error) console.error("[party event]", error); });
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full } });
+      fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
+        .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
     } catch { /* best effort */ } finally {
       setIsTyping(false); isTypingRef.current = false;
       setStreamingContent("");
@@ -1365,7 +1387,98 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [narratePartyEvent]);
 
   const handleDiceResult  = (result: number) => { setShowDice(false); handleSend(`[Rolled a ${result} on a d20]`); };
-  const copyInviteLink    = () => { navigator.clipboard.writeText(window.location.href); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
+
+  const handleGuestJoin = async () => {
+    if (!guestName.trim()) { setGuestError("Please enter your character name."); return; }
+    setGuestJoining(true);
+    setGuestError(null);
+    try {
+      // Verify the token server-side
+      const verifyRes = await fetch("/api/campaign-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, campaignId: params.id }),
+      });
+      if (!verifyRes.ok) { setGuestError("This invite link is invalid. Ask for a new one."); return; }
+
+      // Sign in anonymously
+      const { data: authData, error: authErr } = await supabase.auth.signInAnonymously();
+      if (authErr || !authData.user) { setGuestError("Could not create a guest session."); return; }
+      const guestUser = authData.user;
+
+      // Create a level-1 character for the guest
+      const hitDie = CLASS_HIT_DIE[guestClass] ?? 8;
+      const newChar = {
+        user_id:      guestUser.id,
+        name:         guestName.trim(),
+        race:         guestRace,
+        class:        guestClass,
+        level:        1,
+        hp:           hitDie,
+        max_hp:       hitDie,
+        xp:           0,
+        strength:     10, dexterity: 10, constitution: 10,
+        intelligence: 10, wisdom:     10, charisma:    10,
+        background:   "Wandering Adventurer",
+        inventory:    { gold: 10, weapons: [], items: [] },
+        campaign_id:  params.id,
+      };
+
+      const { data: charData, error: charErr } = await supabase.from("characters").insert([newChar]).select().single();
+      if (charErr || !charData) { setGuestError("Could not create your character. Try again."); return; }
+
+      const char = charData as Character;
+      setUserId(guestUser.id);
+      userIdRef.current = guestUser.id;
+      setCharacter(char);
+      characterRef.current = char;
+      setUserRoster([char]);
+      setCampaignParty(prev => { const next = [...prev, char]; campaignPartyRef.current = next; return next; });
+      setActiveCharIdx(prev => {
+        const party = campaignPartyRef.current;
+        const idx   = party.findIndex(c => c.id === char.id);
+        return idx >= 0 ? idx : prev;
+      });
+
+      // Load campaign meta + history
+      const [historyRes, campRes] = await Promise.all([
+        supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
+        supabase.from("campaigns").select("title, description").eq("id", params.id).single(),
+      ]);
+
+      if (campRes.data?.title) setCampaignTitle(campRes.data.title);
+      if (campRes.data?.description) { setCampaignDescription(campRes.data.description); campaignDescriptionRef.current = campRes.data.description; }
+
+      if (historyRes.data && historyRes.data.length > 0) {
+        const hist = historyRes.data as (Message & { created_at?: string })[];
+        setMessages([...OPENING_MESSAGES, ...hist]);
+        setLogEntries(hist.map((m, i) => ({ id: `hist-${i}`, timestamp: m.created_at ? new Date(m.created_at) : new Date(), role: m.role as MsgRole, sender: m.sender, content: m.content })));
+        const lastDm = [...hist].reverse().find(m => m.role === "dm");
+        if (lastDm) {
+          resumeNarrationRef.current = lastDm.content;
+          fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: lastDm.content, currentScene: "" }) })
+            .then(r => r.json())
+            .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => { if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); } })
+            .catch(() => {});
+        }
+      }
+
+      setShowGuestJoin(false);
+    } finally {
+      setGuestJoining(false);
+    }
+  };
+  const copyInviteLink = async () => {
+    try {
+      const res  = await fetch(`/api/campaign-invite?campaignId=${params.id}`);
+      const data = await res.json() as { url?: string };
+      await navigator.clipboard.writeText(data.url ?? window.location.href);
+    } catch {
+      await navigator.clipboard.writeText(window.location.href);
+    }
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
 
   const otherPlayers        = players.filter(p => p.userId !== userId);
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
@@ -1392,8 +1505,71 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       <audio ref={narrateAudioRef} />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} />}
 
+      {/* Guest join overlay — shown when arriving via invite link without an account */}
+      {showGuestJoin && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
+          <div className="animate-fade-in" style={{ width: "100%", maxWidth: "440px", padding: "40px", background: "rgba(15,10,30,0.9)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: "16px" }}>
+            <div style={{ textAlign: "center", marginBottom: "28px" }}>
+              <div style={{ fontSize: "2.8rem", marginBottom: "12px" }}>🗡️</div>
+              <h1 style={{ fontSize: "1.8rem", fontWeight: "bold", marginBottom: "8px" }}>Join the Adventure</h1>
+              <p style={{ color: "#64748b", fontSize: "0.88rem", lineHeight: 1.5 }}>You&apos;ve been invited. Create a quick character to join the party.</p>
+            </div>
+
+            {/* Name */}
+            <div style={{ marginBottom: "18px" }}>
+              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Character Name</label>
+              <input
+                value={guestName}
+                onChange={e => setGuestName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleGuestJoin()}
+                placeholder="Enter your name…"
+                maxLength={40}
+                autoFocus
+                style={{ width: "100%", padding: "10px 14px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", fontSize: "0.95rem", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+
+            {/* Race */}
+            <div style={{ marginBottom: "18px" }}>
+              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Race</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
+                  <button key={race} onClick={() => setGuestRace(race)}
+                    style={{ padding: "5px 10px", borderRadius: "6px", fontSize: "0.78rem", border: `1px solid ${guestRace === race ? "rgba(139,92,246,0.8)" : "var(--border)"}`, background: guestRace === race ? "rgba(139,92,246,0.25)" : "transparent", color: guestRace === race ? "#e9d5ff" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
+                    {race}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Class */}
+            <div style={{ marginBottom: "24px" }}>
+              <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Class</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
+                  <button key={cls} onClick={() => setGuestClass(cls)}
+                    style={{ padding: "5px 10px", borderRadius: "6px", fontSize: "0.78rem", border: `1px solid ${guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.8)"}` : "var(--border)"}`, background: guestClass === cls ? `${CLASS_COLORS[cls] ?? "rgba(139,92,246,0.25)"}22` : "transparent", color: guestClass === cls ? (CLASS_COLORS[cls] ?? "#e9d5ff") : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
+                    {cls}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {guestError && <p style={{ color: "#ef4444", fontSize: "0.82rem", marginBottom: "14px", textAlign: "center" }}>{guestError}</p>}
+
+            <button
+              onClick={handleGuestJoin}
+              disabled={guestJoining}
+              className="btn-primary"
+              style={{ width: "100%", padding: "14px", fontSize: "1rem", borderRadius: "10px", opacity: guestJoining ? 0.6 : 1 }}>
+              {guestJoining ? "Entering the world…" : "Join Adventure"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Session start overlay */}
-      {!sessionStarted && (
+      {!sessionStarted && !showGuestJoin && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
           <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
             <div style={{ fontSize: "3.5rem", marginBottom: "24px" }}>⚔️</div>
