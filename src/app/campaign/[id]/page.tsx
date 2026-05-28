@@ -2008,7 +2008,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const isOnline    = players.some(p => p.userId === char.user_id);
                 const isDiceTarget = diceRollTarget === char.name;
                 const isMyChar    = char.user_id === userId;
-                const isLeader    = char.user_id === partyLeaderId;
                 const cardInv     = char.inventory ?? { gold: 0, items: [], weapons: [] };
                 const cardIb      = computeInventoryBonuses(cardInv.items, cardInv.weapons);
                 const cardMaxHp   = char.max_hp + cardIb.hpMaxAdd;
@@ -2037,9 +2036,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
-                          {isLeader && (
-                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
-                          )}
                           {isActive && campaignParty.length > 1 && (
                             <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
@@ -2182,12 +2178,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                         <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 5px #22c55e" }} />
-                        {!isMe && userId === partyLeaderId && (
-                          <button onClick={() => transferLeadership(p.userId)} title={`Make ${p.characterName} Party Leader`}
-                            style={{ background: "none", border: "1px solid rgba(251,191,36,0.25)", color: "#78716c", cursor: "pointer", fontSize: "0.7rem", padding: "1px 4px", borderRadius: "4px", lineHeight: 1, transition: "all 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.color = "#fbbf24"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.6)"; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = "#78716c"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.25)"; }}>👑</button>
-                        )}
                         {!isMe && userId === partyLeaderId && (
                           <button onClick={() => kickPlayer(p)} title={`Remove ${p.characterName}`}
                             style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.85rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
@@ -2675,6 +2665,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Party Leadership */}
+                <div style={{ paddingTop: "4px", borderTop: "1px solid var(--border)" }}>
+                  {userId === partyLeaderId ? (
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                        <span style={{ fontSize: "1rem", filter: "drop-shadow(0 0 5px rgba(251,191,36,0.8))" }}>👑</span>
+                        <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#fbbf24" }}>Party Leader</span>
+                      </div>
+                      {players.filter(p => p.userId !== userId).length > 0 && (
+                        <div>
+                          <p style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer Leadership</p>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                            {players.filter(p => p.userId !== userId).map(p => (
+                              <button key={p.userId} onClick={() => transferLeadership(p.userId)}
+                                style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "7px", border: "1px solid rgba(251,191,36,0.2)", background: "rgba(251,191,36,0.04)", cursor: "pointer", transition: "all 0.15s", textAlign: "left" }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "rgba(251,191,36,0.12)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.5)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "rgba(251,191,36,0.04)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.2)"; }}>
+                                <span style={{ fontSize: "0.8rem" }}>👑</span>
+                                <div>
+                                  <div style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#e2e8f0" }}>{p.characterName}</div>
+                                  <div style={{ fontSize: "0.62rem", color: "#64748b" }}>Make Party Leader</div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : partyLeaderId ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
+                      <span style={{ fontSize: "0.9rem", filter: "drop-shadow(0 0 4px rgba(251,191,36,0.6))" }}>👑</span>
+                      <div>
+                        <div style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold" }}>
+                          {players.find(p => p.userId === partyLeaderId)?.characterName ?? "Party Leader"}
+                        </div>
+                        <div style={{ fontSize: "0.62rem", color: "#64748b" }}>is leading the party</div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Rest */}
