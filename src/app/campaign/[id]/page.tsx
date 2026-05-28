@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, use, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
+import { ALLOWED_EMAIL } from "../../../lib/allowedUsers";
 import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
@@ -306,7 +307,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { router.push("/auth"); return; }
+      if (user.email !== ALLOWED_EMAIL) {
+        await supabase.auth.signOut();
+        router.push("/auth");
+        return;
+      }
       setUserId(user.id);
 
       const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
