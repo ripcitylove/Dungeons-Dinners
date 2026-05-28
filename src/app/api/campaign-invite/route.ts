@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   if (!campaignId) return Response.json({ error: "campaignId required" }, { status: 400 });
 
   const token   = generateInviteToken(campaignId);
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? req.nextUrl.origin;
+  const baseUrl = req.nextUrl.origin;
   const url     = `${baseUrl}/campaign/${campaignId}?invite=${token}`;
 
   return Response.json({ url });
