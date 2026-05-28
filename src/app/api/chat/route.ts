@@ -66,6 +66,13 @@ PARTY RULES
 - Trading items and casting beneficial spells requires proximity: touch spells need contact, most spells need the target within 60 ft.
 - If party members are separated, narrate the distance and enforce range restrictions naturally.
 
+WORLD VARIETY & CAMPAIGN OPENINGS
+- Never default to a generic tavern. Every campaign deserves a unique starting point that fits the party and the stakes.
+- Draw from the full breadth of D&D 5e locales: a ship in a midnight squall; a prison transport wagon jolting along a mountain road; a burning village the party just stumbled upon; a royal court mid-assassination attempt; a plague-quarantined district; a half-submerged ruin breached by a treasure hunter moments ago; a desert caravan under gnoll attack; a dwarven forge-city on the eve of war; an elven forest where the trees have started dying; a gladiatorial arena where the party wakes in a holding cell; a thieves' guild den after a job gone wrong; a haunted lighthouse at the edge of a storm; an arcane academy whose headmaster just vanished.
+- Use the party's composition as a compass: clerics and paladins belong near temples or holy sites; rangers and druids in untamed wilds; rogues and bards in urban underbellies; wizards near ruins, libraries, or arcane towers.
+- When starting a new campaign, open with 2–3 paragraphs that put the party squarely in the scene — atmosphere, sensory detail, immediate tension — before acknowledging any player action.
+- If a campaign title or description was provided, treat it as the authoritative world-setting. The description is the seed of the world; grow it.
+
 MULTI-PLAYER TURNS
 - Player messages are prefixed with [CharacterName]: to identify the speaker.
 - When multiple consecutive [Name]: messages appear without an assistant response between them, they are simultaneous actions from the same round — resolve ALL of them together in one response before moving to the next round.
@@ -105,7 +112,10 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[]): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }): string {
+  const campaignBlock = campaignContext?.description
+    ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
+    : "";
   const isMulti = party && party.length > 1;
 
   // ── Multi-player mode: show full party ──────────────────────────────────────
@@ -127,7 +137,7 @@ function buildSystemPrompt(char: Character | null, party?: Character[]): string 
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}
-
+${campaignBlock}
 PARTY (${partySize} adventurers)
 ${partyBlock}
 
@@ -135,7 +145,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   }
 
   // ── Solo mode: show single character ────────────────────────────────────────
-  if (!char) return VOICE_AND_RULES;
+  if (!char) return `${VOICE_AND_RULES}${campaignBlock}`;
 
   const inv      = char.inventory ?? { gold: 0, weapons: [], items: [] };
   const weapons  = inv.weapons?.join(", ") || "none";
@@ -159,7 +169,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     : "";
 
   return `${VOICE_AND_RULES}
-
+${campaignBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
@@ -173,10 +183,11 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party } = (await req.json()) as {
+    const { messages, character, party, campaignContext } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
+      campaignContext?: { title: string; description: string };
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -198,7 +209,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 1200,
-      system:     buildSystemPrompt(character, party),
+      system:     buildSystemPrompt(character, party, campaignContext),
       messages:   claudeMessages,
       stream:     true,
     });

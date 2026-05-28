@@ -50,8 +50,7 @@ const CLASS_HIT_DIE: Record<string, number> = {
 };
 
 const OPENING_MESSAGES: Message[] = [
-  { role: "system", content: "Welcome, adventurer. The torchlight flickers as your journey begins..." },
-  { role: "dm",     content: '"Ah, brave adventurer. I have a task for you — if you possess the courage," the hooded figure rasps, leaning forward from the shadows of a corner booth.' },
+  { role: "system", content: "Welcome, adventurer. Your journey begins..." },
 ];
 
 function exportLog(entries: LogEntry[], campaignId: string) {
@@ -168,6 +167,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (stored) { sessionStorage.removeItem("pendingCampaignTitle"); return stored; }
     return "";
   });
+  const [campaignDescription, setCampaignDescription] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    const stored = sessionStorage.getItem("pendingCampaignDescription");
+    if (stored) { sessionStorage.removeItem("pendingCampaignDescription"); return stored; }
+    return "";
+  });
+  const campaignDescriptionRef = useRef<string>("");
 
   // Scene
   const [currentSceneUrl,  setCurrentSceneUrl]   = useState<string | null>(null);
@@ -217,7 +223,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const joinDebounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLeavesRef     = useRef<PresencePlayer[]>([]);
   const leaveDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentSceneRef      = useRef<string>("tavern");
+  const currentSceneRef      = useRef<string>("");
   const resumeNarrationRef   = useRef<string>("");
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
@@ -236,7 +242,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { narrationEnabledRef.current = narrationEnabled;  }, [narrationEnabled]);
   useEffect(() => { turnOrderRef.current        = turnOrder;        }, [turnOrder]);
   useEffect(() => { currentTurnIndexRef.current = currentTurnIndex; }, [currentTurnIndex]);
-  useEffect(() => { pendingActionsRef.current   = pendingActions;   }, [pendingActions]);
+  useEffect(() => { pendingActionsRef.current      = pendingActions;      }, [pendingActions]);
+  useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
 
   // When the active character index changes, sync the character sheet
   useEffect(() => {
@@ -262,11 +269,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Fetch all characters in this campaign; filter party_active in JS so the
         // query never fails if the column is NULL or the migration hasn't run yet.
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
-        supabase.from("campaigns").select("title").eq("id", params.id).single(),
+        supabase.from("campaigns").select("title, description").eq("id", params.id).single(),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
-      else if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
+      if (campRes.data?.description) {
+        setCampaignDescription(campRes.data.description);
+        campaignDescriptionRef.current = campRes.data.description;
+      }
+      if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
 
       if (partyRes.error) console.error("[campaign] party fetch:", partyRes.error.message);
 
@@ -289,6 +300,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCharacter(charRes.data[0] as Character);
       }
 
+      const desc = campRes.data?.description ?? campaignDescriptionRef.current;
       if (historyRes.data && historyRes.data.length > 0) {
         const hist = historyRes.data as (Message & { created_at?: string })[];
         setMessages([...OPENING_MESSAGES, ...hist]);
@@ -298,6 +310,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         })));
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
         if (lastDm) resumeNarrationRef.current = lastDm.content;
+      } else if (desc) {
+        // No history — use the AI-generated campaign description as the opening DM hook
+        const openingMsg: Message = { role: "dm", content: desc };
+        setMessages([...OPENING_MESSAGES, openingMsg]);
+        resumeNarrationRef.current = desc;
       }
     }
     load();
@@ -862,10 +879,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           })
         : undefined;
 
+      const campaignCtx = campaignDescriptionRef.current
+        ? { title: campaignTitle, description: campaignDescriptionRef.current }
+        : undefined;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, character: charForDM, party: partyForDM }),
+        body: JSON.stringify({ messages: allMessages, character: charForDM, party: partyForDM, campaignContext: campaignCtx }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("DM unavailable");
@@ -1240,7 +1261,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         )}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "40px 24px 28px", background: "linear-gradient(transparent, rgba(0,0,0,0.92))" }}>
           <h2 style={{ fontSize: "1.8rem", fontWeight: "bold", textShadow: "0 2px 10px black", marginBottom: "6px", textTransform: "capitalize" }}>
-            {currentSceneRef.current === "tavern" ? "The Broken Cask Tavern" : currentSceneRef.current.charAt(0).toUpperCase() + currentSceneRef.current.slice(1)}
+            {currentSceneRef.current ? currentSceneRef.current.charAt(0).toUpperCase() + currentSceneRef.current.slice(1) : (campaignTitle || "")}
           </h2>
           <p style={{ color: "#cbd5e1", textShadow: "0 1px 5px black", fontSize: "0.9rem" }}>
             {currentSceneRef.current === "tavern" ? "Dimly lit, smelling of stale ale and woodsmoke." : "The story unfolds…"}

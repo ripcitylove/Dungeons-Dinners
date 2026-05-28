@@ -338,7 +338,8 @@ export default function CreateCampaignWizard() {
         });
       }
 
-      sessionStorage.setItem("pendingCampaignTitle", aiTitle);
+      sessionStorage.setItem("pendingCampaignTitle",       aiTitle);
+      sessionStorage.setItem("pendingCampaignDescription", aiDescription);
       router.push(`/campaign/${campData.id}`);
     } catch (err) {
       console.error("[create-campaign]", err);

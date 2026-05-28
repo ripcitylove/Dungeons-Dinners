@@ -22,21 +22,29 @@ const SCENE_PROMPTS: Record<string, string> = {
   wilderness: "A dramatic wilderness landscape — rugged mountains under storm clouds, a winding dirt path, wild grass, distant dark horizon",
   ship:       "The deck and interior of a dark fantasy sailing vessel — creaking wood, lanterns swaying in sea wind, rope rigging, dark churning water below",
   graveyard:  "An old moonlit graveyard — crooked tombstones, bare gnarled trees, mist curling across the ground, the distant howl of wind",
+  prison:     "A grim stone prison cell block — iron-barred cells, damp torchlit corridors, distant sounds of chains and dripping water, a guard tower visible through a slit window",
+  arena:      "A vast open-air gladiatorial arena — packed sand floor stained with old battles, roaring crowds in tiered stone seats, iron portcullises, a merciless midday sun",
+  port:       "A bustling fantasy port at dusk — tall ships moored at weathered docks, seagulls crying overhead, barrels of cargo, salty mist, the clamour of sailors and merchants",
+  desert:     "A vast scorched desert landscape — rolling dunes under a blazing sun, heat shimmering on the horizon, bleached bones half-buried in sand, a lone caravan trail",
+  mountain:   "A treacherous mountain pass at altitude — sheer cliffs dropping into fog, icy ledges, howling wind, a distant fortress carved into the rock face",
+  swamp:      "A murky swampland at dusk — twisted black trees rising from black water, fireflies drifting through hanging moss, the croak of unseen things, a faint putrid smell",
+  library:    "A vast arcane library — towering shelves of leather-bound tomes, floating candles, dust motes hanging in still air, the scratch of quill on parchment, a sense of ancient secrets",
+  village:    "A small pastoral village under threat — thatched cottages, a muddy square, frightened faces peering through shuttered windows, smoke rising in the wrong direction",
 };
 
 const SCENE_SYSTEM = `You are a scene classifier for a fantasy RPG. Read the DM narrative and return EXACTLY one of these scene keys:
-tavern, dungeon, forest, cave, ruins, castle, street, shop, temple, wilderness, ship, graveyard
+tavern, dungeon, forest, cave, ruins, castle, street, shop, temple, wilderness, ship, graveyard, prison, arena, port, desert, mountain, swamp, library, village
 
 Return ONLY the single word. No explanation, no punctuation.`;
 
 export async function POST(req: NextRequest) {
+  let currentScene = "wilderness";
   try {
-    const { narrative, currentScene } = (await req.json()) as {
-      narrative: string;
-      currentScene: string;
-    };
+    const body = (await req.json()) as { narrative: string; currentScene: string };
+    const { narrative } = body;
+    currentScene = body.currentScene ?? "wilderness";
 
-    if (!narrative?.trim()) return Response.json({ sceneName: currentScene ?? "tavern" });
+    if (!narrative?.trim()) return Response.json({ sceneName: currentScene });
 
     // Step 1: Detect scene name
     const detect = await anthropic.messages.create({
@@ -47,7 +55,7 @@ export async function POST(req: NextRequest) {
     });
 
     const raw       = detect.content[0].type === "text" ? detect.content[0].text.trim().toLowerCase() : "";
-    const sceneName = Object.keys(SCENE_PROMPTS).includes(raw) ? raw : (currentScene ?? "tavern");
+    const sceneName = Object.keys(SCENE_PROMPTS).includes(raw) ? raw : (currentScene ?? "wilderness");
 
     // Same scene — no image change needed
     if (sceneName === currentScene) return Response.json({ sceneName, imageUrl: null });
@@ -97,6 +105,6 @@ export async function POST(req: NextRequest) {
     return Response.json({ sceneName, imageUrl: publicUrl });
   } catch (err) {
     console.error("[detect-scene]", err);
-    return Response.json({ sceneName: "tavern", imageUrl: null });
+    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null });
   }
 }
