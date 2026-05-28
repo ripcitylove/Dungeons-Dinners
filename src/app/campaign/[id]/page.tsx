@@ -941,6 +941,77 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
   }, []);
 
+  const handlePartyShortRest = useCallback(async () => {
+    const party = campaignPartyRef.current;
+    if (!party.length) return;
+
+    const updates = party.map(char => {
+      const hitDie    = CLASS_HIT_DIE[char.class] ?? 8;
+      const roll      = Math.ceil(Math.random() * hitDie);
+      const conMod    = Math.floor((char.constitution - 10) / 2);
+      const gained    = Math.max(1, roll + conMod);
+      const ib        = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+      const maxHp     = char.max_hp + ib.hpMaxAdd;
+      const newHp     = Math.min(maxHp, char.hp + gained);
+      const isWarlock = char.class === "Warlock";
+      const newSlots  = isWarlock ? {} : { ...(char.spell_slots_used ?? {}) };
+      const newStatus = (char.status_effects ?? []).filter(s => !["Prone", "Frightened", "Stunned"].includes(s));
+      return { char, newHp, newSlots, newStatus, gained };
+    });
+
+    await Promise.all(updates.map(u =>
+      supabase.from("characters").update({ hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus }).eq("id", u.char.id)
+    ));
+
+    setCampaignParty(prev => prev.map(c => {
+      const u = updates.find(x => x.char.id === c.id);
+      return u ? { ...c, hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus } : c;
+    }));
+
+    const activeU = updates.find(u => u.char.id === characterRef.current?.id);
+    if (activeU) {
+      const updated = { ...activeU.char, hp: activeU.newHp, spell_slots_used: activeU.newSlots, status_effects: activeU.newStatus };
+      setCharacter(updated); characterRef.current = updated;
+    }
+
+    const summary = updates.map(u => `${u.char.name} +${u.gained} HP`).join(" · ");
+    setStateNotice(`Party Short Rest: ${summary}`);
+    setTimeout(() => setStateNotice(null), 6000);
+    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 Party Short Rest — ${summary}` }]);
+  }, []);
+
+  const handlePartyLongRest = useCallback(async () => {
+    const party = campaignPartyRef.current;
+    if (!party.length) return;
+
+    const updates = party.map(char => {
+      const ib        = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+      const maxHp     = char.max_hp + ib.hpMaxAdd;
+      const newStatus = (char.status_effects ?? []).filter(s => s === "Dead" || s === "Petrified");
+      return { char, maxHp, newStatus };
+    });
+
+    await Promise.all(updates.map(u =>
+      supabase.from("characters").update({ hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus }).eq("id", u.char.id)
+    ));
+
+    setCampaignParty(prev => prev.map(c => {
+      const u = updates.find(x => x.char.id === c.id);
+      return u ? { ...c, hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus } : c;
+    }));
+
+    const activeU = updates.find(u => u.char.id === characterRef.current?.id);
+    if (activeU) {
+      const updated = { ...activeU.char, hp: activeU.maxHp, spell_slots_used: {}, status_effects: activeU.newStatus };
+      setCharacter(updated); characterRef.current = updated;
+    }
+
+    const names = updates.map(u => u.char.name).join(", ");
+    setStateNotice("Party Long Rest: Full HP restored, all spell slots recovered");
+    setTimeout(() => setStateNotice(null), 6000);
+    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Party Long Rest — ${names} fully restored.` }]);
+  }, []);
+
   // ── Combat: enemy generation and state tracking ───────────────────────────────
   const detectCombatStart = (text: string): boolean =>
     /\b(roll(?:s)? (?:for )?initiative|initiative (?:order|is rolled|begins)|combat begins?|battle begins?|fights? break(?:s)? out)\b/i.test(text);
@@ -1178,7 +1249,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const text = (actionText ?? input).trim();
     if (!text || isTyping) return;
     const order    = turnOrderRef.current;
-    const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId;
+    const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId || userId === partyLeaderId;
     if (!isMyTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
@@ -1494,7 +1565,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const otherPlayers        = players.filter(p => p.userId !== userId);
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
-  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId;
+  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId || userId === partyLeaderId;
   const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
@@ -2110,6 +2181,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   })}
                 </div>
               )}
+
+              {/* Party-wide rests — always visible to party leader */}
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
+                <p style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Party Rest</p>
+                <div style={{ display: "flex", gap: "7px" }}>
+                  <button onClick={handlePartyShortRest}
+                    style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; }}>
+                    🌙 Short Rest
+                  </button>
+                  <button onClick={handlePartyLongRest}
+                    style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; }}>
+                    ☀️ Long Rest
+                  </button>
+                </div>
+              </div>
             </div>
             )}
 
