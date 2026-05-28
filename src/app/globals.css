@@ -77,6 +77,14 @@ input::placeholder, textarea::placeholder {
   box-shadow: var(--glass-shadow);
 }
 
+.badge-hover {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.badge-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5) !important;
+}
+
 .glass-panel-hover {
   transition: border-color 0.2s, box-shadow 0.2s;
 }

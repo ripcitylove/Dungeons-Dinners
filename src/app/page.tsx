@@ -72,6 +72,7 @@ export default function Home() {
           href="https://drinkandplaypublishing.com"
           target="_blank"
           rel="noopener noreferrer"
+          className="badge-hover"
           style={{
             position: 'fixed',
             bottom: '20px',
@@ -84,10 +85,7 @@ export default function Home() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'transform 0.2s, box-shadow 0.2s',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 28px rgba(0,0,0,0.5)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(0,0,0,0.4)'; }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: '90px', height: '90px', objectFit: 'contain', display: 'block', borderRadius: '6px' }} />
