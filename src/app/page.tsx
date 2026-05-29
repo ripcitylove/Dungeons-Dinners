@@ -183,7 +183,7 @@ export default async function Home() {
               <span style={{ color: "var(--primary)" }}>You Just Play.</span>
             </h2>
             <p style={{ color: "var(--subtle)", lineHeight: 1.85, marginBottom: "20px", fontSize: "0.97rem" }}>
-              D&amp;D Legends puts Claude AI — Anthropic&apos;s most powerful model — in the Dungeon Master&apos;s seat.
+              Dungeons and Dinner Legends puts Claude AI — Anthropic&apos;s most powerful model — in the Dungeon Master&apos;s seat.
               It runs enemies, NPCs, encounters, loot drops, and the overarching narrative without any human oversight.
             </p>
             <p style={{ color: "var(--subtle)", lineHeight: 1.85, fontSize: "0.97rem" }}>

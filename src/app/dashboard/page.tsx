@@ -412,7 +412,7 @@ export default function Dashboard() {
         <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "44px" }}>
           <div style={{ fontSize: "1.4rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ color: "var(--primary)" }}>⬡</span>
-            <span>D&amp;D Legends</span>
+            <span>Dungeons and Dinner Legends</span>
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "rgba(255,255,255,0.04)", borderRadius: "40px", padding: "6px 16px 6px 6px", border: "1px solid var(--border)" }}>
