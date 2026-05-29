@@ -150,7 +150,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -174,8 +174,11 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
 Use enemy AC values when players attack them. Use enemy ATK bonus and damage dice when enemies attack players.
 When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
+  const prevActedLine = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
+    ? `${prevActingPlayerName} has just finished their turn — it is OVER. Do NOT ask ${prevActingPlayerName} what they do next. Do NOT end your response with a question directed at ${prevActingPlayerName}. `
+    : "";
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\nAfter resolving the current action, end your response by directly addressing ${currentTurnPlayerName} by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\n`
     : "";
 
   const targetBlock = targetedEnemyName
@@ -258,7 +261,7 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -267,6 +270,7 @@ export async function POST(req: NextRequest) {
       openingScene?: boolean;
       currentTurnPlayerName?: string;
       targetedEnemyName?: string;
+      prevActingPlayerName?: string;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -288,7 +292,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 700,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName),
       messages:   claudeMessages,
       stream:     true,
     });

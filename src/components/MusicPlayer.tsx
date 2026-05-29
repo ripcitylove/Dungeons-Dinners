@@ -7,29 +7,46 @@ import { usePathname } from "next/navigation";
 // All archive.org URLs serve via HTTP 302 → CDN; <audio> follows redirects.
 const MIST_CROWN = "https://archive.org/download/the-eldritch-chime-of-the-ashen-fortress-wkylnl/Mist%20Crown%20-%20The%20Eldritch%20Chime%20Of%20The%20Ashen%20Fortress%20-%20";
 const MEDIEVAL   = "https://archive.org/download/medieval-instrumental-background-music/";
+const KM         = "https://archive.org/download/Incompetech/mp3-royaltyfree/"; // Kevin MacLeod – CC BY 3.0
+const DARK_AMB   = "https://archive.org/download/darkambient_201908/";
+const BATTLE_IA  = "https://archive.org/download/battle-ia-item/";
+const JAMENDO    = "https://archive.org/download/jamendo-190464/";
+
+// Tavern and social share the same track list (same vibe, same pool)
+const TAVERN_TRACKS: string[] = [
+  "/Tavern_Theme.mp3",
+  `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
+  `${MEDIEVAL}Celebration.mp3`,
+  "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
+  `${MIST_CROWN}07%20A%20Kind%20Face.mp3`,
+  `${KM}Salty%20Ditty.mp3`,
+  `${KM}Drinking%20Song.mp3`,
+  `${KM}Ouroboros.mp3`,
+  `${KM}Celtic%20Impulse.mp3`,
+  `${MEDIEVAL}Royal%20Coupling.mp3`,
+];
 
 const POOLS: Record<string, string[]> = {
-  tavern: [
-    "/Tavern_Theme.mp3",
-    `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
-    `${MEDIEVAL}Celebration.mp3`,
-    "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
-  ],
-
-  // Social hubs (tavern scene, shop, port, village, street)
-  social: [
-    "/Tavern_Theme.mp3",
-    `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
-    `${MEDIEVAL}Celebration.mp3`,
-    "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
-  ],
+  tavern: TAVERN_TRACKS,
+  social: TAVERN_TRACKS,
 
   // Active combat
   combat: [
     `${MIST_CROWN}06%20Din%20of%20Battle.mp3`,
-    "https://archive.org/download/battle-ia-item/battle-orchestra-music.mp3",
-    "https://archive.org/download/battle-ia-item/epic-cinematic-battle-theme.mp3",
-    "https://archive.org/download/battle-ia-item/to-the-death.mp3",
+    `${BATTLE_IA}battle-orchestra-music.mp3`,
+    `${BATTLE_IA}epic-cinematic-battle-theme.mp3`,
+    `${BATTLE_IA}to-the-death.mp3`,
+    `${KM}Clash%20Defiant.mp3`,
+    `${KM}Danger%20Storm.mp3`,
+    `${KM}Action.mp3`,
+    `${KM}Dark%20Times.mp3`,
+    `${KM}Anguish.mp3`,
+    "https://soundimage.org/wp-content/uploads/2020/06/Preparing-for-Battle.mp3",
+    "https://soundimage.org/wp-content/uploads/2021/08/Ancient-Crusades.mp3",
+    "https://soundimage.org/wp-content/uploads/2018/01/Battle-of-the-Ancients.mp3",
+    "https://soundimage.org/wp-content/uploads/2016/07/Fantasy-Forest-Battle.mp3",
+    "https://soundimage.org/wp-content/uploads/2016/07/Into-Battle.mp3",
+    "https://soundimage.org/wp-content/uploads/2016/07/Forward-Assault.mp3",
   ],
 
   // Dark / underground (dungeon, cave, prison, graveyard)
@@ -38,44 +55,80 @@ const POOLS: Record<string, string[]> = {
     `${MIST_CROWN}04%20Cursed%20Halls.mp3`,
     `${MIST_CROWN}08%20Twisting%20Corridors.mp3`,
     `${MIST_CROWN}10%20Red%20Abyss.mp3`,
+    `${MIST_CROWN}11%20Descend%20the%20Central%20Bell%20Tower.mp3`,
     "https://archive.org/download/dark-fantasy-music-a-blackened-heart/Dark%20Fantasy%20Music%20-%20A%20Blackened%20Heart.mp3",
     `${MEDIEVAL}Cold%20Journey.mp3`,
+    `${KM}Atlantean%20Twilight.mp3`,
+    `${KM}BlackVortex.mp3`,
+    `${KM}Ossuary%206%20-%20Air.mp3`,
+    `${KM}Crypteque.mp3`,
+    `${DARK_AMB}Dark%20Ambient%20Texture.mp3`,
+    `${DARK_AMB}Gloomy.mp3`,
+    `${DARK_AMB}Nightmare.mp3`,
+    `${DARK_AMB}Suspense%20Piano.mp3`,
   ],
 
   // Nature / outdoors (forest, wilderness, swamp, mountain, desert)
   nature: [
     `${MEDIEVAL}Cold%20Journey.mp3`,
     `${MEDIEVAL}Nordic%20Wist.mp3`,
-    "https://archive.org/download/jamendo-190464/01-1720369-Sapere%20Aude-Fantasy%20Forest.mp3",
-    "https://archive.org/download/jamendo-190464/03-1720368-Sapere%20Aude-Elven%20Dance.mp3",
+    `${JAMENDO}01-1720369-Sapere%20Aude-Fantasy%20Forest.mp3`,
+    `${JAMENDO}03-1720368-Sapere%20Aude-Elven%20Dance.mp3`,
+    `${KM}Celtic%20Impulse.mp3`,
+    `${KM}Enchanted%20Festival.mp3`,
+    `${KM}Spring%20Thaw.mp3`,
+    `${KM}Folk%20Round.mp3`,
+    "https://soundimage.org/wp-content/uploads/2014/09/Our-Mountain_v003.mp3",
+    "https://soundimage.org/wp-content/uploads/2023/12/Lost-Jungle.mp3",
+    "https://soundimage.org/wp-content/uploads/2020/06/Misty-Bog_remixed.mp3",
   ],
 
   // Mystical / sacred (temple, library, ruins)
   mystical: [
     `${MIST_CROWN}05%20Long%20Ago%2C%20When%20the%20Light%20Fought%20Shadow.mp3`,
+    `${MIST_CROWN}12%20Mist%20Crown.mp3`,
     "https://archive.org/download/dark-fantasy-music-the-witch/Dark%20Fantasy%20Music%20-%20The%20Witch.mp3",
     "https://archive.org/download/magic-fantasy-music-the-last-of-her-kind/Magic%20Fantasy%20Music%20-%20The%20Last%20of%20Her%20Kind.mp3",
-    "https://archive.org/download/jamendo-190464/04-1720366-Sapere%20Aude-Mystic%20Swamp.mp3",
+    `${JAMENDO}04-1720366-Sapere%20Aude-Mystic%20Swamp.mp3`,
+    `${KM}Arcane.mp3`,
+    `${KM}Baba%20Yaga.mp3`,
+    `${KM}Alchemists%20Tower.mp3`,
+    `${DARK_AMB}Wizard%20Place.mp3`,
+    "https://soundimage.org/wp-content/uploads/2023/12/Magic-Clock-Shop.mp3",
+    "https://soundimage.org/wp-content/uploads/2023/12/Magic-Ocean.mp3",
   ],
 
   // Majestic / grand (castle, arena)
   epic: [
     `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
     `${MIST_CROWN}13%20Citadel%20of%20Mist.mp3`,
+    `${MIST_CROWN}01%20Foreign%20Shore.mp3`,
+    `${MIST_CROWN}02%20Brave%20the%20Unknown.mp3`,
+    `${MIST_CROWN}14%20No%20One%20Will%20Know%20of%20Their%20Sacrifice.mp3`,
     `${MEDIEVAL}The%20Britons.mp3`,
     `${MEDIEVAL}Royal%20Coupling.mp3`,
     "https://archive.org/download/epic-fantasy-music-the-wolf-and-the-moon/Epic%20Fantasy%20Music%20-%20The%20Wolf%20and%20the%20Moon.mp3",
+    `${KM}Crusade.mp3`,
+    `${DARK_AMB}Valhalla.mp3`,
+    "https://soundimage.org/wp-content/uploads/2023/12/The-Voyage-Begins.mp3",
+    "https://soundimage.org/wp-content/uploads/2020/06/The-Key-to-the-Kingdom.mp3",
+    "https://soundimage.org/wp-content/uploads/2020/06/Comrades-Always.mp3",
   ],
 
   // Maritime (ship)
   sea: [
     `${MEDIEVAL}Cold%20Journey.mp3`,
     `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
+    "https://soundimage.org/wp-content/uploads/2022/04/High-Seas-Adventures.mp3",
+    "https://soundimage.org/wp-content/uploads/2020/07/Pirates.mp3",
+    "https://soundimage.org/wp-content/uploads/2023/12/City-Beneath-the-Waves.mp3",
+    `${KM}Jaunty%20Gypsy.mp3`,
   ],
 };
 
 // Maps detect-scene keys → pool name
 const SCENE_TO_POOL: Record<string, string> = {
+  // Combat variants — every scene type gets one
   tavern_combat:     "combat",
   dungeon_combat:    "combat",
   forest_combat:     "combat",
@@ -86,7 +139,17 @@ const SCENE_TO_POOL: Record<string, string> = {
   temple_combat:     "combat",
   wilderness_combat: "combat",
   ship_combat:       "combat",
+  graveyard_combat:  "combat",
+  prison_combat:     "combat",
+  library_combat:    "combat",
+  port_combat:       "combat",
+  desert_combat:     "combat",
+  mountain_combat:   "combat",
+  swamp_combat:      "combat",
+  village_combat:    "combat",
+  shop_combat:       "combat",
   arena:             "combat",
+  // Non-combat
   dungeon:           "dungeon",
   cave:              "dungeon",
   prison:            "dungeon",
@@ -118,7 +181,7 @@ const MAX_SKIP = 6;
 declare global {
   interface Window {
     __dndMusicPlay?: () => void;
-    __dndSetMusicScene?: (scene: string) => void;
+    __dndSetMusicScene?: (scene: string, sceneType?: string, modifiers?: string[]) => void;
     __dndSetAmbiance?: (url: string | null) => void;
   }
 }
@@ -277,13 +340,40 @@ export function MusicPlayer() {
       else audio.play().catch(() => {});
     };
 
-    window.__dndSetMusicScene = (scene: string) => {
-      // scene may carry modifiers (e.g. "dungeon_crimson_flooded_combat")
+    window.__dndSetMusicScene = (scene: string, sceneType?: string, mods?: string[]) => {
       // Priority 1: combat suffix always wins
       if (scene.endsWith("_combat")) { fadeTo("combat"); return; }
-      // Priority 2: exact match
+
+      // Priority 2: modifier-based pool overrides
+      if (mods && mods.length > 0) {
+        const modSet = new Set(mods);
+        // Sacred/divine locations → mystical
+        if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial")) {
+          fadeTo("mystical"); return;
+        }
+        // Nautical modifiers on non-ship scenes → sea
+        if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal")) {
+          fadeTo("sea"); return;
+        }
+        // Festive/crowded → social
+        if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively")) {
+          fadeTo("social"); return;
+        }
+        // Frozen outdoors → nature (frozen dungeons stay dungeon)
+        if ((modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard")) &&
+            (sceneType === "wilderness" || sceneType === "mountain" || sceneType === "forest")) {
+          fadeTo("nature"); return;
+        }
+        // Arcane/ethereal ruins or temples → mystical
+        if ((modSet.has("ancient") || modSet.has("ethereal") || modSet.has("arcane") || modSet.has("mystical")) &&
+            (sceneType === "ruins" || sceneType === "temple" || sceneType === "library")) {
+          fadeTo("mystical"); return;
+        }
+      }
+
+      // Priority 3: exact match in table
       if (SCENE_TO_POOL[scene]) { fadeTo(SCENE_TO_POOL[scene]); return; }
-      // Priority 3: strip modifiers — find the longest base key that prefixes the scene
+      // Priority 4: strip modifiers — find the longest base key that prefixes the scene
       const baseKey = Object.keys(SCENE_TO_POOL)
         .filter(k => scene.startsWith(k + "_") || scene === k)
         .sort((a, b) => b.length - a.length)[0];

@@ -31,20 +31,66 @@ const AMBIANCE_PROMPTS: Record<string, string> = {
 };
 
 const COMBAT_LAYER: Record<string, string> = {
-  dungeon:    "dungeon combat, steel clashing on stone walls, echoing battle cries, urgent and dangerous",
-  forest:     "forest combat, snapping branches, battle cries, desperate fighting among trees",
-  tavern:     "tavern brawl, crashing furniture, shattering mugs, chaotic close-quarters fighting",
-  default:    "intense combat, steel clashing, urgent grunts and battle cries, life-or-death tension",
+  dungeon:    "dungeon combat ambiance, steel clashing on stone walls, echoing battle cries, urgent and dangerous",
+  forest:     "forest combat ambiance, snapping branches underfoot, desperate battle cries among ancient trees",
+  cave:       "cave combat ambiance, steel reverberating in rocky chambers, battle cries swallowed by stone",
+  tavern:     "tavern brawl ambiance, crashing furniture, shattering mugs, chaotic close-quarters fighting",
+  castle:     "castle battle ambiance, armored knights clashing in stone halls, steel ringing off vaulted ceilings",
+  ruins:      "ruins combat ambiance, crumbling stone spraying from impacts, desperate fighting through broken arches",
+  street:     "street brawl ambiance, cobblestones ringing under boots, cloaked fighters clashing under lantern light",
+  temple:     "temple combat ambiance, holy silence shattered by steel, reverent echoes turned chaotic",
+  wilderness: "open-field combat ambiance, desperate battle under open sky, weapons clashing against raw wind",
+  ship:       "ship deck combat ambiance, clashing steel on heaving planks, cannon smoke, crashing waves",
+  graveyard:  "graveyard combat ambiance, steel on cold stone, disturbed silence, desperate moonlit battle",
+  desert:     "desert combat ambiance, sand churned up by battle, scorching heat, steel under blazing sun",
+  mountain:   "mountain pass combat ambiance, howling wind, precarious footing, high-altitude desperate fighting",
+  swamp:      "swamp combat ambiance, water splashing, mud chaos, urgent desperate battle in the mire",
+  prison:     "prison combat ambiance, chains rattling, iron bars ringing from impacts, stone corridors echoing steel",
+  arena:      "gladiatorial arena ambiance, crowd roaring and stamping, steel on bloodied sand, brutal spectacle",
+  village:    "village combat ambiance, panicked villagers fleeing, steel clashing on cobblestones, chaos",
+  port:       "port combat ambiance, dockside brawl, sea wind, crates splintering, sailors fighting on the wharf",
+  default:    "intense combat ambiance, steel clashing, urgent battle cries, life-or-death tension",
+};
+
+// Maps specific modifier words to additional sound details for ElevenLabs
+const MODIFIER_SOUNDS: Record<string, string> = {
+  flooded:    "standing water flooding the floor, deep splashing echoes and constant dripping",
+  burning:    "roaring fire and crackling flames consuming the space, heat haze and smoke",
+  frozen:     "howling ice wind, crystalline silence, occasional creak of frozen stone",
+  overgrown:  "rustling leaves and vines, insects and birdsong reclaiming the stonework",
+  collapsed:  "settling rubble, occasional stone falling, dust and unstable silence",
+  smoky:      "thick choking smoke, deadened muffled acoustics, distant crackling",
+  moonlit:    "open night sky above, cool breeze, distant night insects and owls",
+  underground:"deep underground weight, earth-muffled sound, the vast silence of buried stone",
+  sacred:     "resonant bell harmonics, hushed reverence, incense and devotional calm",
+  haunted:    "spectral whispers, inexplicable cold drafts, unnerving silence",
+  cursed:     "low dread vibration, oppressive psychic weight, wrongness in the air",
+  ancient:    "geological silence, the weight of millennia, deep time",
+  ethereal:   "shimmering high-frequency resonance, otherworldly stillness",
+  arcane:     "crackling magical energy, humming arcane machinery, charged air",
+  crimson:    "thick oppressive atmosphere, dripping, unsettling red-tinged silence",
+  festive:    "lively crowd murmur, distant music and laughter, celebratory atmosphere",
+  stormy:     "howling wind and driving rain, thunder rumbling, lightning crack",
+  volcanic:   "low rumbling magma, heat shimmer, occasional rock cracking and hissing steam",
+  tidal:      "rhythmic waves surging in and receding, sea spray, wet stone",
+  eerie:      "unnatural quiet, distant inexplicable sounds, unsettling stillness",
 };
 
 function buildPrompt(sceneType: string, modifiers: string[], description: string, isCombat: boolean): string {
   const base = isCombat
     ? (COMBAT_LAYER[sceneType] ?? COMBAT_LAYER.default)
-    : (AMBIANCE_PROMPTS[sceneType] ?? `ambient ${sceneType} environment, immersive soundscape`);
+    : (AMBIANCE_PROMPTS[sceneType] ?? `ambient ${sceneType} environment, immersive fantasy soundscape`);
 
-  const modStr = modifiers.length > 0 ? `, ${modifiers.join(", ")} quality` : "";
-  const descExtra = description.length > 15 ? `, ${description.slice(0, 100)}` : "";
-  return `${base}${modStr}${descExtra}, seamless looping ambient audio, high fidelity, no music, pure sound environment`;
+  // Build meaningful sound additions from modifiers
+  const modAdditions = modifiers
+    .map(m => MODIFIER_SOUNDS[m])
+    .filter(Boolean)
+    .join(", ");
+  const modStr = modAdditions ? `, ${modAdditions}` : "";
+
+  // Use the scene description for extra specificity
+  const descExtra = description.length > 15 ? `, ${description.slice(0, 120)}` : "";
+  return `${base}${modStr}${descExtra}, seamless looping ambient audio, high fidelity, no music, pure environmental sound`;
 }
 
 export async function POST(req: NextRequest) {

@@ -112,12 +112,12 @@ function exportLog(entries: LogEntry[], campaignId: string) {
 }
 
 const VOICES = [
-  { id: "chronicler", label: "Chronicler", desc: "Ancient wizard — gravelly & slow" },
-  { id: "onyx",       label: "Gravedigger", desc: "Deep & foreboding"               },
-  { id: "fable",      label: "Bard",        desc: "British storyteller"             },
-  { id: "echo",       label: "Herald",      desc: "Clear & resonant"                },
-  { id: "ash",        label: "Rogue",       desc: "Gritty & measured"               },
-  { id: "ballad",     label: "Sage",        desc: "Warm narrator"                   },
+  { id: "myrrdin",   label: "Myrrdin",       desc: "♂ Ancient wizard — wise & magical"      },
+  { id: "cornelius", label: "Cornelius",     desc: "♂ Old sage wizard — storyteller"        },
+  { id: "oldwizard", label: "Old Wizard",    desc: "♂ Deep British elder — gravelly"        },
+  { id: "morganna",  label: "Seer Morganna", desc: "♀ Ancient seer — intimidating & clear"  },
+  { id: "eleanor",   label: "Eleanor",       desc: "♀ Refined British elder — authoritative"},
+  { id: "kanika",    label: "Kanika",        desc: "♀ Mythological narrator — mystical"     },
 ] as const;
 
 // ── Colored narrative — red for damage, green for healing ─────────────────────
@@ -214,7 +214,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Narration
   const [narrationEnabled, setNarrationEnabled]  = useState(true);
   const [narrating,        setNarrating]         = useState(false);
-  const [selectedVoice,    setSelectedVoice]     = useState<string>("fable");
+  const [selectedVoice,    setSelectedVoice]     = useState<string>("myrrdin");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
   const selectedVoiceRef = useRef<string>("fable");
 
@@ -597,6 +597,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
+        // Generate suggestions for this player if it's now their turn
+        const order = turnOrderRef.current;
+        const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === userIdRef.current;
+        if (isMyTurnNow && characterRef.current) {
+          fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: payload.content, character: characterRef.current }) })
+            .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+        }
       })
       .on("broadcast", { event: "dm_typing" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -1027,8 +1034,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
         .then(({ error }) => { if (error) console.error("[party event]", error); });
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full } });
-      fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
-        .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+      const isPartyEventMyTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userIdRef.current;
+      if (isPartyEventMyTurn && characterRef.current) {
+        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
+          .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+      }
     } catch { /* best effort */ } finally {
       setIsTyping(false); isTypingRef.current = false;
       setStreamingContent("");
@@ -1411,6 +1421,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
           ...(isOpeningScene && { openingScene: true }),
           ...(nextPromptName && { currentTurnPlayerName: nextPromptName }),
+          ...(character?.name && nextPromptName && character.name !== nextPromptName && { prevActingPlayerName: character.name }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
         }),
         signal: controller.signal,
@@ -1474,9 +1485,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       }
 
-      // Suggested actions
-      fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
-        .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+      // Suggested actions — only generate for the local player when it IS their turn
+      const isLocalTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userId;
+      if (isLocalTurn && characterRef.current) {
+        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
+          .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+      }
 
       // Scene detection (non-blocking — updates background when ready)
       const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
@@ -1488,7 +1502,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             currentSceneRef.current = sceneName;
             setCurrentSceneUrl(imageUrl);
             channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
-            (window as Window).__dndSetMusicScene?.(sceneName);
+            (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
           }
           // Ambient audio generation (non-blocking, fires whether or not image changed)
           if (sceneType) {

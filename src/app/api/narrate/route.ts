@@ -1,42 +1,64 @@
-import OpenAI from "openai";
 import { NextRequest } from "next/server";
 
-const ALLOWED_VOICES = ["onyx", "fable", "echo", "ash", "nova", "ballad", "chronicler"] as const;
-type AllowedVoice = typeof ALLOWED_VOICES[number];
+const EL_KEY = process.env.ELEVENLABS_API_KEY ?? "";
 
-// chronicler is a styled variant — maps to a real OpenAI voice + speaking instructions
-const VOICE_CONFIG: Partial<Record<AllowedVoice, { base: string; instructions: string }>> = {
-  chronicler: {
-    base: "onyx",
-    instructions:
-      "You are an ancient, grizzled wizard narrating a dark fantasy epic. Your voice is deep, slow, and weathered — each word chosen with deliberate weight, as if you have witnessed centuries of war and magic. Speak with gravitas and mystery. Pause between sentences. Let the silence carry menace. You are recounting legend by dying firelight, and every syllable should feel earned.",
-  },
+type VoiceConfig = {
+  voiceId:         string;
+  stability:       number;
+  similarityBoost: number;
+  style:           number;
 };
+
+// ElevenLabs voice IDs — all sourced from the shared voice library
+const VOICE_CONFIG: Record<string, VoiceConfig> = {
+  // Male
+  myrrdin:   { voiceId: "oR4uRy4fHDUGGISL0Rev", stability: 0.75, similarityBoost: 0.70, style: 0.10 },
+  cornelius: { voiceId: "6sFKzaJr574YWVu4UuJF", stability: 0.70, similarityBoost: 0.70, style: 0.05 },
+  oldwizard: { voiceId: "JoYo65swyP8hH6fVMeTO", stability: 0.72, similarityBoost: 0.68, style: 0.08 },
+  // Female
+  morganna:  { voiceId: "7NsaqHdLuKNFvEfjpUno", stability: 0.65, similarityBoost: 0.75, style: 0.12 },
+  eleanor:   { voiceId: "2qQJWjw5XdG80GreshqG", stability: 0.72, similarityBoost: 0.72, style: 0.05 },
+  kanika:    { voiceId: "xccfcojYYGnqTTxwZEDU", stability: 0.60, similarityBoost: 0.78, style: 0.15 },
+};
+
+const DEFAULT_VOICE = "myrrdin";
 
 export async function POST(req: NextRequest) {
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const { text, voice } = (await req.json()) as { text: string; voice?: string };
     if (!text?.trim()) return new Response("No text", { status: 400 });
 
-    const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
-      ? (voice as AllowedVoice)
-      : "onyx";
+    const config = VOICE_CONFIG[voice ?? DEFAULT_VOICE] ?? VOICE_CONFIG[DEFAULT_VOICE];
 
-    const config = VOICE_CONFIG[safeVoice];
-    const baseVoice = config?.base ?? safeVoice;
-
-    const response = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: baseVoice as AllowedVoice,
-      input: text.slice(0, 4096),
-      ...(config?.instructions && { instructions: config.instructions }),
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${config.voiceId}`, {
+      method:  "POST",
+      headers: {
+        "xi-api-key":   EL_KEY,
+        "Content-Type": "application/json",
+        "Accept":       "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text:     text.slice(0, 5000),
+        model_id: "eleven_turbo_v2_5",
+        voice_settings: {
+          stability:        config.stability,
+          similarity_boost: config.similarityBoost,
+          style:            config.style,
+          use_speaker_boost: true,
+        },
+      }),
     });
 
-    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error("[api/narrate] ElevenLabs error:", res.status, errText);
+      return new Response("TTS unavailable", { status: 500 });
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
     return new Response(buffer, {
       headers: {
-        "Content-Type": "audio/mpeg",
+        "Content-Type":  "audio/mpeg",
         "Cache-Control": "no-cache",
       },
     });
