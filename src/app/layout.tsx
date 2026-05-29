@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dungeons and Dinner Legends",
+  title: "Dungeons & Dinner Legends",
   description: "A premium AI-driven D&D campaign platform.",
 };
 
