@@ -274,9 +274,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
 
   // Dice-roll targeting — character name the DM just asked to roll
-  const [diceRollTarget,    setDiceRollTarget]    = useState<string | null>(null);
+  const [diceRollTarget,      setDiceRollTarget]      = useState<string | null>(null);
   // Which die type the DM is requesting (4, 6, 8, 10, 12, 20, 100 — null = player's choice)
-  const [requiredDiceType,  setRequiredDiceType]  = useState<number | null>(null);
+  const [requiredDiceType,    setRequiredDiceType]    = useState<number | null>(null);
+  // userId of the player the DM explicitly called on to roll — gates isMyTurn
+  const [rollRequestedUserId, setRollRequestedUserId] = useState<string | null>(null);
   // Enemy targeting — which enemy the player is focusing on
   const [targetedEnemyId,   setTargetedEnemyId]   = useState<string | null>(null);
 
@@ -330,8 +332,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const joinDebounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLeavesRef     = useRef<PresencePlayer[]>([]);
   const leaveDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentSceneRef      = useRef<string>("");
-  const enemiesRef           = useRef<CampaignEnemy[]>([]);
+  const currentSceneRef        = useRef<string>("");
+  const enemiesRef             = useRef<CampaignEnemy[]>([]);
+  const rollRequestedUserIdRef = useRef<string | null>(null);
   const resumeNarrationRef   = useRef<string>("");
   const autoOpenedRef        = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
@@ -356,6 +359,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
   useEffect(() => { enemiesRef.current             = enemies;             }, [enemies]);
   useEffect(() => { playersRef.current            = players;             }, [players]);
+  useEffect(() => { rollRequestedUserIdRef.current = rollRequestedUserId; }, [rollRequestedUserId]);
 
   // When the active character index changes, sync the character sheet
   useEffect(() => {
@@ -564,6 +568,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const rollTarget = detectDiceRollTarget(payload.content as string);
         setDiceRollTarget(rollTarget);
         setRequiredDiceType(detectRequiredDiceType(payload.content as string));
+        // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       })
@@ -582,6 +587,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "round_reset" }, () => {
         setCurrentTurnIndex(0); setPendingActions([]);
         currentTurnIndexRef.current = 0; pendingActionsRef.current = [];
+      })
+      .on("broadcast", { event: "roll_request" }, ({ payload }) => {
+        if ((payload as { userId: string | null }).userId === userIdRef.current) return;
+        const uid = (payload as { userId: string | null }).userId ?? null;
+        setRollRequestedUserId(uid);
+        rollRequestedUserIdRef.current = uid;
       })
       .on("broadcast", { event: "character_hp_update" }, ({ payload }) => {
         const { charId, newHp, newMaxHp } = payload as { charId: string; newHp: number; newMaxHp: number };
@@ -1376,6 +1387,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const rollTarget = detectDiceRollTarget(full);
       setDiceRollTarget(rollTarget);
       setRequiredDiceType(detectRequiredDiceType(full));
+      {
+        const targetChar   = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
+        const targetUserId = targetChar?.user_id ?? null;
+        setRollRequestedUserId(targetUserId);
+        rollRequestedUserIdRef.current = targetUserId;
+        channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
+      }
 
       // Enemy combat: spawn enemies when combat starts, or update existing enemy states
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
@@ -1447,11 +1465,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const text = (actionText ?? input).trim();
     if (!text || isTyping) return;
     const order    = turnOrderRef.current;
-    const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId || characterRef.current?.id === partyLeaderId;
+    const rollReq  = rollRequestedUserIdRef.current;
+    const isMyTurn = rollReq
+      ? rollReq === userId
+      : (order.length === 0 || order[currentTurnIndexRef.current] === userId || characterRef.current?.id === partyLeaderId);
     if (!isMyTurn && !bypassTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
-    setDiceRollTarget(null); // clear roll highlight when player acts
+    setDiceRollTarget(null);
+    setRollRequestedUserId(null);
+    rollRequestedUserIdRef.current = null;
+    channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: null } });
 
     const playerMsg: Message = { role: "player", content: text, sender: character?.name ?? "You" };
     const updatedMessages    = [...messages, playerMsg];
@@ -1768,7 +1792,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
   const isPartyLeader       = !!character && character.id === partyLeaderId;
   const leaderChar          = campaignParty.find(c => c.id === partyLeaderId) ?? null;
-  const isMyTurn            = turnOrder.length === 0 || currentTurnPlayerId === userId || isPartyLeader;
+  const isMyTurn            = rollRequestedUserId
+    ? rollRequestedUserId === userId
+    : (turnOrder.length === 0 || currentTurnPlayerId === userId || isPartyLeader);
   const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
@@ -1996,11 +2022,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         </header>
 
-        {/* Turn indicator */}
-        {turnOrder.length > 1 && (
-          <div style={{ padding: "7px 16px", background: "rgba(139,92,246,0.08)", borderBottom: "1px solid rgba(139,92,246,0.15)", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "6px" }}>
+        {/* Turn indicator / roll request banner */}
+        {(turnOrder.length > 1 || rollRequestedUserId) && (
+          <div style={{ padding: "7px 16px", background: rollRequestedUserId ? "rgba(251,191,36,0.08)" : "rgba(139,92,246,0.08)", borderBottom: `1px solid ${rollRequestedUserId ? "rgba(251,191,36,0.25)" : "rgba(139,92,246,0.15)"}`, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "6px" }}>
             {isTyping ? (
               <span style={{ color: "#8b5cf6" }}>⏳ DM is responding…</span>
+            ) : rollRequestedUserId ? (
+              <>
+                <span style={{ animation: "blink 1s step-end infinite" }}>🎲</span>
+                <span style={{ color: isMyTurn ? "#fbbf24" : "#94a3b8", fontWeight: "bold" }}>
+                  {isMyTurn ? "Your roll!" : `${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "A player"} is rolling…`}
+                </span>
+              </>
             ) : currentTurnIndex >= turnOrder.length ? (
               <span style={{ color: "#8b5cf6" }}>All actions in — DM is next…</span>
             ) : (
@@ -2098,8 +2131,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={isTyping || !isMyTurn}
               placeholder={
-                isTyping   ? "The DM is responding…"
-                : !isMyTurn ? `Waiting for ${players.find(p => p.userId === currentTurnPlayerId)?.characterName ?? "other players"}…`
+                isTyping      ? "The DM is responding…"
+                : !isMyTurn && rollRequestedUserId ? `Waiting for ${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "a player"} to roll…`
+                : !isMyTurn   ? `Waiting for ${players.find(p => p.userId === currentTurnPlayerId)?.characterName ?? "other players"}…`
+                : rollRequestedUserId ? "Describe your roll result…"
                 : "Describe your action…"
               }
               style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || !isMyTurn) ? 0.6 : 1 }}
@@ -2186,14 +2221,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const classEmoji   = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
                 const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
                 const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
-                const cardAnim     = isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
+                const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 return (
                   <div key={char.id}
                     onClick={() => campaignParty.length > 1 && setActiveCharIdx(idx)}
-                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isActive ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isActive ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none" }}>
                           {char.portrait_url ? (
                             <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
