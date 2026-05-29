@@ -336,5 +336,5 @@ input::placeholder, textarea::placeholder {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmerText 5s linear infinite;
+  animation: shimmerText 9s linear infinite;
 }
