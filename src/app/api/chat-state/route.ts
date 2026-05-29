@@ -33,21 +33,30 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "items_gained":          string[],  // consumables/trinkets added. [] if none.
   "items_lost":            string[],  // items spent or destroyed. [] if none.
   "weapons_gained":        string[],  // weapons or armor obtained. [] if none.
-  "xp_award":              number,    // XP earned. 0=nothing, 15=minor, 30=notable, 75=small combat, 150=sig combat, 300=major, 500+=boss
+  "xp_award":              number,    // XP earned — ALWAYS infer from the outcome described (see XP rules below). Never 0 unless nothing happened.
   "status_effects_gained": string[],  // conditions gained: "Unconscious","Poisoned","Prone","Blinded","Frightened","Paralyzed","Stunned","Charmed","Restrained","Exhausted","Petrified"
   "status_effects_lost":   string[],  // conditions that ended this turn. [] if none.
   "spell_slots_used":      number     // number of leveled spell slots consumed (not cantrips). 0 if none.
 }
 
-Rules:
-- Only extract changes the DM explicitly states — never infer.
+HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
 - HP/loot only count when the DM narrates the resolved result.
 - A creature falling to 0 HP = Unconscious (if not dead).
 - Status effects: only add when DM explicitly applies the condition.
 - Spell slots: only count when a leveled spell is explicitly cast.
-- Currency: "a pouch of coins", "a purse of gold", "handful of silver" — estimate the gold value and include in gold_delta. NPC gifts of coins count as positive gold_delta.
-- Items received from NPCs as rewards, gifts, or trades count the same as found loot — include in items_gained or weapons_gained.
-- Use the exact item name the DM stated (e.g. "Potion of Healing", "Longsword +1", "Ring of Protection").
+- Currency: "a pouch of coins", "a purse of gold", "handful of silver" — estimate the gold value. NPC gifts count.
+- Items received from NPCs as rewards, gifts, or trades count as items_gained or weapons_gained.
+- Use the exact item name the DM stated.
+
+XP RULES (infer generously — players must always feel progression):
+- ALWAYS award XP when any of the following are described — you do NOT need the DM to say "you earn X XP":
+  • Successful attack or spell hit in combat → 10–25 XP
+  • Enemy defeated / falls / dies → 50–300 XP based on how powerful they seemed (CR 1/4–1: 50, CR 2–4: 100, CR 5–8: 200, CR 9+: 300+)
+  • Clever skill check success (persuasion, stealth, investigation, acrobatics, etc.) → 15–35 XP
+  • Trap survived, lock picked, puzzle solved, clue found → 20–50 XP
+  • Significant story beat (major revelation, quest objective completed, boss defeated) → 100–200 XP
+  • Any round of active combat, even if no kill → at minimum 10 XP for participating
+- Award 0 ONLY when the narrative is pure scene-setting, DM monologue, failed action, or the player did nothing.
 - No markdown, no explanation — output JSON only.`;
 
 export async function POST(req: NextRequest) {

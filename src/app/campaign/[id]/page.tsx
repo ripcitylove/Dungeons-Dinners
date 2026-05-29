@@ -424,11 +424,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
 
       if (party.length) {
-        setCampaignParty(party);
-        campaignPartyRef.current = party;
+        // Ensure HP is never above max_hp (can drift if max_hp changed without hp update)
+        const normalizedParty = party.map(c => c.hp > c.max_hp ? { ...c, hp: c.max_hp } : c);
+        if (normalizedParty.some((c, i) => c.hp !== party[i].hp)) {
+          normalizedParty.forEach(c => {
+            if (c.hp !== party.find(p => p.id === c.id)?.hp) {
+              supabase.from("characters").update({ hp: c.hp }).eq("id", c.id).then(() => {});
+            }
+          });
+        }
+        const fixedParty = normalizedParty;
+        setCampaignParty(fixedParty);
+        campaignPartyRef.current = fixedParty;
         // Set active character to the current user's own character in the party
-        const myChar = party.find(c => c.user_id === user.id) ?? (charRes.data?.[0] as Character | undefined);
-        const myIdx  = party.findIndex(c => c.user_id === user.id);
+        const myChar = fixedParty.find(c => c.user_id === user.id) ?? (charRes.data?.[0] as Character | undefined);
+        const myIdx  = fixedParty.findIndex(c => c.user_id === user.id);
         if (myChar) { setCharacter(myChar); characterRef.current = myChar; }
         if (myIdx >= 0) setActiveCharIdx(myIdx);
 
@@ -440,6 +450,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       } else if (charRes.data?.[0]) {
         setCharacter(charRes.data[0] as Character);
+      }
+
+      // Trigger portrait generation for any of the current user's party characters missing one
+      const myPartyChars = party.filter(c => c.user_id === user.id && !c.portrait_url);
+      if (myPartyChars.length > 0) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          myPartyChars.forEach(c => {
+            fetch("/api/generate-portrait", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+              body: JSON.stringify({ race: c.race, cls: c.class, sex: c.sex ?? "male", charId: c.id }),
+            }).catch(() => {});
+          });
+        });
       }
 
       if (historyRes.data && historyRes.data.length > 0) {
@@ -1343,6 +1367,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }));
 
       const currentTurnChar = onlineParty.find(c => c.user_id === (turnOrderRef.current[currentTurnIndexRef.current] ?? null));
+      const rollRequestChar = rollRequestedUserIdRef.current ? onlineParty.find(c => c.user_id === rollRequestedUserIdRef.current) : null;
+      // Always tell the DM who to address next — roll target > combat turn > solo player
+      const nextPromptName  = rollRequestChar?.name ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null) ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null) ?? character?.name;
       const targetedEnemy   = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
 
       const res = await fetch("/api/chat", {
@@ -1353,7 +1380,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           campaignContext: campaignCtx,
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
           ...(isOpeningScene && { openingScene: true }),
-          ...(currentTurnChar && turnOrderRef.current.length > 1 && { currentTurnPlayerName: currentTurnChar.name }),
+          ...(nextPromptName && { currentTurnPlayerName: nextPromptName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
         }),
         signal: controller.signal,

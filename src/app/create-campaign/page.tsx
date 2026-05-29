@@ -321,14 +321,16 @@ export default function CreateCampaignWizard() {
       }
 
       for (const c of rosterPicks) {
+        const maxHp = c.rosterMaxHp ?? startingHP(c.class, c.scores.constitution);
         const { error: rErr } = await supabase.from("characters")
-          .update({ campaign_id: campData.id, hp: c.rosterMaxHp, spell_slots_used: {}, status_effects: [] })
+          .update({ campaign_id: campData.id, hp: maxHp, max_hp: maxHp, spell_slots_used: {}, status_effects: [] })
           .eq("id", c.rosterId!);
         if (rErr) throw rErr;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
+        // Generate portraits for new characters
         newCharData.forEach((char, i) => {
           const c = newChars[i];
           fetch("/api/generate-portrait", {
@@ -336,6 +338,17 @@ export default function CreateCampaignWizard() {
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
             body: JSON.stringify({ race: c.race, cls: c.class, sex: c.sex, charId: char.id }),
           }).catch(console.error);
+        });
+        // Generate portraits for roster characters that don't have one yet
+        rosterPicks.forEach(c => {
+          const rChar = rosterChars?.find(r => r.id === c.rosterId);
+          if (rChar && !rChar.portrait_url) {
+            fetch("/api/generate-portrait", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({ race: rChar.race, cls: rChar.class, sex: rChar.sex, charId: rChar.id }),
+            }).catch(console.error);
+          }
         });
       }
 

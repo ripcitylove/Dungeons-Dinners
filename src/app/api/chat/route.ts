@@ -175,7 +175,7 @@ Use enemy AC values when players attack them. Use enemy ATK bonus and damage dic
 When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\nAfter resolving the current action, directly address ${currentTurnPlayerName} by name and ask what they would like to do.\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\nAfter resolving the current action, end your response by directly addressing ${currentTurnPlayerName} by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\n`
     : "";
 
   const targetBlock = targetedEnemyName

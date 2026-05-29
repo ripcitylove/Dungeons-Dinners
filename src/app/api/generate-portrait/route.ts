@@ -54,6 +54,21 @@ export async function POST(req: NextRequest) {
       race: string; cls: string; sex: string; charId: string;
     };
 
+    if (!charId?.trim()) return Response.json({ error: "Missing charId" }, { status: 400 });
+
+    const supabaseCheck = makeSupabase(authHeader);
+    const path = `${charId}.png`;
+
+    // Return cached portrait if it already exists
+    const { data: existing } = await supabaseCheck.storage.from("portraits").list("", { search: charId });
+    const cached = existing?.find(f => f.name === path);
+    if (cached) {
+      const { data: { publicUrl } } = supabaseCheck.storage.from("portraits").getPublicUrl(path);
+      // Ensure the DB row is also updated (in case a prior run uploaded but didn't update)
+      await supabaseCheck.from("characters").update({ portrait_url: publicUrl }).eq("id", charId).is("portrait_url", null);
+      return Response.json({ url: publicUrl, stored: true, cached: true });
+    }
+
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const genderWord = sex === "female" ? "woman" : sex === "non-binary" ? "androgynous person" : "man";
@@ -76,7 +91,6 @@ export async function POST(req: NextRequest) {
 
     const supabase = makeSupabase(authHeader);
 
-    const path = `${charId}.png`;
     const { error: uploadError } = await supabase.storage
       .from("portraits")
       .upload(path, imgBuffer, { contentType: "image/png", upsert: true });
