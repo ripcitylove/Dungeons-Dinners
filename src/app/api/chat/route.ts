@@ -81,11 +81,12 @@ WORLD VARIETY & CAMPAIGN OPENINGS
 - When starting a new campaign, open with 2–3 paragraphs that put the party squarely in the scene — atmosphere, sensory detail, immediate tension — before acknowledging any player action.
 - If a campaign title or description was provided, treat it as the authoritative world-setting. The description is the seed of the world; grow it.
 
-MULTI-PLAYER TURNS
+MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Player messages are prefixed with [CharacterName]: to identify the speaker.
-- Players act ONE AT A TIME in sequence. You respond after EACH individual action — do not batch or wait for other players.
-- After resolving each action, always end by addressing the next player by name (given in CURRENT TURN) and asking what they do.
-- When a roll is needed, address the character by their exact name: "[Name], roll a [type] check, DC [X]."
+- This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
+- When it is a player's turn (CURRENT TURN tells you who), address them by name. Describe what they specifically face RIGHT NOW and ask what they do.
+- Resolve each player's action COMPLETELY — including any dice rolls — before moving to the next player. If a roll is required, say "[Name], roll a [type], DC [X]." Do NOT end your response by addressing the next player until the current player's action and all requested rolls are fully resolved.
+- After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 
 MECHANICS (woven into the narrative, not announced)
@@ -150,7 +151,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[]): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -179,6 +180,10 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
   const turnBlock = currentTurnPlayerName
     ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\n`
+    : "";
+
+  const reconcileBlock = roundSummary?.length
+    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve all player actions with complete dice outcomes.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state the roll, hit/miss, and exact damage.\n3. Apply all ongoing effects, concentration checks, and end-of-round conditions.\n4. Narrate the full round outcome vividly.\n5. End by addressing ${currentTurnPlayerName ?? "the first player"} by name and describing what they face at the start of the new round.\n`
     : "";
 
   const targetBlock = targetedEnemyName
@@ -214,7 +219,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${turnBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${targetBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -247,7 +252,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     : "";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${turnBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${targetBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
@@ -261,7 +266,7 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -271,6 +276,7 @@ export async function POST(req: NextRequest) {
       currentTurnPlayerName?: string;
       targetedEnemyName?: string;
       prevActingPlayerName?: string;
+      roundSummary?: { name: string; action: string }[];
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -292,7 +298,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 700,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary),
       messages:   claudeMessages,
       stream:     true,
     });
