@@ -424,8 +424,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
 
       if (party.length) {
-        // Ensure HP is never above max_hp (can drift if max_hp changed without hp update)
-        const normalizedParty = party.map(c => c.hp > c.max_hp ? { ...c, hp: c.max_hp } : c);
+        // Clamp HP to effective max (base + item bonuses) — never raw max_hp alone
+        const normalizedParty = party.map(c => {
+          const ib = computeInventoryBonuses(c.inventory?.items ?? [], c.inventory?.weapons ?? []);
+          const effectiveMax = c.max_hp + ib.hpMaxAdd;
+          return c.hp > effectiveMax ? { ...c, hp: effectiveMax } : c;
+        });
         if (normalizedParty.some((c, i) => c.hp !== party[i].hp)) {
           normalizedParty.forEach(c => {
             if (c.hp !== party.find(p => p.id === c.id)?.hp) {
@@ -551,7 +555,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channel
       .on("presence", { event: "sync" }, () => {
         const all      = Object.values(channel.presenceState<PresencePlayer>()).flat();
-        const newOrder = all.map(p => p.userId).sort();
+        const newOrder = [...all]
+          .sort((a, b) => a.characterName.localeCompare(b.characterName))
+          .map(p => p.userId);
         setPlayers(all);
         turnOrderRef.current = newOrder;
         setTurnOrder(newOrder);
@@ -1529,7 +1535,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const rollReq  = rollRequestedUserIdRef.current;
     const isMyTurn = rollReq
       ? rollReq === userId
-      : (order.length === 0 || order[currentTurnIndexRef.current] === userId || characterRef.current?.id === partyLeaderId);
+      : (order.length <= 1 || order[currentTurnIndexRef.current] === userId);
     if (!isMyTurn && !bypassTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
@@ -1734,11 +1740,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (error) { console.error("[addToParty]", error); return; }
       updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     } else {
-      // Returning to this campaign — restore last saved state, clamp hp
+      // Returning to this campaign — preserve damage, but ensure item HP bonuses are reflected
       const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
-      const clampedHp = Math.min(char.hp, char.max_hp + ib.hpMaxAdd);
-      if (clampedHp !== char.hp) await supabase.from("characters").update({ hp: clampedHp }).eq("id", char.id);
-      updated = { ...char, hp: clampedHp };
+      const effectiveMax = char.max_hp + ib.hpMaxAdd;
+      // If HP is at or above base max (fresh join or fully rested), bring to full effective max
+      const resolvedHp = char.hp >= char.max_hp ? effectiveMax : Math.min(char.hp, effectiveMax);
+      if (resolvedHp !== char.hp) await supabase.from("characters").update({ hp: resolvedHp }).eq("id", char.id);
+      updated = { ...char, hp: resolvedHp };
     }
 
     const newParty = [...campaignPartyRef.current, updated];
@@ -1792,10 +1800,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setGuestError("Session expired. Please refresh."); return; }
 
-      const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
+      const guestIb     = computeInventoryBonuses(selectedRosterChar.inventory?.items ?? [], selectedRosterChar.inventory?.weapons ?? []);
+      const guestFullHp = selectedRosterChar.max_hp + guestIb.hpMaxAdd;
+      const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
       if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
 
-      const char: Character = { ...selectedRosterChar, campaign_id: params.id, hp: selectedRosterChar.max_hp, spell_slots_used: {}, status_effects: [] };
+      const char: Character = { ...selectedRosterChar, campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] };
       const joinUserId = user.id;
 
       // ── Shared: wire up state and load campaign data ─────────────────────
@@ -1855,7 +1865,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const leaderChar          = campaignParty.find(c => c.id === partyLeaderId) ?? null;
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
-    : (turnOrder.length === 0 || currentTurnPlayerId === userId || isPartyLeader);
+    : (turnOrder.length <= 1 || currentTurnPlayerId === userId);
   const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
