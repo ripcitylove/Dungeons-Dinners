@@ -2047,6 +2047,74 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         )}
 
+        {/* ── Combat enemy strip ── */}
+        {combatActive && enemies.some(e => !e.is_defeated) && (
+          <div className="animate-fade-in" style={{ borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(30,0,0,0.55)", padding: "10px 14px 12px" }}>
+            <div style={{ fontSize: "0.62rem", color: "rgba(239,68,68,0.7)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "8px", fontWeight: "bold" }}>
+              ⚔ {enemies.filter(e => !e.is_defeated).length} {enemies.filter(e => !e.is_defeated).length === 1 ? "Enemy" : "Enemies"} — click to target
+            </div>
+            <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
+              {enemies.map(e => {
+                const isTargeted = !e.is_defeated && targetedEnemyId === e.id;
+                const cond       = e.condition ?? "healthy";
+                const condColor  = CONDITION_COLORS[cond];
+                const condPct    = CONDITION_PCT[cond];
+                return (
+                  <div
+                    key={e.id}
+                    onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
+                    style={{
+                      flexShrink: 0, width: "88px",
+                      background: e.is_defeated ? "rgba(0,0,0,0.2)" : isTargeted ? "rgba(120,0,0,0.7)" : "rgba(60,0,0,0.55)",
+                      border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`,
+                      borderRadius: "10px", padding: "8px 8px 7px",
+                      cursor: e.is_defeated ? "default" : "pointer",
+                      opacity: e.is_defeated ? 0.4 : 1,
+                      transition: "all 0.3s ease",
+                      animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : "none",
+                      position: "relative",
+                    }}
+                  >
+                    {/* Portrait */}
+                    <div style={{ width: "100%", aspectRatio: "1", borderRadius: "7px", overflow: "hidden", marginBottom: "6px", background: "rgba(0,0,0,0.5)", border: `1.5px solid ${isTargeted ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.06)"}`, position: "relative" }}>
+                      {e.portrait_url ? (
+                        <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover", filter: e.is_defeated ? "grayscale(1)" : "none" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>
+                          {e.portrait_emoji}
+                        </div>
+                      )}
+                      {/* Generating indicator */}
+                      {!e.portrait_url && !e.is_defeated && (
+                        <div style={{ position: "absolute", bottom: "3px", right: "3px", width: "6px", height: "6px", borderRadius: "50%", background: "#8b5cf6", animation: "blink 1s step-end infinite" }} />
+                      )}
+                    </div>
+                    {/* Name */}
+                    <div style={{ fontSize: "0.62rem", fontWeight: "bold", color: e.is_defeated ? "#6b7280" : isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: "5px", textDecoration: e.is_defeated ? "line-through" : "none" }}>
+                      {e.name}
+                    </div>
+                    {/* Condition bar */}
+                    {!e.is_defeated && (
+                      <div style={{ width: "100%", height: "3px", background: "#1f2937", borderRadius: "2px", overflow: "hidden" }}>
+                        <div style={{ width: `${condPct}%`, height: "100%", background: condColor, transition: "width 0.5s ease, background 0.4s ease" }} />
+                      </div>
+                    )}
+                    {/* Target badge */}
+                    {isTargeted && (
+                      <div style={{ position: "absolute", top: "-8px", left: "50%", transform: "translateX(-50%)", fontSize: "0.5rem", background: "#ef4444", color: "white", borderRadius: "3px", padding: "1px 5px", fontWeight: "bold", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                        ⚔ TARGET
+                      </div>
+                    )}
+                    {e.is_defeated && (
+                      <div style={{ textAlign: "center", fontSize: "0.52rem", color: "#6b7280", fontWeight: "bold" }}>DEFEATED</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: "14px" }}>
           {messages.map((msg, idx) => (
