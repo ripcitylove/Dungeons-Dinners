@@ -420,11 +420,18 @@ export default function CreateCampaignWizard() {
         {/* ── Title ── */}
         <h1 style={{ fontSize: "1.9rem", marginBottom: "6px", textAlign: "center" }}>{stepTitle}</h1>
         {phase === "characters" && (
-          <p style={{ textAlign: "center", color: "#64748b", fontSize: "0.85rem", marginBottom: "28px" }}>
-            Building <strong style={{ color: "var(--primary)" }}>
-              {draft.name.trim() || `Player ${currentPlayerIdx + 1}`}
-            </strong>'s character
-          </p>
+          <div style={{ textAlign: "center", marginBottom: "28px" }}>
+            <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
+              Building <strong style={{ color: "var(--primary)" }}>
+                {draft.name.trim() || `Player ${currentPlayerIdx + 1}`}
+              </strong>'s character
+            </p>
+            {currentPlayerIdx === 0 && charStep === 1 && (
+              <p style={{ fontSize: "0.75rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "20px", padding: "3px 12px" }}>
+                👑 <span>Player 1&apos;s character becomes the <strong style={{ color: "#c4b5fd" }}>Party Leader</strong> — they can invite others and manage the party</span>
+              </p>
+            )}
+          </div>
         )}
         {phase !== "characters" && <div style={{ marginBottom: "28px" }} />}
 
