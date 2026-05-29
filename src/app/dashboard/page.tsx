@@ -225,8 +225,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function loadDashboard() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth"); return; }
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        await supabase.auth.signOut();
+        router.push("/auth");
+        return;
+      }
 
       setUserId(user.id);
       setUserEmail(user.email ?? "");

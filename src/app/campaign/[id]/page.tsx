@@ -364,8 +364,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Load user, character, history ────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth"); return; }
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) { await supabase.auth.signOut(); router.push("/auth"); return; }
       setUserId(user.id);
 
       const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
