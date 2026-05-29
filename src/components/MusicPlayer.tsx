@@ -15,7 +15,6 @@ const JAMENDO    = "https://archive.org/download/jamendo-190464/";
 // Tavern and social share the same track list (same vibe, same pool)
 const TAVERN_TRACKS: string[] = [
   "/Tavern_Theme.mp3",
-  `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
   `${MEDIEVAL}Celebration.mp3`,
   "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
   `${MIST_CROWN}07%20A%20Kind%20Face.mp3`,
