@@ -1403,7 +1403,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1486,13 +1486,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
       const partyLeaderName = partyLeaderChar?.name ?? null;
 
-      // nextPlayerName was pre-computed in handleSend before the turn advanced (avoids stale closure)
-      // roll target > pre-computed next player > current turn char > solo fallback
-      const nextPromptName = rollRequestChar?.name
-        ?? opts?.nextPlayerName
-        ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null)
-        ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null)
-        ?? character?.name;
+      // When all players have acted, don't address anyone — reconciliation handles next prompt
+      // Otherwise: roll target > pre-computed next player > current turn char > solo fallback
+      const nextPromptName = opts?.allActed
+        ? null
+        : (rollRequestChar?.name
+            ?? opts?.nextPlayerName
+            ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null)
+            ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null)
+            ?? character?.name);
       const prevActorName  = opts?.prevPlayerName ?? null;
       const targetedEnemy  = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
 
@@ -1571,12 +1573,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       }
 
-      // Suggested actions — show only when this is the local player's turn and no hand-off is pending
+      // Suggested actions — suppress when turn handed off, round complete, or reconciliation pending
       const isLocalTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userId;
-      // allActed: round complete — reconciliation incoming, suppress suggestions until new round starts
-      const allActedNow = opts?.trackRound && !rollTarget && turnOrderRef.current.length > 1
-        && turnOrderRef.current.every(uid => roundActionsRef.current.some(a => a.userId === uid));
-      if (isLocalTurn && !opts?.nextPlayerName && !allActedNow && characterRef.current) {
+      if (isLocalTurn && !opts?.nextPlayerName && !opts?.allActed && characterRef.current) {
         fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
@@ -1695,11 +1694,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
     }
 
+    const allActedForDM = !isRollSubmit && order.length > 1
+      && order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+
     pendingReconciliationRef.current = null;
     await sendToAI(updatedMessages, false, {
       trackRound:     order.length > 1,
       nextPlayerName,
       prevPlayerName: character?.name ?? null,
+      allActed:       allActedForDM,
     });
 
     // If sendToAI detected all players have acted, trigger round reconciliation
