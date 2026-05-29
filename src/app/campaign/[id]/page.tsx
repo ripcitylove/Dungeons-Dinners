@@ -619,8 +619,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         rollRequestedUserIdRef.current = uid;
       })
       .on("broadcast", { event: "character_hp_update" }, ({ payload }) => {
+        // Legacy event — still handled for sessions in-flight from old clients
         const { charId, newHp, newMaxHp } = payload as { charId: string; newHp: number; newMaxHp: number };
         setCampaignParty(prev => prev.map(c => c.id === charId ? { ...c, hp: newHp, max_hp: newMaxHp } : c));
+      })
+      .on("broadcast", { event: "character_sync" }, ({ payload }) => {
+        // Full stat sync — replaces character_hp_update for all state changes
+        const p = payload as {
+          charId: string; hp: number; max_hp: number;
+          xp?: number; level?: number;
+          inventory?: Character["inventory"];
+          spell_slots_used?: Record<number, number>;
+          status_effects?: string[];
+        };
+        setCampaignParty(prev => prev.map(c => {
+          if (c.id !== p.charId) return c;
+          return {
+            ...c,
+            hp:      p.hp,
+            max_hp:  p.max_hp,
+            ...(p.xp              !== undefined && { xp:              p.xp              }),
+            ...(p.level           !== undefined && { level:           p.level           }),
+            ...(p.inventory       !== undefined && { inventory:       p.inventory       }),
+            ...(p.spell_slots_used !== undefined && { spell_slots_used: p.spell_slots_used }),
+            ...(p.status_effects  !== undefined && { status_effects:  p.status_effects  }),
+          };
+        }));
       })
       .on("broadcast", { event: "enemies_spawned" }, ({ payload }) => {
         const spawned = payload.enemies as CampaignEnemy[];
@@ -900,10 +924,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
     await supabase.from("characters").update(dbUpdate).eq("id", char.id);
 
-    // Broadcast HP update so all players' party cards stay in sync
-    if (change.hp_delta !== 0 || leveledUp) {
-      channelRef.current?.send({ type: "broadcast", event: "character_hp_update", payload: { charId: char.id, newHp, newMaxHp } });
-    }
+    // Broadcast full stat sync so every player's party card stays accurate
+    channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: {
+        charId:           char.id,
+        hp:               newHp,
+        max_hp:           newMaxHp,
+        xp:               newXp,
+        level:            newLevel,
+        inventory:        updatedChar.inventory,
+        spell_slots_used: newSlotsUsed,
+        status_effects:   newStatuses,
+      },
+    });
 
     if (parts.length) {
       const notice = parts.join(" · ");
@@ -2350,9 +2384,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
-                        {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
-                      </span>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
+                          {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
+                        </span>
+                        <span style={{ fontSize: "0.65rem", color: "#f59e0b", fontWeight: 600 }} title="Gold">💰 {char.inventory?.gold ?? 0}</span>
+                      </div>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
                           <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
