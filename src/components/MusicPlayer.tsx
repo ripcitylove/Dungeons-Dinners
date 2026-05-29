@@ -158,6 +158,7 @@ export function MusicPlayer() {
   const musicQueue      = useRef<string[]>([]);
   const musicErrors     = useRef(0);
 
+  const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
   const defaultPool  = isOnCampaign ? "dungeon" : "tavern";
 
@@ -329,6 +330,8 @@ export function MusicPlayer() {
   }, [playNextMusic]);
 
   const isTavern = activePoolKey.current === "tavern" || activePoolKey.current === "social";
+
+  if (isOnLanding) return null;
 
   return (
     <>
