@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
 import "./globals.css";
 
 const CLASS_COLORS: Record<string, string> = {
@@ -9,16 +10,31 @@ const CLASS_COLORS: Record<string, string> = {
   Druid: "#16a34a", Monk: "#0ea5e9", Sorcerer: "#a855f7",
 };
 
-const ADVENTURERS = [
-  { name: "Jana Heartstrike",     race: "Elf",        cls: "Ranger",   url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/2d1ef020-ac1d-435a-9dcc-223eb1c65934.png" },
-  { name: "Lana Whisperwood",     race: "Dragonborn", cls: "Druid",    url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/2d4377ba-41db-4911-ac98-f8e7eca844a8.png" },
-  { name: "Elara Stoneshart",     race: "Half-Elf",   cls: "Cleric",   url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/1dcba63b-3b83-47e5-b29e-a7f3c0e7bc15.png" },
-  { name: "Chonk Donkhammer",     race: "Dwarf",      cls: "Paladin",  url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/fe7585b9-37be-400c-baf1-7824a770e9d9.png" },
-  { name: "Gizmo Sprocketbottom", race: "Gnome",      cls: "Sorcerer", url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/1e8246ce-6f60-48c9-99e4-a7ea75f222bd.png" },
-  { name: "Smack Whakerson",      race: "Half-Orc",   cls: "Monk",     url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/effe2f62-c0e0-42c8-8fbe-ed38582f2bca.png" },
-  { name: "Naira Luteborn",       race: "Elf",        cls: "Bard",     url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/82d1b7f5-0b83-4e3c-a92c-bcdf27182ebd.png" },
-  { name: "Buzz Widgetzing",      race: "Gnome",      cls: "Rogue",    url: "https://ddlkojtslkgtrwpxqdoj.supabase.co/storage/v1/object/public/portraits/0b05a825-3551-4bc9-9198-e876254528c2.png" },
-];
+async function getAdventurers() {
+  try {
+    const sb = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data } = await sb
+      .from("characters")
+      .select("name, race, class, portrait_url")
+      .not("portrait_url", "is", null)
+      .neq("portrait_url", "")
+      .limit(100);
+    if (!data?.length) return [];
+    // Fisher-Yates shuffle then take up to 8
+    const arr = [...data];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, 8).map(c => ({ name: c.name as string, race: c.race as string, cls: c.class as string, url: c.portrait_url as string }));
+  } catch {
+    return [];
+  }
+}
 
 const FEATURES = [
   {
@@ -64,7 +80,8 @@ const STEPS = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const adventurers = await getAdventurers();
   return (
     <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
@@ -124,7 +141,7 @@ export default function Home() {
       </section>
 
       {/* ── Adventurers Showcase ───────────────────────────────────────────── */}
-      <section style={{ padding: "80px 20px", textAlign: "center", borderTop: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
+      {adventurers.length > 0 && <section style={{ padding: "80px 20px", textAlign: "center", borderTop: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "700px", height: "350px", background: "var(--primary)", filter: "blur(160px)", opacity: 0.055, zIndex: 0 }} />
         <div style={{ position: "relative", zIndex: 1 }}>
           <p style={{ color: "var(--primary)", fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "12px" }}>Real Players. Real Characters.</p>
@@ -134,7 +151,7 @@ export default function Home() {
             These are real heroes forged by real players.
           </p>
           <div style={{ display: "flex", gap: "28px", justifyContent: "center", flexWrap: "wrap", maxWidth: "1100px", margin: "0 auto" }}>
-            {ADVENTURERS.map(({ name, race, cls, url }, i) => {
+            {adventurers.map(({ name, race, cls, url }, i) => {
               const color = CLASS_COLORS[cls] ?? "var(--primary)";
               return (
                 <div key={name} className="animate-float" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", animationDelay: `${i * 0.4}s` }}>
@@ -154,7 +171,7 @@ export default function Home() {
             })}
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* ── What Is This ──────────────────────────────────────────────────── */}
       <section style={{ padding: "80px 20px", borderTop: "1px solid var(--border)" }}>
