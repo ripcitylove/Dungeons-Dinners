@@ -1479,8 +1479,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           abilities: e.abilities, loot: e.loot, xp_value: e.xp_value,
         }));
 
-      const currentTurnChar = onlineParty.find(c => c.user_id === (turnOrderRef.current[currentTurnIndexRef.current] ?? null));
-      const rollRequestChar = rollRequestedUserIdRef.current ? onlineParty.find(c => c.user_id === rollRequestedUserIdRef.current) : null;
+      const currentTurnUid  = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const rollRequestUid  = rollRequestedUserIdRef.current ?? null;
+      // Resolve names from presence first (always fresh), fall back to DB characters
+      const nameFromPresence = (uid: string | null) =>
+        uid ? (playersRef.current.find(p => p.userId === uid)?.characterName
+               ?? onlineParty.find(c => c.user_id === uid)?.name
+               ?? null)
+            : null;
+      const rollRequestName  = nameFromPresence(rollRequestUid);
+      const currentTurnName  = nameFromPresence(currentTurnUid);
 
       // Party leader for group roll routing
       const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
@@ -1490,9 +1498,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Otherwise: roll target > pre-computed next player > current turn char > solo fallback
       const nextPromptName = opts?.allActed
         ? null
-        : (rollRequestChar?.name
+        : (rollRequestName
             ?? opts?.nextPlayerName
-            ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null)
+            ?? (turnOrderRef.current.length > 1 ? currentTurnName : null)
             ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null)
             ?? character?.name);
       const prevActorName  = opts?.prevPlayerName ?? null;
@@ -1684,9 +1692,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!isRollSubmit && order.length > 1) {
       const allActedNow = order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
       if (!allActedNow) {
-        const nextIdx  = (currentTurnIndexRef.current + 1) % order.length;
-        const nextChar = campaignPartyRef.current.find(c => c.user_id === order[nextIdx]);
-        nextPlayerName = nextChar?.name ?? null;
+        const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
+        const nextUid = order[nextIdx];
+        // Use presence (playersRef) as primary source — always fresh, no user_id DB dependency
+        nextPlayerName = playersRef.current.find(p => p.userId === nextUid)?.characterName
+          ?? campaignPartyRef.current.find(c => c.user_id === nextUid)?.name
+          ?? null;
         setCurrentTurnIndex(nextIdx);
         currentTurnIndexRef.current = nextIdx;
         channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
