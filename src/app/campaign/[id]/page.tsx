@@ -18,7 +18,6 @@ import {
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
 type LogEntry = { id: string; timestamp: Date; role: MsgRole; sender?: string; content: string };
-type PendingAction = { userId: string; characterName: string; content: string };
 type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string };
 type TradeOffer    = { id: string; fromUserId: string; fromCharId: string; fromCharName: string; toUserId: string; toCharId: string; offeredItems: { name: string; type: "item" | "weapon" }[]; offeredGold: number };
 
@@ -227,7 +226,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [sessionStarted,   setSessionStarted]    = useState(false);
   const [turnOrder,        setTurnOrder]         = useState<string[]>([]);
   const [currentTurnIndex, setCurrentTurnIndex]  = useState(0);
-  const [pendingActions,   setPendingActions]    = useState<PendingAction[]>([]);
 
   // Campaign meta — pre-populate from sessionStorage when navigating from create-campaign
   const [campaignTitle, setCampaignTitle] = useState<string>(() => {
@@ -327,7 +325,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const narratePartyEventRef = useRef<((type: "join"|"leave"|"kick", player: PresencePlayer) => void) | null>(null);
   const turnOrderRef         = useRef<string[]>([]);
   const currentTurnIndexRef  = useRef(0);
-  const pendingActionsRef    = useRef<PendingAction[]>([]);
   const pendingJoinsRef      = useRef<PresencePlayer[]>([]);
   const joinDebounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLeavesRef     = useRef<PresencePlayer[]>([]);
@@ -355,7 +352,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { narrationEnabledRef.current = narrationEnabled;  }, [narrationEnabled]);
   useEffect(() => { turnOrderRef.current        = turnOrder;        }, [turnOrder]);
   useEffect(() => { currentTurnIndexRef.current = currentTurnIndex; }, [currentTurnIndex]);
-  useEffect(() => { pendingActionsRef.current      = pendingActions;      }, [pendingActions]);
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
   useEffect(() => { enemiesRef.current             = enemies;             }, [enemies]);
   useEffect(() => { playersRef.current            = players;             }, [players]);
@@ -610,13 +606,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "turn_taken" }, ({ payload }) => {
         if (payload.userId === userIdRef.current) return;
         setCurrentTurnIndex(payload.newIndex);
-        setPendingActions(payload.pendingActions);
         currentTurnIndexRef.current = payload.newIndex;
-        pendingActionsRef.current   = payload.pendingActions;
-      })
-      .on("broadcast", { event: "round_reset" }, () => {
-        setCurrentTurnIndex(0); setPendingActions([]);
-        currentTurnIndexRef.current = 0; pendingActionsRef.current = [];
       })
       .on("broadcast", { event: "roll_request" }, ({ payload }) => {
         if ((payload as { userId: string | null }).userId === userIdRef.current) return;
@@ -837,7 +827,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           channelRef.current?.send({
             type: "broadcast",
             event: "turn_taken",
-            payload: { userId: "dm_roll_override", newIndex: idx, pendingActions: pendingActionsRef.current },
+            payload: { userId: "dm_roll_override", newIndex: idx },
           });
         }
       }
@@ -1552,24 +1542,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setLogEntries(prev => [...prev, { id: `player-${Date.now()}`, timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
     channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name } });
 
-    const myAction: PendingAction = { userId: userId!, characterName: character?.name ?? "Player", content: text };
-    const newPending = [...pendingActionsRef.current, myAction];
-    const newIndex   = currentTurnIndexRef.current + 1;
-    setPendingActions(newPending); setCurrentTurnIndex(newIndex);
-    pendingActionsRef.current = newPending; currentTurnIndexRef.current = newIndex;
-    channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex, pendingActions: newPending } });
+    // Advance turn to the next player (wraps back to first after the last)
+    const nextIndex = order.length > 1 ? (currentTurnIndexRef.current + 1) % order.length : 0;
+    setCurrentTurnIndex(nextIndex);
+    currentTurnIndexRef.current = nextIndex;
+    channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIndex } });
 
-    // Rotate to the next party member immediately after this character's action
+    // Rotate active character display
     if (campaignPartyRef.current.length > 1) {
       setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
     }
 
-    if (order.length === 0 || newIndex >= order.length) {
-      await sendToAI(updatedMessages);
-      setPendingActions([]); setCurrentTurnIndex(0);
-      pendingActionsRef.current = []; currentTurnIndexRef.current = 0;
-      channelRef.current?.send({ type: "broadcast", event: "round_reset", payload: {} });
-    }
+    // DM responds immediately after every action — no round accumulation
+    await sendToAI(updatedMessages);
   };
 
   // ── Inventory exchange ────────────────────────────────────────────────────────
@@ -2107,8 +2092,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   {isMyTurn ? "Your roll!" : `${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "A player"} is rolling…`}
                 </span>
               </>
-            ) : currentTurnIndex >= turnOrder.length ? (
-              <span style={{ color: "#8b5cf6" }}>All actions in — DM is next…</span>
             ) : (
               <>
                 <span style={{ color: "#475569" }}>Turn {currentTurnIndex + 1} of {turnOrder.length}:</span>
