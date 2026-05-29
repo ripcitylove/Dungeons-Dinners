@@ -91,7 +91,7 @@ export default function Home() {
           </span>
         </div>
 
-        <h1 className="animate-fade-in delay-100" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05, background: "linear-gradient(160deg, #fff 20%, #c4b5fd 55%, #f59e0b 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+        <h1 className="animate-fade-in delay-100 shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
         </h1>
 
