@@ -145,13 +145,13 @@ export function MusicPlayer() {
 
   const [playing,       setPlaying]       = useState(false);
   const [loadError,     setLoadError]     = useState(false);
-  const [volume,        setVolume]        = useState(0.15);
-  const [ambianceVol,   setAmbianceVol]   = useState(0.28);
+  const [volume,        setVolume]        = useState(0.05);
+  const [ambianceVol,   setAmbianceVol]   = useState(0.10);
   const [ambianceReady, setAmbianceReady] = useState(false);
   const [poolLabel,     setPoolLabel]     = useState("Tavern");
 
-  const targetVolume    = useRef(0.15);
-  const targetAmbianceV = useRef(0.28);
+  const targetVolume    = useRef(0.05);
+  const targetAmbianceV = useRef(0.10);
   const activePoolKey   = useRef<string>("tavern");
   const fadeTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
   const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -278,8 +278,16 @@ export function MusicPlayer() {
     };
 
     window.__dndSetMusicScene = (scene: string) => {
-      const pool = SCENE_TO_POOL[scene] ?? "dungeon";
-      fadeTo(pool);
+      // scene may carry modifiers (e.g. "dungeon_crimson_flooded_combat")
+      // Priority 1: combat suffix always wins
+      if (scene.endsWith("_combat")) { fadeTo("combat"); return; }
+      // Priority 2: exact match
+      if (SCENE_TO_POOL[scene]) { fadeTo(SCENE_TO_POOL[scene]); return; }
+      // Priority 3: strip modifiers — find the longest base key that prefixes the scene
+      const baseKey = Object.keys(SCENE_TO_POOL)
+        .filter(k => scene.startsWith(k + "_") || scene === k)
+        .sort((a, b) => b.length - a.length)[0];
+      fadeTo(SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon");
     };
 
     window.__dndSetAmbiance = (url: string | null) => {

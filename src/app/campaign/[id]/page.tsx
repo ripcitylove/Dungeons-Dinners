@@ -1478,9 +1478,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userId, content: full } });
 
-      // State changes (HP, gold, items, XP)
-      fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full }) })
-        .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
+      // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
+      if (!isOpeningScene) {
+        fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full }) })
+          .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
+      }
 
       // Suggested actions
       fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
