@@ -125,7 +125,7 @@ const VOICES = [
 const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightning|thunder|poison|acid|necrotic|radiant|psychic|force)\s+)?damage\b/gi;
 const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
 
-function ColorizedText({ text }: { text: string }) {
+function ColorizedText({ text, playerColors = {} }: { text: string; playerColors?: Record<string, string> }) {
   type Seg = { start: number; end: number; color: string };
   const segs: Seg[] = [];
   let m: RegExpExecArray | null;
@@ -133,6 +133,11 @@ function ColorizedText({ text }: { text: string }) {
   while ((m = DAMAGE_RE.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#ef4444" });
   HEAL_RE.lastIndex = 0;
   while ((m = HEAL_RE.exec(text))   !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#22c55e" });
+  for (const [name, color] of Object.entries(playerColors)) {
+    if (!name.trim()) continue;
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+    while ((m = re.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color });
+  }
   segs.sort((a, b) => a.start - b.start);
   const out: React.ReactElement[] = [];
   let pos = 0;
@@ -1824,15 +1829,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       {!sessionStarted && !showGuestJoin && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
           <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
-            {character?.portrait_url ? (
-              <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${CLASS_COLORS[character.class] ?? "rgba(139,92,246,0.7)"}`, boxShadow: `0 0 24px ${CLASS_COLORS[character.class] ?? "rgba(139,92,246,0.4)"}40`, margin: "0 auto 24px", flexShrink: 0 }}>
-                <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-              </div>
-            ) : (
-              <div style={{ fontSize: "3.5rem", marginBottom: "24px" }}>
-                {character?.class === "Wizard" ? "🧙" : character?.class === "Rogue" ? "🗡️" : character?.class === "Cleric" ? "✝" : character?.class === "Ranger" ? "🏹" : character?.class === "Druid" ? "🌿" : character?.class === "Bard" ? "🎵" : "⚔️"}
-              </div>
-            )}
+            {(() => {
+              const leaderChar = campaignParty.find(c => c.id === partyLeaderId) ?? character;
+              const leaderColor = CLASS_COLORS[leaderChar?.class ?? ""] ?? "#f59e0b";
+              return leaderChar ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "28px", gap: "10px" }}>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.15em" }}>Party Leader</span>
+                  {leaderChar.portrait_url ? (
+                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55, 0 0 60px ${leaderColor}20` }}>
+                      <img src={leaderChar.portrait_url} alt={leaderChar.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                    </div>
+                  ) : (
+                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", background: "rgba(0,0,0,0.4)" }}>
+                      {leaderChar.class === "Wizard" ? "🧙" : leaderChar.class === "Rogue" ? "🗡️" : leaderChar.class === "Cleric" ? "✝" : leaderChar.class === "Ranger" ? "🏹" : leaderChar.class === "Druid" ? "🌿" : leaderChar.class === "Bard" ? "🎵" : "⚔️"}
+                    </div>
+                  )}
+                  <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
+                </div>
+              ) : null;
+            })()}
             <h1 style={{ fontSize: "2.2rem", fontWeight: "bold", marginBottom: "10px" }}>Your adventure awaits</h1>
             <p style={{ color: "#64748b", marginBottom: "40px", lineHeight: 1.6 }}>The torchlight flickers as your party gathers in the shadows…</p>
             <button className="btn-primary"
@@ -1981,7 +1996,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
-              }}>{msg.role === "dm" ? <ColorizedText text={msg.content} /> : msg.content}</div>
+              }}>{msg.role === "dm" ? <ColorizedText text={msg.content} playerColors={Object.fromEntries(campaignParty.map(c => [c.name, CLASS_COLORS[c.class] ?? "#94a3b8"]))} /> : msg.content}</div>
             </div>
           ))}
 
