@@ -213,6 +213,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Narration
   const [narrationEnabled, setNarrationEnabled]  = useState(true);
+  const [toastMsg,         setToastMsg]          = useState<string | null>(null);
   const [narrating,        setNarrating]         = useState(false);
   const [selectedVoice,    setSelectedVoice]     = useState<string>("chronicler");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
@@ -396,6 +397,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { messagesRef.current         = messages;         }, [messages]);
   useEffect(() => { isTypingRef.current         = isTyping;         }, [isTyping]);
   useEffect(() => { narrationEnabledRef.current = narrationEnabled;  }, [narrationEnabled]);
+  useEffect(() => {
+    if (!toastMsg) return;
+    const t = setTimeout(() => setToastMsg(null), 8000);
+    return () => clearTimeout(t);
+  }, [toastMsg]);
   useEffect(() => { turnOrderRef.current        = turnOrder;        }, [turnOrder]);
   useEffect(() => { currentTurnIndexRef.current = currentTurnIndex; }, [currentTurnIndex]);
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
@@ -1045,7 +1051,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         body: JSON.stringify({ text, voice: selectedVoiceRef.current }),
       });
       if (!res.ok) {
-        console.error("[narration] /api/narrate returned", res.status);
+        if (res.status === 402) {
+          console.warn("[narration] ElevenLabs quota exhausted — disabling narration");
+          setNarrationEnabled(false);
+          narrationEnabledRef.current = false;
+          setToastMsg("Voice narration quota reached — upgrade your ElevenLabs plan to re-enable it.");
+        } else {
+          console.error("[narration] /api/narrate returned", res.status);
+        }
         narSlotsRef.current[slot] = "SKIP"; playNextInQueue(); return;
       }
       const blob = await res.blob();
@@ -1675,8 +1688,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name } });
 
     // Record this player's action for round tracking (not for roll submissions — action was already recorded)
-    if (!isRollSubmit && order.length > 1 && character) {
-      const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.userId !== userId), { userId, name: character.name, action: text }];
+    if (!isRollSubmit && order.length > 1 && character && userId) {
+      const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.userId !== userId), { userId: userId as string, name: character.name, action: text }];
       roundActionsRef.current = updated;
       setRoundActions(updated);
     }
@@ -1686,7 +1699,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     await sendToAI(updatedMessages, false, { trackRound: order.length > 1 });
 
     // If sendToAI detected all players have acted, trigger round reconciliation
-    const pending = pendingReconciliationRef.current;
+    const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
     if (pending) {
       pendingReconciliationRef.current = null;
       await triggerReconciliation(pending.messages, pending.summary);
@@ -2018,6 +2031,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
       <audio ref={narrateAudioRef} />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
+      {toastMsg && (
+        <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
+          🔇 {toastMsg}
+        </div>
+      )}
 
       {/* Join overlay — shown when arriving via invite link; requires a roster character */}
       {showGuestJoin && (

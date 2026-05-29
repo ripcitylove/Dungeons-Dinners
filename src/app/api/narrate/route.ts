@@ -11,37 +11,37 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   style:      number;
 }> = {
   chronicler: {
-    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George — deep British, authoritative
+    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George ♂ — Warm, Captivating Storyteller
     stability:  0.80,
     similarity: 0.75,
     style:      0.20,
   },
   gravedigger: {
-    voiceId:    "TxGEqnHWrfWFTfGW9XjX", // Josh — low, foreboding
-    stability:  0.70,
+    voiceId:    "nPczCjzI2devNBz1zQrb", // Brian ♂ — Deep, Resonant and Comforting
+    stability:  0.65,
     similarity: 0.75,
-    style:      0.40,
+    style:      0.45,
   },
   bard: {
-    voiceId:    "IKne3meq5aSn9XLyUdCD", // Charlie — British, animated
-    stability:  0.40,
+    voiceId:    "pFZP5JQG7iQjIQuC4Bku", // Lily ♀ — Velvety Actress
+    stability:  0.35,
     similarity: 0.75,
-    style:      0.60,
+    style:      0.65,
   },
   oracle: {
-    voiceId:    "XB0fDUnXU5powFXDhCwa", // Charlotte — serene, ethereal female
-    stability:  0.90,
+    voiceId:    "EXAVITQu4vr4xnSDxMaL", // Sarah ♀ — Mature, Reassuring, Confident
+    stability:  0.85,
     similarity: 0.80,
-    style:      0.10,
+    style:      0.15,
   },
   shade: {
-    voiceId:    "2EiwWnXFnvU5JabPnv8n", // Clyde — gritty, world-worn male
-    stability:  0.60,
+    voiceId:    "SOYHLrjzK2X1ezoPC6cr", // Harry ♂ — Fierce Warrior
+    stability:  0.55,
     similarity: 0.75,
-    style:      0.30,
+    style:      0.35,
   },
   sage: {
-    voiceId:    "ThT5KcBeYPX3keUQqHPh", // Dorothy — warm, mature British female
+    voiceId:    "XrExE9yKIg1WjnnlVkGX", // Matilda ♀ — Knowledgeable, Professional
     stability:  0.75,
     similarity: 0.80,
     style:      0.20,
@@ -86,6 +86,12 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
+      let parsed: { detail?: { code?: string } } = {};
+      try { parsed = JSON.parse(msg); } catch { /* ignore */ }
+      if (res.status === 401 && parsed.detail?.code === "quota_exceeded") {
+        console.warn("[api/narrate] ElevenLabs quota exhausted");
+        return new Response("quota_exceeded", { status: 402 });
+      }
       console.error("[api/narrate] ElevenLabs:", res.status, msg);
       return new Response("TTS unavailable", { status: 500 });
     }
