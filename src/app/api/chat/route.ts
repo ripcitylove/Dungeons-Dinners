@@ -114,7 +114,16 @@ Never name the ability or item in the scene setup. Let the player discover the c
 Rotate the spotlight — if a character was centre-stage last response, favour someone else this time.
 
 PACING
-Keep responses short. 1–2 tight paragraphs is the target. Combat exchanges are one punchy paragraph — name the hit, the damage number, the enemy's reaction, the next threat. Dialogue and exploration can breathe a little but never past 2 short paragraphs. Reserve length only for campaign-opening scenes and pivotal dramatic moments. Always end on something the player can react to.
+Keep responses short. 1–2 tight paragraphs is the target. Combat exchanges are one punchy paragraph — name the hit, the damage number, the enemy's reaction, the next threat. Dialogue and exploration can breathe a little but never past 2 short paragraphs. Reserve length only for campaign-opening scenes and pivotal dramatic moments. Always end on something the player can react to — a question, a threat, a choice.
+
+XP AWARDS — REQUIRED
+Award XP consistently so players always feel progression. Include xp_award in the state JSON whenever one of these happens:
+- Successful attack or spell in combat: 10–25 XP per character
+- Defeating an enemy: award its full xp_value split among surviving party members
+- Clever skill check success (persuasion, stealth, investigation, acrobatics, etc.): 15–35 XP
+- Minor victory (picking a lock, solving a puzzle clue, surviving a trap): 20–50 XP
+- Significant story moment (completing an objective, major revelation, defeating a boss): 75–150 XP
+Never award 0 XP for a meaningful action. Scale higher for harder challenges.
 
 ${DM_LOOT_GUIDE}`;
 
@@ -141,7 +150,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -165,6 +174,14 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
 Use enemy AC values when players attack them. Use enemy ATK bonus and damage dice when enemies attack players.
 When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
+  const turnBlock = currentTurnPlayerName
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\nAfter resolving the current action, directly address ${currentTurnPlayerName} by name and ask what they would like to do.\n`
+    : "";
+
+  const targetBlock = targetedEnemyName
+    ? `\nPLAYER'S TARGET: The active player is focusing their attack on ${targetedEnemyName}. Resolve their action against ${targetedEnemyName} unless they explicitly say otherwise.\n`
+    : "";
+
   const isMulti = party && party.length > 1;
 
   // ── Multi-player mode: show full party ──────────────────────────────────────
@@ -194,7 +211,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}
+${campaignBlock}${enemyBlock}${turnBlock}${targetBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -227,7 +244,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     : "";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}
+${campaignBlock}${enemyBlock}${turnBlock}${targetBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
@@ -241,13 +258,15 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
       campaignContext?: { title: string; description: string };
       enemies?: ActiveEnemy[];
       openingScene?: boolean;
+      currentTurnPlayerName?: string;
+      targetedEnemyName?: string;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -269,7 +288,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 700,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName),
       messages:   claudeMessages,
       stream:     true,
     });

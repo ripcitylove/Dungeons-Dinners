@@ -60,6 +60,7 @@ type CampaignEnemy = {
   xp_value:       number;
   loot:           { gold?: number; items?: string[]; weapons?: string[] };
   portrait_emoji: string;
+  portrait_url?:  string;
   status_effects: string[];
   condition:      EnemyCondition;
   is_defeated:    boolean;
@@ -270,6 +271,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [diceRollTarget,    setDiceRollTarget]    = useState<string | null>(null);
   // Which die type the DM is requesting (4, 6, 8, 10, 12, 20, 100 — null = player's choice)
   const [requiredDiceType,  setRequiredDiceType]  = useState<number | null>(null);
+  // Enemy targeting — which enemy the player is focusing on
+  const [targetedEnemyId,   setTargetedEnemyId]   = useState<string | null>(null);
 
   // Guest join (invite link flow)
   const [showGuestJoin,      setShowGuestJoin]      = useState(false);
@@ -707,12 +710,53 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingContent]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
-  // Auto-open dice roller when DM asks this player to roll
+  // Fetch AI portraits for enemies that don't have one yet
   useEffect(() => {
-    if (diceRollTarget && character && diceRollTarget.toLowerCase() === character.name.toLowerCase()) {
+    const needsPortrait = enemies.filter(e => !e.portrait_url && !e.is_defeated);
+    if (!needsPortrait.length) return;
+    needsPortrait.forEach(e => {
+      fetch("/api/generate-enemy-portrait", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enemyType: e.enemy_type, cr: e.cr }),
+      })
+        .then(r => r.json())
+        .then(({ portraitUrl }: { portraitUrl: string | null }) => {
+          if (portraitUrl) {
+            setEnemies(prev => prev.map(en => en.id === e.id ? { ...en, portrait_url: portraitUrl } : en));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [enemies.map(e => e.id).join(",")]);
+
+  // When DM names a player to roll: advance the turn to them + auto-open their dice
+  useEffect(() => {
+    if (!diceRollTarget) return;
+    // Auto-open dice for this player
+    if (character && diceRollTarget.toLowerCase() === character.name.toLowerCase()) {
       setShowDice(true);
     }
-  }, [diceRollTarget, character]);
+    // Advance the formal turn index to the targeted player so their UI unlocks
+    if (turnOrderRef.current.length > 0) {
+      const targetChar = campaignPartyRef.current.find(
+        c => c.name.toLowerCase() === diceRollTarget.toLowerCase()
+      );
+      if (targetChar?.user_id) {
+        const idx = turnOrderRef.current.indexOf(targetChar.user_id);
+        if (idx !== -1 && idx !== currentTurnIndexRef.current) {
+          setCurrentTurnIndex(idx);
+          currentTurnIndexRef.current = idx;
+          channelRef.current?.send({
+            type: "broadcast",
+            event: "turn_taken",
+            payload: { userId: "dm_roll_override", newIndex: idx, pendingActions: pendingActionsRef.current },
+          });
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diceRollTarget]);
 
   // ── State changes (HP, gold, items, XP) ──────────────────────────────────────
   const applyStateChange = useCallback(async (change: StateChange) => {
@@ -1265,6 +1309,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           abilities: e.abilities, loot: e.loot, xp_value: e.xp_value,
         }));
 
+      const currentTurnChar = onlineParty.find(c => c.user_id === (turnOrderRef.current[currentTurnIndexRef.current] ?? null));
+      const targetedEnemy   = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1273,6 +1320,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           campaignContext: campaignCtx,
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
           ...(isOpeningScene && { openingScene: true }),
+          ...(currentTurnChar && turnOrderRef.current.length > 1 && { currentTurnPlayerName: currentTurnChar.name }),
+          ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
         }),
         signal: controller.signal,
       });
@@ -2044,23 +2093,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             {/* Player cards — campaign party (always visible) or presence fallback */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: droppedItems.length > 0 ? "20px" : 0 }}>
               {campaignParty.length > 0 ? campaignParty.map((char, idx) => {
-                const isActive    = idx === activeCharIdx;
-                const isOnline    = players.some(p => p.userId === char.user_id);
-                const isDiceTarget = diceRollTarget === char.name;
-                const isMyChar    = char.user_id === userId;
-                const cardInv     = char.inventory ?? { gold: 0, items: [], weapons: [] };
-                const cardIb      = computeInventoryBonuses(cardInv.items, cardInv.weapons);
-                const cardMaxHp   = char.max_hp + cardIb.hpMaxAdd;
-                const pct         = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
-                const color       = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
-                const classEmoji  = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
-                const borderColor = isDiceTarget ? "rgba(251,191,36,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
-                const bgColor     = isDiceTarget ? "rgba(251,191,36,0.08)" : isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
-                const glow        = isDiceTarget ? "0 0 20px rgba(251,191,36,0.4)" : isActive ? "0 0 20px rgba(139,92,246,0.28)" : "none";
+                const isActive     = idx === activeCharIdx;
+                const isOnline     = players.some(p => p.userId === char.user_id);
+                const isDiceTarget  = diceRollTarget === char.name;
+                const isCurrentTurn = turnOrder.length > 1 && char.user_id === currentTurnPlayerId;
+                const isMyChar     = char.user_id === userId;
+                const cardInv      = char.inventory ?? { gold: 0, items: [], weapons: [] };
+                const cardIb       = computeInventoryBonuses(cardInv.items, cardInv.weapons);
+                const cardMaxHp    = char.max_hp + cardIb.hpMaxAdd;
+                const pct          = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
+                const color        = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
+                const classEmoji   = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
+                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
+                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
+                const cardAnim     = isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 return (
                   <div key={char.id}
                     onClick={() => campaignParty.length > 1 && setActiveCharIdx(idx)}
-                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, boxShadow: glow, transition: "all 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isActive ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)" }}>
@@ -2077,7 +2127,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
                           {char.id === partyLeaderId && (
-                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
+                            <span title="Party Leader" style={{ fontSize: "1.05rem", flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block" }}>👑</span>
                           )}
                           {isActive && campaignParty.length > 1 && (
                             <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
@@ -2897,21 +2947,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {enemies.map(e => {
-                const cond  = e.condition ?? "healthy";
-                const color = CONDITION_COLORS[cond];
-                const pct   = CONDITION_PCT[cond];
-                const label = CONDITION_LABELS[cond];
+                const cond      = e.condition ?? "healthy";
+                const color     = CONDITION_COLORS[cond];
+                const pct       = CONDITION_PCT[cond];
+                const label     = CONDITION_LABELS[cond];
+                const isTargeted = !e.is_defeated && targetedEnemyId === e.id;
                 return (
-                  <div key={e.id} style={{
-                    padding: "12px 14px", borderRadius: "10px",
-                    background: e.is_defeated ? "rgba(0,0,0,0.15)" : "rgba(60,0,0,0.45)",
-                    border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : "rgba(239,68,68,0.35)"}`,
-                    opacity: e.is_defeated ? 0.45 : 1, transition: "all 0.4s ease",
-                  }}>
+                  <div key={e.id}
+                    onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
+                    style={{
+                      padding: "12px 14px", borderRadius: "10px",
+                      background: e.is_defeated ? "rgba(0,0,0,0.15)" : isTargeted ? "rgba(120,0,0,0.55)" : "rgba(60,0,0,0.45)",
+                      border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : isTargeted ? "rgba(239,68,68,0.85)" : "rgba(239,68,68,0.35)"}`,
+                      opacity: e.is_defeated ? 0.45 : 1, transition: "all 0.4s ease",
+                      cursor: e.is_defeated ? "default" : "pointer",
+                      animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : "none",
+                    }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
-                      <span style={{ fontSize: "1.7rem", lineHeight: 1, filter: e.is_defeated ? "grayscale(1)" : "none" }}>
-                        {e.portrait_emoji}
-                      </span>
+                      {e.portrait_url ? (
+                        <div style={{ width: "48px", height: "48px", borderRadius: "8px", overflow: "hidden", flexShrink: 0, filter: e.is_defeated ? "grayscale(1)" : "none", border: isTargeted ? "2px solid rgba(239,68,68,0.7)" : "2px solid transparent", transition: "border-color 0.3s" }}>
+                          <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "1.7rem", lineHeight: 1, filter: e.is_defeated ? "grayscale(1)" : "none" }}>
+                          {e.portrait_emoji}
+                        </span>
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: "bold", fontSize: "0.88rem", color: e.is_defeated ? "#6b7280" : "#fca5a5", textDecoration: e.is_defeated ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {e.name}
@@ -2920,10 +2981,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           {e.enemy_type} · CR {e.cr} · AC {e.ac}
                         </div>
                       </div>
-                      {e.is_defeated
-                        ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px", flexShrink: 0 }}>DEFEATED</span>
-                        : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", flexShrink: 0, fontWeight: "bold" }}>{label}</span>
-                      }
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end", flexShrink: 0 }}>
+                        {e.is_defeated
+                          ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px" }}>DEFEATED</span>
+                          : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", fontWeight: "bold" }}>{label}</span>
+                        }
+                        {isTargeted && (
+                          <span style={{ fontSize: "0.58rem", background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", letterSpacing: "0.04em" }}>⚔ TARGET</span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Condition bar — shows health state, not exact HP */}
