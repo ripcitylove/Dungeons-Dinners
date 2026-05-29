@@ -1468,9 +1468,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       const currentTurnChar = onlineParty.find(c => c.user_id === (turnOrderRef.current[currentTurnIndexRef.current] ?? null));
       const rollRequestChar = rollRequestedUserIdRef.current ? onlineParty.find(c => c.user_id === rollRequestedUserIdRef.current) : null;
-      // Always tell the DM who to address next — roll target > combat turn > solo player
-      const nextPromptName  = rollRequestChar?.name ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null) ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null) ?? character?.name;
-      const targetedEnemy   = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
+
+      // When tracking rounds, pass the NEXT player's name so the DM hands off correctly
+      const trackingRounds  = opts?.trackRound && turnOrderRef.current.length > 1;
+      const willBeAllActed  = trackingRounds
+        && turnOrderRef.current.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+      const nextIdx         = turnOrderRef.current.length > 1 ? (currentTurnIndexRef.current + 1) % turnOrderRef.current.length : -1;
+      const nextTurnChar    = (trackingRounds && !willBeAllActed && nextIdx >= 0)
+        ? onlineParty.find(c => c.user_id === turnOrderRef.current[nextIdx])
+        : null;
+      const nextTurnPlayerName = nextTurnChar?.name ?? null;
+
+      // Party leader for group roll routing
+      const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
+      const partyLeaderName = partyLeaderChar?.name ?? null;
+
+      // roll target > next turn player (round tracking) > current turn player > solo fallback
+      const nextPromptName = rollRequestChar?.name
+        ?? nextTurnPlayerName
+        ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null)
+        ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null)
+        ?? character?.name;
+      const targetedEnemy  = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
 
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -1484,6 +1503,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(character?.name && nextPromptName && character.name !== nextPromptName && { prevActingPlayerName: character.name }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
+          ...(partyLeaderName && { partyLeaderName }),
         }),
         signal: controller.signal,
       });

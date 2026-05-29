@@ -151,7 +151,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[]): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -190,6 +190,10 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     ? `\nPLAYER'S TARGET: The active player is focusing their attack on ${targetedEnemyName}. Resolve their action against ${targetedEnemyName} unless they explicitly say otherwise.\n`
     : "";
 
+  const partyLeaderBlock = partyLeaderName && party && party.length > 1
+    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address ONLY ${partyLeaderName} and explicitly say it is a group/party check. Example: "${partyLeaderName}, roll Stealth for the group." Never ask each party member individually for the same roll.\n`
+    : "";
+
   const isMulti = party && party.length > 1;
 
   // ── Multi-player mode: show full party ──────────────────────────────────────
@@ -219,7 +223,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${partyLeaderBlock}${targetBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -252,7 +256,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     : "";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${partyLeaderBlock}${targetBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
@@ -266,7 +270,7 @@ Reference these stats for all checks and combat. Roll attacks against the charac
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -277,6 +281,7 @@ export async function POST(req: NextRequest) {
       targetedEnemyName?: string;
       prevActingPlayerName?: string;
       roundSummary?: { name: string; action: string }[];
+      partyLeaderName?: string;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -298,7 +303,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: 700,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName),
       messages:   claudeMessages,
       stream:     true,
     });
