@@ -442,6 +442,13 @@ export default function CreateCampaignWizard() {
                 {playerCount === 1 ? "A solo adventure — you control your hero." :
                  `You'll set up ${playerCount} characters, one per adventurer.`}
               </p>
+              <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "14px 18px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", maxWidth: "480px", textAlign: "left" }}>
+                <span style={{ fontSize: "1.1rem", flexShrink: 0, marginTop: "1px" }}>💡</span>
+                <div style={{ fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.65 }}>
+                  <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "3px" }}>Only set this to who&apos;s here right now.</strong>
+                  More players can join any time using the invite link inside your campaign — they pick their own character when they arrive.
+                </div>
+              </div>
             </div>
           )}
 

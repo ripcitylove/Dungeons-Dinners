@@ -425,6 +425,30 @@ export default function Dashboard() {
           </div>
         </nav>
 
+        {/* ── First-time welcome banner ── */}
+        {!loading && characters.length === 0 && campaigns.length === 0 && (
+          <div className="glass-panel animate-fade-in" style={{ marginBottom: "32px", padding: "28px 32px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.07)" }}>
+            <p style={{ fontSize: "0.72rem", color: "var(--primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Welcome, Adventurer</p>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "20px" }}>Here&apos;s how to get started in 3 steps:</h2>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              {[
+                { n: "1", icon: "⚒️", title: "Create a Character", desc: "Head to the Roster section on the right and hit Create a Character. Pick your race, class, and roll your ability scores." },
+                { n: "2", icon: "🗺️", title: "Start a Campaign",   desc: "Click + New Campaign. Set how many players are starting today, then build or import characters from your roster." },
+                { n: "3", icon: "🔗", title: "Invite Your Party",   desc: "Once inside your campaign, hit the Invite button to copy a link. Send it to friends — they join instantly." },
+              ].map(({ n, icon, title, desc }) => (
+                <div key={n} style={{ flex: "1 1 200px", background: "rgba(0,0,0,0.25)", borderRadius: "10px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "0.62rem", fontWeight: 900, color: "var(--primary)", background: "rgba(139,92,246,0.2)", borderRadius: "50%", width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
+                    <span style={{ fontSize: "1rem" }}>{icon}</span>
+                    <span style={{ fontSize: "0.9rem", fontWeight: 700 }}>{title}</span>
+                  </div>
+                  <p style={{ fontSize: "0.78rem", color: "var(--subtle)", lineHeight: 1.6, margin: 0 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Two-column layout */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "36px", alignItems: "start" }}>
 
@@ -547,7 +571,17 @@ export default function Dashboard() {
                 <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Characters</h2>
                 <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Roster</p>
               </div>
+              {characters.length > 0 && (
+                <Link href="/create-character" style={{ textDecoration: "none" }}>
+                  <button className="btn-secondary" style={{ padding: "7px 14px", fontSize: "0.78rem" }}>+ New Character</button>
+                </Link>
+              )}
             </div>
+            {!loading && characters.length > 0 && campaigns.length === 0 && (
+              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.78rem", color: "#c4b5fd", lineHeight: 1.6 }}>
+                💡 Ready to play? Hit <strong>+ New Campaign</strong> to start an adventure with your characters.
+              </div>
+            )}
 
             {characters.length === 0 ? (
               <div className="glass-panel" style={{ padding: "40px 24px", textAlign: "center" }}>

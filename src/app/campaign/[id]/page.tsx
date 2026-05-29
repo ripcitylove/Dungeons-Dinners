@@ -196,6 +196,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [input,            setInput]             = useState("");
   const [isTyping,         setIsTyping]          = useState(false);
   const [showDice,         setShowDice]          = useState(false);
+  const [showChatHint,     setShowChatHint]      = useState(false);
   const [character,        setCharacter]         = useState<Character | null>(null);
   const [stateNotice,      setStateNotice]       = useState<string | null>(null);
   const [players,          setPlayers]           = useState<PresencePlayer[]>([]);
@@ -367,6 +368,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) { await supabase.auth.signOut(); router.push("/auth"); return; }
       setUserId(user.id);
+      if (!sessionStorage.getItem(`chatHint_${params.id}`)) setShowChatHint(true);
 
       const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
         // Load ALL of the current user's characters (no limit — used for roster + active char)
@@ -2025,6 +2027,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         )}
 
+        {/* First-time chat hint */}
+        {showChatHint && (
+          <div style={{ padding: "9px 14px", borderTop: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)", display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "0.95rem", flexShrink: 0 }}>💬</span>
+            <p style={{ fontSize: "0.75rem", color: "#a78bfa", lineHeight: 1.55, flex: 1, margin: 0 }}>
+              <strong>Type what your character says or does</strong> — the AI Dungeon Master responds instantly.
+              Use the 🎲 button to roll dice when asked, or explore the sidebar tabs for your sheet, party, and combat.
+            </p>
+            <button
+              onClick={() => { setShowChatHint(false); sessionStorage.setItem(`chatHint_${params.id}`, "1"); }}
+              style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "1rem", padding: "2px 4px", lineHeight: 1, flexShrink: 0 }}
+              title="Dismiss"
+            >✕</button>
+          </div>
+        )}
+
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)" }}>
           <div style={{ display: "flex", gap: "10px" }}>
@@ -2050,17 +2068,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       <div style={{ flex: "0 0 300px", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Tab toggle */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          {(["party", "sheet", "log"] as const).map(tab => (
-            <button key={tab} onClick={() => setSidebarTab(tab)}
-              style={{ flex: 1, padding: "12px 4px", fontSize: "0.68rem", fontWeight: "bold",
-                background: sidebarTab === tab ? "rgba(139,92,246,0.15)" : "transparent",
-                borderTop: "none", borderLeft: "none", borderRight: "none",
-                borderBottom: sidebarTab === tab ? "2px solid var(--primary)" : "2px solid transparent",
-                color: sidebarTab === tab ? "var(--primary)" : "#64748b",
-                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s" }}>
-              {tab === "party" ? "Party" : tab === "sheet" ? "Character" : "Log"}
-            </button>
-          ))}
+          {(["party", "sheet", "log"] as const).map(tab => {
+            const TAB_META = {
+              party:  { label: "Party",     sub: "Everyone + Invite" },
+              sheet:  { label: "Character", sub: "Stats & Inventory" },
+              log:    { label: "Story Log", sub: "Full Transcript"   },
+            };
+            const { label, sub } = TAB_META[tab];
+            return (
+              <button key={tab} onClick={() => setSidebarTab(tab)}
+                style={{ flex: 1, padding: "10px 4px 8px", fontSize: "0.65rem", fontWeight: "bold",
+                  background: sidebarTab === tab ? "rgba(139,92,246,0.15)" : "transparent",
+                  borderTop: "none", borderLeft: "none", borderRight: "none",
+                  borderBottom: sidebarTab === tab ? "2px solid var(--primary)" : "2px solid transparent",
+                  color: sidebarTab === tab ? "var(--primary)" : "#64748b",
+                  cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                <span>{label}</span>
+                <span style={{ fontSize: "0.55rem", fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === tab ? "rgba(139,92,246,0.75)" : "#3f3f46", lineHeight: 1 }}>{sub}</span>
+              </button>
+            );
+          })}
           {enemies.length > 0 && (
             <button onClick={() => setSidebarTab("combat")}
               style={{ flex: 1, padding: "12px 4px", fontSize: "0.68rem", fontWeight: "bold", position: "relative",
@@ -2068,8 +2096,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 borderTop: "none", borderLeft: "none", borderRight: "none",
                 borderBottom: sidebarTab === "combat" ? "2px solid #ef4444" : "2px solid transparent",
                 color: sidebarTab === "combat" ? "#ef4444" : "#64748b",
-                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s" }}>
-              ⚔ Combat
+                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+              <span>⚔ Combat</span>
+              <span style={{ fontSize: "0.55rem", fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "#3f3f46", lineHeight: 1 }}>Click enemies to target</span>
               {combatActive && enemies.some(e => !e.is_defeated) && (
                 <span style={{ position: "absolute", top: "6px", right: "4px", width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", animation: "blink 1s step-end infinite" }} />
               )}
@@ -2084,10 +2114,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Party ({campaignParty.length > 0 ? campaignParty.length : allPartyCards.length})
               </h3>
-              <button onClick={copyInviteLink}
-                style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.7rem", color: linkCopied ? "#22c55e" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
-                {linkCopied ? "✓ Copied!" : "🔗 Invite"}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px" }}>
+                <button onClick={copyInviteLink}
+                  style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.7rem", color: linkCopied ? "#22c55e" : "#94a3b8", cursor: "pointer", transition: "all 0.15s" }}>
+                  {linkCopied ? "✓ Copied!" : "🔗 Invite"}
+                </button>
+                {!linkCopied && campaignParty.length < 2 && (
+                  <span style={{ fontSize: "0.58rem", color: "#3f3f46" }}>Share to add players</span>
+                )}
+              </div>
             </div>
 
             {/* Player cards — campaign party (always visible) or presence fallback */}
