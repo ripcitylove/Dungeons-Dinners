@@ -251,16 +251,10 @@ export default function Home() {
       </section>
 
       {/* ── Publisher Badge ─────────────────────────────────────────────────── */}
-      <a
-        href="https://drinkandplaypublishing.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="badge-hover"
-        style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 50, background: "white", borderRadius: "12px", padding: "8px", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      >
+      <div style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 50, background: "white", borderRadius: "12px", padding: "8px", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: "90px", height: "90px", objectFit: "contain", display: "block", borderRadius: "6px" }} />
-      </a>
+      </div>
     </main>
   );
 }
