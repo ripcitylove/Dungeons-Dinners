@@ -112,12 +112,12 @@ function exportLog(entries: LogEntry[], campaignId: string) {
 }
 
 const VOICES = [
-  { id: "myrrdin",   label: "Myrrdin",       desc: "♂ Ancient wizard — wise & magical"      },
-  { id: "cornelius", label: "Cornelius",     desc: "♂ Old sage wizard — storyteller"        },
-  { id: "oldwizard", label: "Old Wizard",    desc: "♂ Deep British elder — gravelly"        },
-  { id: "morganna",  label: "Seer Morganna", desc: "♀ Ancient seer — intimidating & clear"  },
-  { id: "eleanor",   label: "Eleanor",       desc: "♀ Refined British elder — authoritative"},
-  { id: "kanika",    label: "Kanika",        desc: "♀ Mythological narrator — mystical"     },
+  { id: "chronicler",  label: "Chronicler",  desc: "♂ Ancient wizard — deep & weathered"    },
+  { id: "gravedigger", label: "Gravedigger", desc: "♂ Voice from the grave — foreboding"    },
+  { id: "bard",        label: "Bard",        desc: "♂ Theatrical British bard — dramatic"   },
+  { id: "oracle",      label: "Oracle",      desc: "♀ Ancient oracle — ethereal & calm"     },
+  { id: "shade",       label: "Shade",       desc: "♂ Gritty rogue narrator — world-worn"   },
+  { id: "sage",        label: "Sage",        desc: "♀ Elder sage — warm & wise"             },
 ] as const;
 
 // ── Colored narrative — red for damage, green for healing ─────────────────────
@@ -214,9 +214,49 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Narration
   const [narrationEnabled, setNarrationEnabled]  = useState(true);
   const [narrating,        setNarrating]         = useState(false);
-  const [selectedVoice,    setSelectedVoice]     = useState<string>("myrrdin");
+  const [selectedVoice,    setSelectedVoice]     = useState<string>("chronicler");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
-  const selectedVoiceRef = useRef<string>("fable");
+  const [testingVoice,     setTestingVoice]      = useState<string | null>(null);
+  const selectedVoiceRef = useRef<string>("chronicler");
+  const previewAudioRef  = useRef<HTMLAudioElement | null>(null);
+
+  const VOICE_SAMPLES: Record<string, string> = {
+    chronicler:  "By the dying embers of a thousand fallen kingdoms, I shall recount what happened here. Listen well — for history is written in blood and ash.",
+    gravedigger: "Every grave tells a story. This one… ends badly for you. Welcome to the dark.",
+    bard:        "Gather 'round, brave souls! The tale I'm about to spin will chill your bones, steal your breath, and leave you begging for more!",
+    oracle:      "I have seen the threads of fate unravel and knot again. What unfolds before you was written long before your first breath.",
+    shade:       "Seen a lot of dark corners in this world. This one's darker than most. Keep your blade close. Trust nobody.",
+    sage:        "In all my years walking these lands, I have learned one truth above all others — courage is not the absence of fear. It is acting despite it.",
+  };
+
+  function testVoice(voiceId: string) {
+    // Stop any in-progress preview
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      if (previewAudioRef.current.src.startsWith("blob:")) URL.revokeObjectURL(previewAudioRef.current.src);
+      previewAudioRef.current.src = "";
+    }
+    if (testingVoice === voiceId) { setTestingVoice(null); return; }
+
+    setTestingVoice(voiceId);
+    const text = VOICE_SAMPLES[voiceId] ?? VOICE_SAMPLES.chronicler;
+
+    fetch("/api/narrate", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ text, voice: voiceId }),
+    })
+      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+      .then(blob => {
+        const url   = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        previewAudioRef.current = audio;
+        audio.play();
+        audio.onended = () => { URL.revokeObjectURL(url); setTestingVoice(null); };
+        audio.onerror = () => { URL.revokeObjectURL(url); setTestingVoice(null); };
+      })
+      .catch(() => setTestingVoice(null));
+  }
 
   // Campaign party (characters linked to this campaign — always visible)
   const [campaignParty,    setCampaignParty]      = useState<Character[]>([]);
@@ -476,6 +516,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
         if (lastDm) {
           resumeNarrationRef.current = lastDm.content;
+          // Restore suggestions — turn order not known yet on resume so always generate
+          if (characterRef.current) {
+            fetch("/api/suggest-actions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dmResponse: lastDm.content, character: characterRef.current }),
+            }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+          }
           // Restore the scene image — detect-scene hits its DB cache so this is fast
           fetch("/api/detect-scene", {
             method: "POST",
@@ -614,6 +662,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.userId === userIdRef.current) return;
         setCurrentTurnIndex(payload.newIndex);
         currentTurnIndexRef.current = payload.newIndex;
+        // Generate suggestions if the turn just landed on this player
+        const order = turnOrderRef.current;
+        const isNowMyTurn = order.length <= 1 || order[payload.newIndex] === userIdRef.current;
+        if (isNowMyTurn && characterRef.current) {
+          const lastDmMsg = [...messagesRef.current].reverse().find(m => m.role === "dm");
+          if (lastDmMsg) {
+            fetch("/api/suggest-actions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dmResponse: lastDmMsg.content, character: characterRef.current }),
+            }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+          }
+        }
       })
       .on("broadcast", { event: "roll_request" }, ({ payload }) => {
         if ((payload as { userId: string | null }).userId === userIdRef.current) return;
@@ -1837,6 +1898,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
         if (lastDm) {
           resumeNarrationRef.current = lastDm.content;
+          // Restore suggestions on resume
+          if (characterRef.current) {
+            fetch("/api/suggest-actions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dmResponse: lastDm.content, character: characterRef.current }),
+            }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+          }
           fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: lastDm.content, currentScene: "", campaignDescription: campaignDescriptionRef.current }) })
             .then(r => r.json())
             .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => { if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName); } })
@@ -2059,27 +2128,43 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               {narrationEnabled && <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
             </button>
             {voicePickerOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "160px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
                 {VOICES.map(v => (
-                  <button key={v.id} onClick={() => {
-                    // Flush the narration queue before switching voices.
-                    // Without this, in-flight TTS fetches orphan their slots and
-                    // audioPlayingRef can get stuck true (browser paused audio on
-                    // the dropdown click, so onended never fires), silently
-                    // breaking all future narration.
-                    if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
-                    narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
-                    audioPlayingRef.current = false;
-                    setNarrating(false);
-                    setSelectedVoice(v.id);
-                    setVoicePickerOpen(false);
-                  }}
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderRadius: "7px", border: "none", background: selectedVoice === v.id ? "rgba(139,92,246,0.25)" : "transparent", cursor: "pointer", transition: "background 0.15s" }}
-                    onMouseEnter={e => { if (selectedVoice !== v.id) e.currentTarget.style.background = "rgba(139,92,246,0.12)"; }}
-                    onMouseLeave={e => { if (selectedVoice !== v.id) e.currentTarget.style.background = "transparent"; }}>
-                    <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: selectedVoice === v.id ? "#c4b5fd" : "white" }}>{v.label}</div>
-                    <div style={{ fontSize: "0.68rem", color: "#64748b", marginTop: "1px" }}>{v.desc}</div>
-                  </button>
+                  <div key={v.id} style={{ display: "flex", alignItems: "center", gap: "4px", borderRadius: "7px", background: selectedVoice === v.id ? "rgba(139,92,246,0.25)" : "transparent", transition: "background 0.15s" }}
+                    onMouseEnter={e => { if (selectedVoice !== v.id) (e.currentTarget as HTMLDivElement).style.background = "rgba(139,92,246,0.12)"; }}
+                    onMouseLeave={e => { if (selectedVoice !== v.id) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}>
+                    {/* Select this voice */}
+                    <button onClick={() => {
+                      // Flush the narration queue before switching voices.
+                      // Without this, in-flight TTS fetches orphan their slots and
+                      // audioPlayingRef can get stuck true (browser paused audio on
+                      // the dropdown click, so onended never fires), silently
+                      // breaking all future narration.
+                      if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
+                      narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+                      audioPlayingRef.current = false;
+                      setNarrating(false);
+                      setSelectedVoice(v.id);
+                      setVoicePickerOpen(false);
+                      // Stop any preview playing
+                      if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.src = ""; }
+                      setTestingVoice(null);
+                    }}
+                      style={{ flex: 1, textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", cursor: "pointer" }}>
+                      <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: selectedVoice === v.id ? "#c4b5fd" : "white" }}>{v.label}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#64748b", marginTop: "1px" }}>{v.desc}</div>
+                    </button>
+                    {/* Preview button — locked while narration is playing */}
+                    <button
+                      disabled={narrating}
+                      onClick={e => { e.stopPropagation(); testVoice(v.id); }}
+                      title={narrating ? "Narration in progress" : "Preview voice"}
+                      style={{ flexShrink: 0, width: "28px", height: "28px", marginRight: "6px", borderRadius: "6px", border: "1px solid rgba(139,92,246,0.3)", background: testingVoice === v.id ? "rgba(139,92,246,0.35)" : "rgba(139,92,246,0.1)", cursor: narrating ? "not-allowed" : testingVoice === v.id ? "default" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", color: narrating ? "#4b3f6b" : "#c4b5fd", opacity: narrating ? 0.45 : 1, transition: "background 0.15s, opacity 0.15s, color 0.15s" }}
+                      onMouseEnter={e => { if (!narrating && testingVoice !== v.id) e.currentTarget.style.background = "rgba(139,92,246,0.25)"; }}
+                      onMouseLeave={e => { if (!narrating && testingVoice !== v.id) e.currentTarget.style.background = "rgba(139,92,246,0.1)"; }}>
+                      {testingVoice === v.id ? <span style={{ animation: "blink 0.8s step-end infinite" }}>♪</span> : "▶"}
+                    </button>
+                  </div>
                 ))}
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
                   <button onClick={() => { if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; } setNarrationEnabled(false); setVoicePickerOpen(false); }}

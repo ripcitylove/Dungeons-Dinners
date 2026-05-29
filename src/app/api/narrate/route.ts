@@ -1,57 +1,92 @@
 import { NextRequest } from "next/server";
 
-const EL_KEY = process.env.ELEVENLABS_API_KEY ?? "";
+const ALLOWED_VOICES = ["chronicler", "gravedigger", "bard", "oracle", "shade", "sage"] as const;
+type AllowedVoice = typeof ALLOWED_VOICES[number];
 
-type VoiceConfig = {
-  voiceId:         string;
-  stability:       number;
-  similarityBoost: number;
-  style:           number;
+// Maps each persona to an ElevenLabs pre-made voice + tuned settings
+const VOICE_CONFIG: Record<AllowedVoice, {
+  voiceId:    string;
+  stability:  number;
+  similarity: number;
+  style:      number;
+}> = {
+  chronicler: {
+    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George — deep British, authoritative
+    stability:  0.80,
+    similarity: 0.75,
+    style:      0.20,
+  },
+  gravedigger: {
+    voiceId:    "TxGEqnHWrfWFTfGW9XjX", // Josh — low, foreboding
+    stability:  0.70,
+    similarity: 0.75,
+    style:      0.40,
+  },
+  bard: {
+    voiceId:    "IKne3meq5aSn9XLyUdCD", // Charlie — British, animated
+    stability:  0.40,
+    similarity: 0.75,
+    style:      0.60,
+  },
+  oracle: {
+    voiceId:    "XB0fDUnXU5powFXDhCwa", // Charlotte — serene, ethereal female
+    stability:  0.90,
+    similarity: 0.80,
+    style:      0.10,
+  },
+  shade: {
+    voiceId:    "2EiwWnXFnvU5JabPnv8n", // Clyde — gritty, world-worn male
+    stability:  0.60,
+    similarity: 0.75,
+    style:      0.30,
+  },
+  sage: {
+    voiceId:    "ThT5KcBeYPX3keUQqHPh", // Dorothy — warm, mature British female
+    stability:  0.75,
+    similarity: 0.80,
+    style:      0.20,
+  },
 };
 
-// ElevenLabs voice IDs — all sourced from the shared voice library
-const VOICE_CONFIG: Record<string, VoiceConfig> = {
-  // Male
-  myrrdin:   { voiceId: "oR4uRy4fHDUGGISL0Rev", stability: 0.75, similarityBoost: 0.70, style: 0.10 },
-  cornelius: { voiceId: "6sFKzaJr574YWVu4UuJF", stability: 0.70, similarityBoost: 0.70, style: 0.05 },
-  oldwizard: { voiceId: "JoYo65swyP8hH6fVMeTO", stability: 0.72, similarityBoost: 0.68, style: 0.08 },
-  // Female
-  morganna:  { voiceId: "7NsaqHdLuKNFvEfjpUno", stability: 0.65, similarityBoost: 0.75, style: 0.12 },
-  eleanor:   { voiceId: "2qQJWjw5XdG80GreshqG", stability: 0.72, similarityBoost: 0.72, style: 0.05 },
-  kanika:    { voiceId: "xccfcojYYGnqTTxwZEDU", stability: 0.60, similarityBoost: 0.78, style: 0.15 },
-};
-
-const DEFAULT_VOICE = "myrrdin";
+const DEFAULT_VOICE: AllowedVoice = "chronicler";
+const MODEL_ID = "eleven_turbo_v2_5";
 
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
+
     const { text, voice } = (await req.json()) as { text: string; voice?: string };
     if (!text?.trim()) return new Response("No text", { status: 400 });
 
-    const config = VOICE_CONFIG[voice ?? DEFAULT_VOICE] ?? VOICE_CONFIG[DEFAULT_VOICE];
+    const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
+      ? (voice as AllowedVoice)
+      : DEFAULT_VOICE;
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${config.voiceId}`, {
+    const { voiceId, stability, similarity, style } = VOICE_CONFIG[safeVoice];
+
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method:  "POST",
       headers: {
-        "xi-api-key":   EL_KEY,
+        "xi-api-key":   apiKey,
         "Content-Type": "application/json",
         "Accept":       "audio/mpeg",
       },
       body: JSON.stringify({
         text:     text.slice(0, 5000),
-        model_id: "eleven_turbo_v2_5",
+        model_id: MODEL_ID,
         voice_settings: {
-          stability:        config.stability,
-          similarity_boost: config.similarityBoost,
-          style:            config.style,
+          stability,
+          similarity_boost:  similarity,
+          style,
           use_speaker_boost: true,
         },
       }),
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("[api/narrate] ElevenLabs error:", res.status, errText);
+      const msg = await res.text().catch(() => "");
+      console.error("[api/narrate] ElevenLabs:", res.status, msg);
       return new Response("TTS unavailable", { status: 500 });
     }
 
