@@ -119,6 +119,7 @@ declare global {
   interface Window {
     __dndMusicPlay?: () => void;
     __dndSetMusicScene?: (scene: string) => void;
+    __dndSetAmbiance?: (url: string | null) => void;
   }
 }
 
@@ -139,18 +140,23 @@ function nextFrom(queue: string[], pool: string[]): { src: string; queue: string
 
 export function MusicPlayer() {
   const pathname = usePathname();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef    = useRef<HTMLAudioElement | null>(null);
+  const ambianceRef = useRef<HTMLAudioElement | null>(null);
 
-  const [playing,   setPlaying]   = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const [volume,    setVolume]    = useState(0.15);
-  const [poolLabel, setPoolLabel] = useState("Tavern");
+  const [playing,       setPlaying]       = useState(false);
+  const [loadError,     setLoadError]     = useState(false);
+  const [volume,        setVolume]        = useState(0.15);
+  const [ambianceVol,   setAmbianceVol]   = useState(0.28);
+  const [ambianceReady, setAmbianceReady] = useState(false);
+  const [poolLabel,     setPoolLabel]     = useState("Tavern");
 
-  const targetVolume  = useRef(0.15);
-  const activePoolKey = useRef<string>("tavern");
-  const fadeTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const musicQueue    = useRef<string[]>([]);
-  const musicErrors   = useRef(0);
+  const targetVolume    = useRef(0.15);
+  const targetAmbianceV = useRef(0.28);
+  const activePoolKey   = useRef<string>("tavern");
+  const fadeTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const musicQueue      = useRef<string[]>([]);
+  const musicErrors     = useRef(0);
 
   const isOnCampaign = !!pathname?.startsWith("/campaign");
   const defaultPool  = isOnCampaign ? "dungeon" : "tavern";
@@ -219,6 +225,47 @@ export function MusicPlayer() {
     }, 40);
   }, [clearFade]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Ambiance fade helpers ────────────────────────────────────────────────────
+  const clearAmbianceFade = useCallback(() => {
+    if (ambianceFade.current) { clearInterval(ambianceFade.current); ambianceFade.current = null; }
+  }, []);
+
+  const fadeInAmbiance = useCallback(() => {
+    const a = ambianceRef.current;
+    if (!a) return;
+    clearAmbianceFade();
+    a.volume = 0;
+    a.play().catch(() => {});
+    ambianceFade.current = setInterval(() => {
+      const b = ambianceRef.current;
+      if (!b) { clearAmbianceFade(); return; }
+      if (b.volume < targetAmbianceV.current - 0.02) {
+        b.volume = Math.min(targetAmbianceV.current, b.volume + 0.02);
+      } else {
+        b.volume = targetAmbianceV.current;
+        clearAmbianceFade();
+      }
+    }, 60);
+  }, [clearAmbianceFade]);
+
+  const fadeOutAmbiance = useCallback((cb?: () => void) => {
+    const a = ambianceRef.current;
+    if (!a || a.paused) { cb?.(); return; }
+    clearAmbianceFade();
+    ambianceFade.current = setInterval(() => {
+      const b = ambianceRef.current;
+      if (!b) { clearAmbianceFade(); cb?.(); return; }
+      if (b.volume > 0.02) {
+        b.volume = Math.max(0, b.volume - 0.02);
+      } else {
+        b.volume = 0;
+        b.pause();
+        clearAmbianceFade();
+        cb?.();
+      }
+    }, 60);
+  }, [clearAmbianceFade]);
+
   // ── Expose global handles ───────────────────────────────────────────────────
   useEffect(() => {
     window.__dndMusicPlay = () => {
@@ -234,19 +281,38 @@ export function MusicPlayer() {
       fadeTo(pool);
     };
 
-    return () => { delete window.__dndMusicPlay; delete window.__dndSetMusicScene; };
-  }, [playNextMusic, fadeTo]);
+    window.__dndSetAmbiance = (url: string | null) => {
+      const a = ambianceRef.current;
+      if (!a) return;
+      if (!url) { fadeOutAmbiance(() => { if (ambianceRef.current) ambianceRef.current.src = ""; setAmbianceReady(false); }); return; }
+      if (a.src === url) return;
+      fadeOutAmbiance(() => {
+        const b = ambianceRef.current;
+        if (!b) return;
+        b.src  = url;
+        b.load();
+        setAmbianceReady(true);
+      });
+    };
+
+    return () => { delete window.__dndMusicPlay; delete window.__dndSetMusicScene; delete window.__dndSetAmbiance; };
+  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance]);
 
   // ── Switch pool on route change (campaign ↔ dashboard) ──────────────────────
   useEffect(() => {
     fadeTo(defaultPool);
   }, [defaultPool, fadeTo]);
 
-  // ── Sync volume knob ─────────────────────────────────────────────────────────
+  // ── Sync volume knobs ────────────────────────────────────────────────────────
   useEffect(() => {
     targetVolume.current = volume;
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  useEffect(() => {
+    targetAmbianceV.current = ambianceVol;
+    if (ambianceRef.current && !ambianceRef.current.paused) ambianceRef.current.volume = ambianceVol;
+  }, [ambianceVol]);
 
   // ── Toggle play / pause ──────────────────────────────────────────────────────
   const toggle = useCallback(() => {
@@ -282,6 +348,12 @@ export function MusicPlayer() {
             setTimeout(() => playNextMusic(), 600);
           }
         }}
+      />
+      <audio
+        ref={ambianceRef}
+        preload="none"
+        loop
+        onCanPlayThrough={() => { if (ambianceRef.current?.src) fadeInAmbiance(); }}
       />
 
       <div
@@ -332,13 +404,21 @@ export function MusicPlayer() {
               {poolLabel}
             </span>
             <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
-              style={{ width: "52px", accentColor: "var(--primary)", cursor: "pointer" }}
+              type="range" min={0} max={1} step={0.05} value={volume}
+              onChange={e => setVolume(parseFloat(e.target.value))}
+              title="Music volume"
+              style={{ width: "48px", accentColor: "var(--primary)", cursor: "pointer" }}
+            />
+          </>
+        )}
+        {ambianceReady && (
+          <>
+            <span style={{ fontSize: "0.65rem", color: "#475569", whiteSpace: "nowrap" }}>🌫</span>
+            <input
+              type="range" min={0} max={1} step={0.05} value={ambianceVol}
+              onChange={e => setAmbianceVol(parseFloat(e.target.value))}
+              title="Ambiance volume"
+              style={{ width: "42px", accentColor: "#64748b", cursor: "pointer" }}
             />
           </>
         )}

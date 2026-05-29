@@ -121,14 +121,14 @@ export async function POST(req: NextRequest) {
     const sceneName = buildCacheKey(sceneType, modifiers, isCombat);
 
     // Same scene key — no change needed
-    if (sceneName === currentScene) return Response.json({ sceneName, imageUrl: null });
+    if (sceneName === currentScene) return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description });
 
     // Step 2: Check cache — exact match only (no cross-type fallbacks)
     const { data: allCached } = await supabase.from("scenes").select("name, image_url");
     const cacheMap = new Map((allCached ?? []).map(s => [s.name as string, s.image_url as string]));
 
     const exactUrl = cacheMap.get(sceneName);
-    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl });
+    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl, sceneType, modifiers, description });
 
     // Step 3: Generate a new image specific to this scene
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
     const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(storageKey);
     await supabase.from("scenes").upsert({ name: sceneName, image_url: publicUrl });
 
-    return Response.json({ sceneName, imageUrl: publicUrl });
+    return Response.json({ sceneName, imageUrl: publicUrl, sceneType, modifiers, description });
   } catch (err) {
     console.error("[detect-scene]", err);
     return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null });

@@ -455,8 +455,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             body: JSON.stringify({ narrative: lastDm.content, currentScene: "", campaignDescription: campaignDescriptionRef.current }),
           })
             .then(r => r.json())
-            .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
+            .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
               if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName); }
+              if (sceneName && sceneType) {
+                fetch("/api/generate-scene-audio", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: false }),
+                })
+                  .then(r => r.json())
+                  .then(({ audioUrl }: { audioUrl: string | null }) => {
+                    if (audioUrl) (window as Window & { __dndSetAmbiance?: (url: string | null) => void }).__dndSetAmbiance?.(audioUrl);
+                  })
+                  .catch(() => {});
+              }
             })
             .catch(() => {});
         }
@@ -675,8 +687,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.imageUrl) {
           currentSceneRef.current = payload.sceneName;
           setCurrentSceneUrl(payload.imageUrl);
-          (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(payload.sceneName as string);
+          (window as Window).__dndSetMusicScene?.(payload.sceneName as string);
         }
+      })
+      .on("broadcast", { event: "ambiance_change" }, ({ payload }) => {
+        if (payload.audioUrl) (window as Window).__dndSetAmbiance?.(payload.audioUrl as string);
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
@@ -1387,18 +1402,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
 
       // Scene detection (non-blocking — updates background when ready)
+      const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
       setSceneLoading(true);
-      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: enemiesRef.current.some(e => !e.is_defeated), campaignDescription: campaignDescriptionRef.current }) })
+      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: isCombatNow, campaignDescription: campaignDescriptionRef.current }) })
         .then(r => r.json())
-        .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
+        .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
           if (imageUrl && sceneName !== currentSceneRef.current) {
             currentSceneRef.current = sceneName;
             setCurrentSceneUrl(imageUrl);
             channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
-            (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName);
+            (window as Window).__dndSetMusicScene?.(sceneName);
+          }
+          // Ambient audio generation (non-blocking, fires whether or not image changed)
+          if (sceneType) {
+            fetch("/api/generate-scene-audio", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: isCombatNow }),
+            })
+              .then(r => r.json())
+              .then(({ audioUrl }: { audioUrl: string | null }) => {
+                if (audioUrl) {
+                  (window as Window).__dndSetAmbiance?.(audioUrl);
+                  channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl } });
+                }
+              })
+              .catch(() => {});
           }
         })
-
         .catch(() => {})
         .finally(() => setSceneLoading(false));
 
