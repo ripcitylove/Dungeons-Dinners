@@ -11,40 +11,40 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   style:      number;
 }> = {
   chronicler: {
-    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George ♂ — Warm, Captivating Storyteller
-    stability:  0.80,
+    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George ♂ — Warm, Captivating Storyteller (British)
+    stability:  0.75,
     similarity: 0.75,
-    style:      0.20,
+    style:      0.30,
   },
   gravedigger: {
-    voiceId:    "nPczCjzI2devNBz1zQrb", // Brian ♂ — Deep, Resonant and Comforting
-    stability:  0.65,
-    similarity: 0.75,
-    style:      0.45,
-  },
-  bard: {
-    voiceId:    "pFZP5JQG7iQjIQuC4Bku", // Lily ♀ — Velvety Actress
-    stability:  0.35,
-    similarity: 0.75,
-    style:      0.65,
-  },
-  oracle: {
-    voiceId:    "EXAVITQu4vr4xnSDxMaL", // Sarah ♀ — Mature, Reassuring, Confident
-    stability:  0.85,
-    similarity: 0.80,
-    style:      0.15,
-  },
-  shade: {
-    voiceId:    "SOYHLrjzK2X1ezoPC6cr", // Harry ♂ — Fierce Warrior
+    voiceId:    "N2lVS1w4EtoT3dr4eOWO", // Callum ♂ — Husky, Dark (American)
     stability:  0.55,
     similarity: 0.75,
-    style:      0.35,
+    style:      0.55,
+  },
+  bard: {
+    voiceId:    "pFZP5JQG7iQjIQuC4Bku", // Lily ♀ — Velvety Actress (British)
+    stability:  0.30,
+    similarity: 0.75,
+    style:      0.70,
+  },
+  oracle: {
+    voiceId:    "Xb7hH8MSUJpSbSDYk0k2", // Alice ♀ — Clear, Engaging (British)
+    stability:  0.82,
+    similarity: 0.80,
+    style:      0.12,
+  },
+  shade: {
+    voiceId:    "SOYHLrjzK2X1ezoPC6cr", // Harry ♂ — Fierce Warrior (American)
+    stability:  0.50,
+    similarity: 0.75,
+    style:      0.42,
   },
   sage: {
-    voiceId:    "XrExE9yKIg1WjnnlVkGX", // Matilda ♀ — Knowledgeable, Professional
-    stability:  0.75,
+    voiceId:    "pqHfZKP75CvOlQylNhV4", // Bill ♂ — Wise, Mature, Balanced (American)
+    stability:  0.82,
     similarity: 0.80,
-    style:      0.20,
+    style:      0.12,
   },
 };
 

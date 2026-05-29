@@ -112,12 +112,12 @@ function exportLog(entries: LogEntry[], campaignId: string) {
 }
 
 const VOICES = [
-  { id: "chronicler",  label: "Chronicler",  desc: "♂ Warm, captivating storyteller"        },
-  { id: "gravedigger", label: "Gravedigger", desc: "♂ Deep & resonant — foreboding"         },
-  { id: "bard",        label: "Bard",        desc: "♀ Velvety actress — theatrical"         },
-  { id: "oracle",      label: "Oracle",      desc: "♀ Mature & confident — ethereal calm"   },
-  { id: "shade",       label: "Shade",       desc: "♂ Fierce warrior — raw & gritty"        },
-  { id: "sage",        label: "Sage",        desc: "♀ Knowledgeable elder — wise & warm"    },
+  { id: "chronicler",  label: "Chronicler",  desc: "♂ British — warm, captivating storyteller"  },
+  { id: "gravedigger", label: "Gravedigger", desc: "♂ Husky & dark — brooding menace"           },
+  { id: "bard",        label: "Bard",        desc: "♀ British — velvety actress, theatrical"    },
+  { id: "oracle",      label: "Oracle",      desc: "♀ British — clear & measured, otherworldly" },
+  { id: "shade",       label: "Shade",       desc: "♂ Fierce warrior — raw & intense"           },
+  { id: "sage",        label: "Sage",        desc: "♂ Wise & measured — aged counsel"           },
 ] as const;
 
 // ── Colored narrative — red for damage, green for healing ─────────────────────
@@ -228,12 +228,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const pendingReconciliationRef  = useRef<{ messages: Message[]; summary: { name: string; action: string }[] } | null>(null);
 
   const VOICE_SAMPLES: Record<string, string> = {
-    chronicler:  "By the dying embers of a thousand fallen kingdoms, I shall recount what transpired here. Listen well — for history is written in blood and ash.",
-    gravedigger: "Every grave tells a story. This one… ends badly for you. I have dug enough of them to know the difference between fate and folly.",
+    chronicler:  "In ages past, when shadow held dominion over these lands, a band of heroes arose — ordinary souls thrust into extraordinary peril. Their tale, your tale, begins tonight.",
+    gravedigger: "Every soul finds its way to the earth, eventually. Some sooner than others. I have buried kings and beggars alike. The question is which you shall be.",
     bard:        "Oh, gather close, you magnificent fools! The tale I am about to spin will chill your bones, steal your breath, and leave you absolutely begging for more!",
-    oracle:      "I have seen the threads of fate unravel and knot again ten thousand times. What unfolds before you now was written long before your first breath.",
-    shade:       "I have seen darker corners than this. Not many — but a few. Keep your blade close and your trust closer. In this world, both are in short supply.",
-    sage:        "In all my years walking these lands, I have learned one truth above all others — courage is not the absence of fear, child. It is acting despite it.",
+    oracle:      "The threads of fate are rarely as they appear. What you seek lies not ahead of you, but within the choices already made — whether you know it or not.",
+    shade:       "Three enemies. Two exits. One chance. You want to live? Stop thinking. Start moving. Every second you waste is a second they use against you.",
+    sage:        "I have walked these roads for forty years, and I will tell you plainly what I know — courage is plentiful in youth. Wisdom is the rarer gift, and the harder earned.",
   };
 
   function testVoice(voiceId: string) {
@@ -1403,7 +1403,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[] }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1482,26 +1482,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const currentTurnChar = onlineParty.find(c => c.user_id === (turnOrderRef.current[currentTurnIndexRef.current] ?? null));
       const rollRequestChar = rollRequestedUserIdRef.current ? onlineParty.find(c => c.user_id === rollRequestedUserIdRef.current) : null;
 
-      // When tracking rounds, pass the NEXT player's name so the DM hands off correctly
-      const trackingRounds  = opts?.trackRound && turnOrderRef.current.length > 1;
-      const willBeAllActed  = trackingRounds
-        && turnOrderRef.current.every(uid => roundActionsRef.current.some(a => a.userId === uid));
-      const nextIdx         = turnOrderRef.current.length > 1 ? (currentTurnIndexRef.current + 1) % turnOrderRef.current.length : -1;
-      const nextTurnChar    = (trackingRounds && !willBeAllActed && nextIdx >= 0)
-        ? onlineParty.find(c => c.user_id === turnOrderRef.current[nextIdx])
-        : null;
-      const nextTurnPlayerName = nextTurnChar?.name ?? null;
-
       // Party leader for group roll routing
       const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
       const partyLeaderName = partyLeaderChar?.name ?? null;
 
-      // roll target > next turn player (round tracking) > current turn player > solo fallback
+      // nextPlayerName was pre-computed in handleSend before the turn advanced (avoids stale closure)
+      // roll target > pre-computed next player > current turn char > solo fallback
       const nextPromptName = rollRequestChar?.name
-        ?? nextTurnPlayerName
+        ?? opts?.nextPlayerName
         ?? (turnOrderRef.current.length > 1 ? currentTurnChar?.name : null)
         ?? (onlineParty.length === 1 ? onlineParty[0]?.name : null)
         ?? character?.name;
+      const prevActorName  = opts?.prevPlayerName ?? null;
       const targetedEnemy  = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
 
       const res = await fetch("/api/chat", {
@@ -1513,7 +1505,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
           ...(isOpeningScene && { openingScene: true }),
           ...(nextPromptName && { currentTurnPlayerName: nextPromptName }),
-          ...(character?.name && nextPromptName && character.name !== nextPromptName && { prevActingPlayerName: character.name }),
+          ...(prevActorName && nextPromptName && prevActorName !== nextPromptName && { prevActingPlayerName: prevActorName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
           ...(partyLeaderName && { partyLeaderName }),
@@ -1579,33 +1571,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       }
 
-      // Suggested actions — show for current player only if their turn isn't about to end
-      const isLocalTurn  = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userId;
-      const turnTransfer = opts?.trackRound && !rollTarget && turnOrderRef.current.length > 1;
-      if (isLocalTurn && !turnTransfer && characterRef.current) {
+      // Suggested actions — show only when this is the local player's turn and no hand-off is pending
+      const isLocalTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userId;
+      // allActed: round complete — reconciliation incoming, suppress suggestions until new round starts
+      const allActedNow = opts?.trackRound && !rollTarget && turnOrderRef.current.length > 1
+        && turnOrderRef.current.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+      if (isLocalTurn && !opts?.nextPlayerName && !allActedNow && characterRef.current) {
         fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
 
-      // Round management: advance turn or queue reconciliation when player turn is complete
+      // Round management: only detect when all players have acted (turn advance already done in handleSend)
       if (opts?.trackRound && !rollTarget) {
         const order = turnOrderRef.current;
         if (order.length > 1) {
           const allActed = order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
           if (allActed) {
-            // Capture full conversation (including this DM response) for reconciliation
-            const summary = roundActionsRef.current.map(a => ({ name: a.name, action: a.action }));
+            const summary    = roundActionsRef.current.map(a => ({ name: a.name, action: a.action }));
             const msgsWithDm: Message[] = [...allMessages, { role: "dm", content: full }];
             pendingReconciliationRef.current = { messages: msgsWithDm, summary };
-          } else {
-            const nextIndex = (currentTurnIndexRef.current + 1) % order.length;
-            setCurrentTurnIndex(nextIndex);
-            currentTurnIndexRef.current = nextIndex;
-            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIndex } });
-            if (campaignPartyRef.current.length > 1) {
-              setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
-            }
           }
+          // Turn advance for non-reconciliation case already happened in handleSend
         }
       }
 
@@ -1687,16 +1673,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setLogEntries(prev => [...prev, { id: `player-${Date.now()}`, timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
     channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name } });
 
-    // Record this player's action for round tracking (not for roll submissions — action was already recorded)
+    // Record this player's action for round tracking (not for roll submissions)
     if (!isRollSubmit && order.length > 1 && character && userId) {
       const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.userId !== userId), { userId: userId as string, name: character.name, action: text }];
       roundActionsRef.current = updated;
       setRoundActions(updated);
     }
 
-    // Turn advance and active-char rotation now happen AFTER DM responds (inside sendToAI)
+    // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
+    let nextPlayerName: string | null = null;
+    if (!isRollSubmit && order.length > 1) {
+      const allActedNow = order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+      if (!allActedNow) {
+        const nextIdx  = (currentTurnIndexRef.current + 1) % order.length;
+        const nextChar = campaignPartyRef.current.find(c => c.user_id === order[nextIdx]);
+        nextPlayerName = nextChar?.name ?? null;
+        setCurrentTurnIndex(nextIdx);
+        currentTurnIndexRef.current = nextIdx;
+        channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
+        if (campaignPartyRef.current.length > 1) setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
+      }
+    }
+
     pendingReconciliationRef.current = null;
-    await sendToAI(updatedMessages, false, { trackRound: order.length > 1 });
+    await sendToAI(updatedMessages, false, {
+      trackRound:     order.length > 1,
+      nextPlayerName,
+      prevPlayerName: character?.name ?? null,
+    });
 
     // If sendToAI detected all players have acted, trigger round reconciliation
     const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
