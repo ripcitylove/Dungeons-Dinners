@@ -72,7 +72,7 @@ export default function Home() {
       <nav className="glass-panel" style={{ margin: "20px", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
         <div style={{ fontSize: "1.5rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ color: "var(--primary)" }}>⬡</span>
-          <span>D&amp;D Legends</span>
+          <span>Dungeons &amp; Dinner Legends</span>
         </div>
         <Link href="/auth"><button className="btn-secondary">Log In</button></Link>
       </nav>
@@ -85,13 +85,7 @@ export default function Home() {
         <div style={{ position: "absolute", top: "5%", left: "8%", width: "500px", height: "500px", background: "var(--primary)", filter: "blur(180px)", opacity: 0.13, zIndex: -1, borderRadius: "50%" }} />
         <div style={{ position: "absolute", bottom: "5%", right: "8%", width: "420px", height: "420px", background: "#f59e0b", filter: "blur(180px)", opacity: 0.07, zIndex: -1, borderRadius: "50%" }} />
 
-        <div className="animate-fade-in">
-          <span style={{ padding: "6px 18px", background: "rgba(139,92,246,0.1)", color: "var(--primary)", borderRadius: "20px", fontSize: "0.8rem", fontWeight: 700, border: "1px solid rgba(139,92,246,0.28)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            ✦ &nbsp;AI Dungeon Master&nbsp; ✦
-          </span>
-        </div>
-
-        <h1 className="animate-fade-in delay-100 shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
+        <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
         </h1>
 
