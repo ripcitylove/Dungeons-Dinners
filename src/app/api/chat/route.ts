@@ -181,7 +181,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const statuses = c.status_effects?.length ? ` [${c.status_effects.join(", ")}]` : "";
       const itemFx   = c.active_item_effects?.length ? `\n  Item effects: ${c.active_item_effects.join("; ")}` : "";
       const sexStr   = c.sex ? `${c.sex} ` : "";
-      const bgStr    = c.background ? `\n  Background: ${c.background}` : "";
+      const bgStr    = c.background ? `\n  Alignment: ${c.background}` : "";
       const cantStr  = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
       const spellStr = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
       const spellLine = (cantStr || spellStr)
@@ -233,7 +233,7 @@ ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${p
 HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 Weapons: ${weapons}
-Items: ${items}${char.background ? `\nBackground: ${char.background}` : ""}
+Items: ${items}${char.background ? `\nAlignment: ${char.background}` : ""}
 Status: ${statuses}${spellInfo}${itemFx}
 
 Reference these stats for all checks and combat. Roll attacks against the character's AC (${ac}). Enforce spell slot limits. Stats shown are effective values including magic item bonuses.`;

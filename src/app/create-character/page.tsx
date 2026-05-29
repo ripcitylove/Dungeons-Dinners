@@ -32,6 +32,26 @@ function rollAbilityScores(): AbilityScores {
   };
 }
 
+function playDiceRollSound() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as Record<string, unknown>).webkitAudioContext as typeof AudioContext;
+    const ctx = new Ctx();
+    const sr = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, Math.floor(sr * 0.55), sr);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = "bandpass"; bpf.frequency.value = 580; bpf.Q.value = 0.8;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.45, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+    src.connect(bpf); bpf.connect(gain); gain.connect(ctx.destination);
+    src.start(); src.stop(ctx.currentTime + 0.55);
+  } catch { /* AudioContext unavailable */ }
+}
+
 const CLASS_HIT_DIE: Record<string, number> = {
   Barbarian: 12, Fighter: 10, Paladin: 10, Ranger: 10,
   Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8,
@@ -48,6 +68,48 @@ const DEFAULT_SCORES: AbilityScores = {
   strength: 15, dexterity: 14, constitution: 13,
   intelligence: 12, wisdom: 10, charisma: 8,
 };
+
+const ALIGNMENTS = [
+  { key: "Lawful Good",     short: "LG", desc: "Upholds justice and protects the innocent. A champion of order and virtue." },
+  { key: "Neutral Good",    short: "NG", desc: "Does what is good without preference for order or chaos. A healer or helper." },
+  { key: "Chaotic Good",    short: "CG", desc: "Acts on conscience with little regard for rules. A rebel with a good heart." },
+  { key: "Lawful Neutral",  short: "LN", desc: "Follows rules and tradition above all else, without strong moral bias." },
+  { key: "True Neutral",    short: "TN", desc: "Avoids taking strong moral or ethical stances. Seeks balance in all things." },
+  { key: "Chaotic Neutral", short: "CN", desc: "Follows whims and personal freedom above all laws or moral codes." },
+  { key: "Lawful Evil",     short: "LE", desc: "Methodically pursues evil goals through discipline and rigid structure." },
+  { key: "Neutral Evil",    short: "NE", desc: "Does whatever it can get away with, without remorse or allegiance." },
+  { key: "Chaotic Evil",    short: "CE", desc: "Acts with arbitrary violence and malice, driven purely by destruction." },
+] as const;
+
+const RACE_TOOLTIPS: Record<string, string> = {
+  Human:      "Adaptable and ambitious. +1 to all ability scores. Gains an extra skill proficiency and feat.",
+  Elf:        "Keen senses and grace. Darkvision, advantage on saves vs. charm, immune to sleep magic.",
+  Dwarf:      "Hardy and stoic. Poison resistance, proficiency with tools, advantage on saves vs. poison.",
+  Halfling:   "Lucky and nimble. Reroll 1s on attack rolls, ability checks, and saving throws.",
+  Dragonborn: "Draconic heritage. Breath weapon attack and resistance to that element type.",
+  Tiefling:   "Infernal lineage. Resistance to fire, Hellish Rebuke, darkness spell at higher levels.",
+  Gnome:      "Inventive and curious. Advantage on INT/WIS/CHA saving throws vs. magic.",
+  "Half-Elf": "Human versatility and elven grace. Two extra skills, advantage on saves vs. charm.",
+  "Half-Orc": "Fierce and resilient. Savage Attacks on crits, Relentless Endurance once per long rest.",
+};
+
+const CLASS_TOOLTIPS: Record<string, string> = {
+  Fighter:   "Master of combat. Action Surge, Second Wind, Fighting Style. Multiple attacks at higher levels.",
+  Wizard:    "Arcane scholar. Vast spellbook, Arcane Recovery of spell slots on a short rest.",
+  Rogue:     "Cunning striker. Sneak Attack bonus damage, Cunning Action for Dash/Hide/Disengage.",
+  Cleric:    "Divine agent. Healing spells, Turn Undead, powerful domain abilities.",
+  Paladin:   "Holy warrior. Divine Smite on hits, Lay on Hands healing pool, aura bonuses.",
+  Ranger:    "Wilderness expert. Hunter's Mark, Favored Enemy, Natural Explorer features.",
+  Bard:      "Magical performer. Bardic Inspiration dice, Jack of All Trades skill versatility.",
+  Warlock:   "Eldritch bargainer. Eldritch Blast, limited but fully recovering spell slots on short rest.",
+  Barbarian: "Primal warrior. Rage for bonus damage and damage resistance, Reckless Attack advantage.",
+  Druid:     "Nature's servant. Wild Shape into beasts, powerful nature magic, healing spells.",
+  Monk:      "Martial artist. Ki points for Stunning Strike, Flurry of Blows, unarmored movement.",
+  Sorcerer:  "Natural spellcaster. Metamagic to shape spells, Sorcery Points for flexible slot use.",
+};
+
+const STAT_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'] as const;
+const STAT_LABELS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
 
 // ── Spell card component ──────────────────────────────────────────────────────
 function SpellCard({
@@ -95,18 +157,20 @@ function SpellCard({
 export default function CreateCharacter() {
   const router = useRouter();
 
-  // Determine max steps dynamically: step 5 (spells) only for spellcasting classes
   const [character, setCharacter] = useState({
-    name: '', race: '', class: '', background: '', weapon: '', trinket: '', sex: 'male',
+    name: '', race: '', class: '', alignment: '', weapon: '', trinket: '', sex: 'male',
   });
-  const [rollingStats, setRollingStats] = useState(false);
-  const [scores, setScores]             = useState<AbilityScores>(DEFAULT_SCORES);
-  const [nameError, setNameError]       = useState('');
-  const [saving, setSaving]             = useState(false);
+  const [rollingStats,  setRollingStats]  = useState(false);
+  const [revealCount,   setRevealCount]   = useState(6);
+  const [scores,        setScores]        = useState<AbilityScores>(DEFAULT_SCORES);
+  const [nameError,     setNameError]     = useState('');
+  const [saving,        setSaving]        = useState(false);
   const [portraitGenerating, setPortraitGenerating] = useState(false);
-  const [hoveredStat, setHoveredStat]   = useState<string | null>(null);
+  const [hoveredStat,   setHoveredStat]   = useState<string | null>(null);
+  const [hoveredRace,   setHoveredRace]   = useState<string | null>(null);
+  const [hoveredClass,  setHoveredClass]  = useState<string | null>(null);
+  const [hoveredAlign,  setHoveredAlign]  = useState<string | null>(null);
 
-  // Spell selection state
   const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
   const [selectedSpells,   setSelectedSpells]   = useState<string[]>([]);
 
@@ -115,9 +179,26 @@ export default function CreateCharacter() {
 
   const [step, setStep] = useState(1);
 
-  const spellCounts = getSpellCounts(character.class, scores);
+  const spellCounts       = getSpellCounts(character.class, scores);
   const availableCantrips = CANTRIPS[character.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[character.class] ?? [];
+
+  // ── Stat roll with animation ────────────────────────────────────────────────
+  const handleRollStats = () => {
+    if (rollingStats) return;
+    setRollingStats(true);
+    setRevealCount(0);
+    playDiceRollSound();
+
+    setTimeout(() => {
+      const newScores = rollAbilityScores();
+      setScores(newScores);
+      STAT_KEYS.forEach((_, i) => {
+        setTimeout(() => setRevealCount(i + 1), i * 110);
+      });
+      setTimeout(() => setRollingStats(false), STAT_KEYS.length * 110 + 100);
+    }, 1100);
+  };
 
   // ── Navigation ──────────────────────────────────────────────────────────────
   const nextStep = () => {
@@ -148,7 +229,6 @@ export default function CreateCharacter() {
     }
   };
 
-  // When class changes, reset spell selections
   const handleClassSelect = (cls: string) => {
     setCharacter(c => ({ ...c, class: cls }));
     setSelectedCantrips([]);
@@ -176,9 +256,9 @@ export default function CreateCharacter() {
         return;
       }
 
-      const charClass    = character.class || 'Fighter';
-      const maxHp        = startingHP(charClass, scores.constitution);
-      const startingInv  = {
+      const charClass   = character.class || 'Fighter';
+      const maxHp       = startingHP(charClass, scores.constitution);
+      const startingInv = {
         gold: 50,
         weapons: character.weapon ? [character.weapon] : ['Iron Dagger'],
         items:   ['Bedroll', 'Rations (5 days)', character.trinket || 'Mysterious Coin'],
@@ -190,6 +270,7 @@ export default function CreateCharacter() {
         race:             character.race || 'Human',
         class:            charClass,
         sex:              character.sex,
+        background:       character.alignment || null,
         level:            1,
         xp:               0,
         max_hp:           maxHp,
@@ -209,7 +290,6 @@ export default function CreateCharacter() {
 
       if (insertError || !newChar) throw insertError ?? new Error("Insert failed");
 
-      // Generate portrait synchronously so dashboard loads with portrait already set
       setSaving(false);
       setPortraitGenerating(true);
       try {
@@ -318,9 +398,20 @@ export default function CreateCharacter() {
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Race</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
-                    <div key={race} onClick={() => setCharacter(c => ({ ...c, race }))}
-                      style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.race === race ? 'var(--primary)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-                      {race}
+                    <div key={race} style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredRace(race)}
+                      onMouseLeave={() => setHoveredRace(null)}
+                    >
+                      <div onClick={() => setCharacter(c => ({ ...c, race }))}
+                        style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.race === race ? 'var(--primary)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                        {race}
+                      </div>
+                      {hoveredRace === race && RACE_TOOLTIPS[race] && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '8px', padding: '9px 12px', zIndex: 300, width: '200px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)', whiteSpace: 'normal' }}>
+                          <div style={{ fontWeight: 'bold', color: '#c4b5fd', marginBottom: '4px' }}>{race}</div>
+                          {RACE_TOOLTIPS[race]}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -337,6 +428,36 @@ export default function CreateCharacter() {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', color: '#94a3b8' }}>Alignment <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional — shapes how the DM reads your character)</span></label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {ALIGNMENTS.map(a => (
+                    <div key={a.key} style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredAlign(a.key)}
+                      onMouseLeave={() => setHoveredAlign(null)}
+                    >
+                      <div
+                        onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
+                        style={{
+                          padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
+                          border: `1px solid ${character.alignment === a.key ? 'var(--primary)' : 'var(--border)'}`,
+                          background: character.alignment === a.key ? 'rgba(139,92,246,0.2)' : 'transparent',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', color: character.alignment === a.key ? '#c4b5fd' : '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>{a.short}</div>
+                        <div style={{ fontSize: '0.78rem', color: character.alignment === a.key ? 'white' : '#94a3b8', lineHeight: 1.2 }}>{a.key}</div>
+                      </div>
+                      {hoveredAlign === a.key && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '8px', padding: '9px 12px', zIndex: 300, width: '200px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)', whiteSpace: 'normal' }}>
+                          <div style={{ fontWeight: 'bold', color: '#c4b5fd', marginBottom: '4px' }}>{a.key}</div>
+                          {a.desc}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -347,10 +468,21 @@ export default function CreateCharacter() {
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Class</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                   {['Fighter', 'Wizard', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Barbarian', 'Druid', 'Monk', 'Sorcerer'].map(cls => (
-                    <div key={cls} onClick={() => handleClassSelect(cls)}
-                      style={{ padding: '14px', borderRadius: '8px', border: `1px solid ${character.class === cls ? 'var(--primary)' : 'var(--border)'}`, background: character.class === cls ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', fontSize: '0.9rem' }}>
-                      {cls}
-                      {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px' }}>✦ Spellcaster</div>}
+                    <div key={cls} style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredClass(cls)}
+                      onMouseLeave={() => setHoveredClass(null)}
+                    >
+                      <div onClick={() => handleClassSelect(cls)}
+                        style={{ padding: '14px', borderRadius: '8px', border: `1px solid ${character.class === cls ? 'var(--primary)' : 'var(--border)'}`, background: character.class === cls ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', fontSize: '0.9rem' }}>
+                        {cls}
+                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px' }}>✦ Spellcaster</div>}
+                      </div>
+                      {hoveredClass === cls && CLASS_TOOLTIPS[cls] && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '8px', padding: '9px 12px', zIndex: 300, width: '210px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)', whiteSpace: 'normal' }}>
+                          <div style={{ fontWeight: 'bold', color: '#c4b5fd', marginBottom: '4px' }}>{cls}</div>
+                          {CLASS_TOOLTIPS[cls]}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -361,34 +493,55 @@ export default function CreateCharacter() {
           {/* ── Step 3: Roll Stats ── */}
           {step === 3 && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <div style={{ fontSize: '4rem', marginBottom: '24px', animation: rollingStats ? 'float 0.5s infinite' : 'none' }}>🎲</div>
-              <button className="btn-primary" onClick={() => {
-                setRollingStats(true);
-                setTimeout(() => { setScores(rollAbilityScores()); setRollingStats(false); }, 900);
-              }} disabled={rollingStats} style={{ marginBottom: '24px' }}>
-                {rollingStats ? 'Rolling...' : 'Roll Ability Scores (4d6 drop lowest)'}
+              <div style={{
+                fontSize: '4rem', marginBottom: '24px',
+                animation: rollingStats ? 'diceRoll 0.35s linear infinite' : 'none',
+                filter: rollingStats ? 'drop-shadow(0 0 18px rgba(139,92,246,0.8))' : 'none',
+                transition: 'filter 0.3s',
+              }}>🎲</div>
+              <button className="btn-primary" onClick={handleRollStats} disabled={rollingStats} style={{ marginBottom: '24px' }}>
+                {rollingStats ? 'Rolling…' : 'Roll Ability Scores (4d6 drop lowest)'}
               </button>
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                {([['STR', scores.strength], ['DEX', scores.dexterity], ['CON', scores.constitution], ['INT', scores.intelligence], ['WIS', scores.wisdom], ['CHA', scores.charisma]] as [string, number][]).map(([label, val]) => {
-                  const m = Math.floor((val - 10) / 2);
-                  const guide = CLASS_STAT_GUIDES[character.class]?.[label];
+                {STAT_LABELS.map((label, statIdx) => {
+                  const valKey   = STAT_KEYS[statIdx];
+                  const val      = scores[valKey];
+                  const isRevealed = revealCount > statIdx;
+                  const m        = Math.floor((val - 10) / 2);
+                  const guide    = CLASS_STAT_GUIDES[character.class]?.[label];
                   const tierStyle = guide ? getTierStyle(guide.tier) : null;
                   return (
                     <div
                       key={label}
-                      style={{ position: 'relative', padding: '14px 16px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '70px', border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, cursor: 'default', transition: 'border-color 0.2s' }}
+                      style={{
+                        position: 'relative', padding: '14px 16px', background: 'var(--card-bg)', borderRadius: '8px',
+                        textAlign: 'center', minWidth: '70px',
+                        border: `1px solid ${tierStyle && isRevealed ? tierStyle.color + "55" : "var(--border)"}`,
+                        cursor: 'default', transition: 'all 0.2s',
+                        animation: isRevealed && rollingStats === false && revealCount <= STAT_KEYS.length && revealCount === statIdx + 1
+                          ? 'statReveal 0.3s ease-out'
+                          : 'none',
+                      }}
                       onMouseEnter={() => setHoveredStat(label)}
                       onMouseLeave={() => setHoveredStat(null)}
                     >
                       <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '1.3rem' }}>{val}</div>
-                      <div style={{ fontSize: '0.75rem', color: m >= 0 ? '#22c55e' : '#ef4444' }}>{m >= 0 ? `+${m}` : m}</div>
-                      {tierStyle && (
+                      <div style={{
+                        fontWeight: 'bold', fontSize: '1.3rem',
+                        color: isRevealed ? 'white' : '#475569',
+                        transition: 'color 0.2s',
+                      }}>
+                        {isRevealed ? val : '??'}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
+                        {isRevealed ? (m >= 0 ? `+${m}` : m) : '--'}
+                      </div>
+                      {isRevealed && tierStyle && (
                         <div style={{ fontSize: '0.52rem', color: tierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
                           {tierStyle.label.toUpperCase()}
                         </div>
                       )}
-                      {hoveredStat === label && guide && tierStyle && (
+                      {hoveredStat === label && isRevealed && guide && tierStyle && (
                         <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: `1px solid ${tierStyle.color}66`, borderRadius: '7px', padding: '9px 11px', zIndex: 300, width: '170px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
                           <div style={{ fontWeight: 'bold', color: tierStyle.color, marginBottom: '4px', fontSize: '0.74rem' }}>{tierStyle.label} Stat</div>
                           {guide.reason}
@@ -399,6 +552,20 @@ export default function CreateCharacter() {
                 })}
               </div>
               <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '16px' }}>Re-roll as many times as you like before continuing.</p>
+              <style>{`
+                @keyframes diceRoll {
+                  0%   { transform: rotate(0deg)   scale(1);    }
+                  25%  { transform: rotate(90deg)  scale(0.85); }
+                  50%  { transform: rotate(180deg) scale(1);    }
+                  75%  { transform: rotate(270deg) scale(0.85); }
+                  100% { transform: rotate(360deg) scale(1);    }
+                }
+                @keyframes statReveal {
+                  0%   { transform: scale(0.8); opacity: 0.3; }
+                  60%  { transform: scale(1.12); }
+                  100% { transform: scale(1);   opacity: 1;   }
+                }
+              `}</style>
             </div>
           )}
 
@@ -437,7 +604,6 @@ export default function CreateCharacter() {
                 )}
               </div>
 
-              {/* Cantrips */}
               {spellCounts.cantrips > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -461,7 +627,6 @@ export default function CreateCharacter() {
                 </div>
               )}
 
-              {/* Level 1 Spells */}
               {spellCounts.spells > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>

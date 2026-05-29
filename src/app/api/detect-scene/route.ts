@@ -75,26 +75,41 @@ const SCENE_FALLBACKS: Record<string, string[]> = {
   arena:             ["ruins", "castle"],
 };
 
-const SCENE_SYSTEM = `You are a scene classifier for a fantasy RPG. Read the DM narrative and return EXACTLY one of these scene keys:
+const SCENE_SYSTEM = `You are a scene classifier for a D&D fantasy RPG. Read the DM narrative and return EXACTLY one scene key.
+
+AVAILABLE KEYS (pick the single best match):
 tavern, dungeon, forest, cave, ruins, castle, street, shop, temple, wilderness, ship, graveyard, prison, arena, port, desert, mountain, swamp, library, village
 
-Return ONLY the single word. No explanation, no punctuation.`;
+CLASSIFICATION RULES — read carefully:
+- INDOOR scenes: if characters are INSIDE a structure (inn, tavern, great hall, throne room, library, dungeon corridor, prison cell, temple interior, shop, underground cave) → use the indoor key (tavern, dungeon, castle, library, temple, shop, prison, cave)
+- OUTDOOR ruins: crumbling walls open to the sky, collapsed structures, outdoor rubble → ruins
+- INDOOR ruins-style: an ancient underground chamber, sealed vault, or intact ruin interior → dungeon or castle
+- Wilderness ONLY if truly outdoors with no primary structure (open road, hillside, plains, jungle)
+- "ancient hall", "stone chamber", "great hall", "corridor", "vaulted ceiling" → castle or dungeon (INDOOR), NOT ruins
+- Default to dungeon for any underground or enclosed ancient setting
+
+Return ONLY the single key word. No explanation, no punctuation.`;
 
 export async function POST(req: NextRequest) {
   let currentScene = "wilderness";
   try {
-    const body = (await req.json()) as { narrative: string; currentScene: string; isCombat?: boolean };
-    const { narrative, isCombat } = body;
+    const body = (await req.json()) as { narrative: string; currentScene: string; isCombat?: boolean; campaignDescription?: string };
+    const { narrative, isCombat, campaignDescription } = body;
     currentScene = body.currentScene ?? "wilderness";
 
     if (!narrative?.trim()) return Response.json({ sceneName: currentScene });
+
+    // Build context: campaign description gives the AI a frame of reference
+    const contextPrefix = campaignDescription
+      ? `Campaign setting: ${campaignDescription.slice(0, 200)}\n\nCurrent narrative: `
+      : "";
 
     // Step 1: Detect base scene type
     const detect = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
       max_tokens: 10,
       system:     SCENE_SYSTEM,
-      messages:   [{ role: "user", content: narrative.slice(0, 800) }],
+      messages:   [{ role: "user", content: `${contextPrefix}${narrative.slice(0, 700)}` }],
     });
 
     const raw      = detect.content[0].type === "text" ? detect.content[0].text.trim().toLowerCase() : "";

@@ -36,7 +36,7 @@ type Character = {
   spells_prepared?: string[];
   status_effects?: string[];
   spell_slots_used?: Record<number, number>;
-  inventory: { gold: number; weapons: string[]; items: string[] };
+  inventory: { gold: number; cp?: number; sp?: number; ep?: number; pp?: number; weapons: string[]; items: string[] };
 };
 
 type PresencePlayer = {
@@ -167,6 +167,21 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Petrified:     { bg: "rgba(163,163,163,0.2)",   color: "#a3a3a3" },
 };
 
+const STATUS_DESCRIPTIONS: Record<string, string> = {
+  Unconscious: "Incapacitated, can't move or speak. Fails all STR/DEX saves. Attacks against have advantage; hits within 5ft are crits.",
+  Dead:        "The character has died. Only Revivify, Raise Dead, or Resurrection can bring them back.",
+  Poisoned:    "Disadvantage on attack rolls and ability checks.",
+  Blinded:     "Can't see. Attack rolls have disadvantage; attacks against have advantage.",
+  Frightened:  "Disadvantage on ability checks and attacks while the source of fear is in sight. Can't move closer to it.",
+  Paralyzed:   "Incapacitated, can't move or speak. Fails STR/DEX saves. Attacks within 5ft are automatic crits.",
+  Stunned:     "Incapacitated, can't move, and can only speak falteringly. Fails STR/DEX saves. Attacks have advantage.",
+  Prone:       "Must crawl to move; standing costs half speed. Melee attacks have advantage; ranged attacks have disadvantage.",
+  Charmed:     "Can't attack the charmer. The charmer has advantage on social ability checks against the target.",
+  Exhausted:   "Stacking penalties: 1=disadv. on checks, 3=disadv. on attacks & saves, 5=max HP halved, 6=death.",
+  Restrained:  "Speed becomes 0. Attack rolls have disadvantage; attacks against have advantage. Disadvantage on DEX saves.",
+  Petrified:   "Transformed to stone. Incapacitated, immune to poison & disease, resistance to all damage.",
+};
+
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
   const params = use(props.params);
@@ -233,13 +248,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [tradeGold,        setTradeGold]          = useState(0);
   const [incomingTrade,    setIncomingTrade]      = useState<TradeOffer | null>(null);
   const [tradingItemKey,   setTradingItemKey]     = useState<string | null>(null);
+  const [tradingCurrency,  setTradingCurrency]   = useState(false);
+  const [currencyAmount,   setCurrencyAmount]    = useState("");
+  const [currencyDenom,    setCurrencyDenom]     = useState<"cp"|"sp"|"ep"|"gp"|"pp">("gp");
+  const [currencyTarget,   setCurrencyTarget]    = useState<Character | null>(null);
 
   // Stat tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
 
-  // Item tooltip hover
+  // Item / status tooltip hover
   const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
   const [hoveredSpell,     setHoveredSpell]       = useState<string | null>(null);
+  const [hoveredStatus,    setHoveredStatus]      = useState<string | null>(null);
 
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
@@ -422,11 +442,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           fetch("/api/detect-scene", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ narrative: lastDm.content, currentScene: "" }),
+            body: JSON.stringify({ narrative: lastDm.content, currentScene: "", campaignDescription: campaignDescriptionRef.current }),
           })
             .then(r => r.json())
             .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
-              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); }
+              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName); }
             })
             .catch(() => {});
         }
@@ -626,9 +646,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setStateNotice(`${p.fromCharName} gave you ${p.itemName}!`);
         setTimeout(() => setStateNotice(null), 4000);
       })
+      .on("broadcast", { event: "currency_gifted" }, ({ payload }) => {
+        const p = payload as { toUserId: string; toCharId: string; amount: number; denom: "cp"|"sp"|"ep"|"gp"|"pp"; fromCharName: string };
+        if (p.toUserId !== userIdRef.current) return;
+        const char = characterRef.current;
+        if (!char || char.id !== p.toCharId) return;
+        const denomKey = p.denom === "gp" ? "gold" : p.denom;
+        const cur = (char.inventory[denomKey as keyof typeof char.inventory] as number | undefined) ?? 0;
+        const newInv = { ...char.inventory, [denomKey]: cur + p.amount };
+        setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+        setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        setStateNotice(`${p.fromCharName} sent you ${p.amount}${p.denom}!`);
+        setTimeout(() => setStateNotice(null), 4000);
+      })
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
-        if (payload.imageUrl) { currentSceneRef.current = payload.sceneName; setCurrentSceneUrl(payload.imageUrl); }
+        if (payload.imageUrl) {
+          currentSceneRef.current = payload.sceneName;
+          setCurrentSceneUrl(payload.imageUrl);
+          (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(payload.sceneName as string);
+        }
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
@@ -668,6 +706,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingContent]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
+
+  // Auto-open dice roller when DM asks this player to roll
+  useEffect(() => {
+    if (diceRollTarget && character && diceRollTarget.toLowerCase() === character.name.toLowerCase()) {
+      setShowDice(true);
+    }
+  }, [diceRollTarget, character]);
 
   // ── State changes (HP, gold, items, XP) ──────────────────────────────────────
   const applyStateChange = useCallback(async (change: StateChange) => {
@@ -1287,13 +1332,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       // Scene detection (non-blocking — updates background when ready)
       setSceneLoading(true);
-      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: enemiesRef.current.some(e => !e.is_defeated) }) })
+      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: enemiesRef.current.some(e => !e.is_defeated), campaignDescription: campaignDescriptionRef.current }) })
         .then(r => r.json())
         .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => {
           if (imageUrl && sceneName !== currentSceneRef.current) {
             currentSceneRef.current = sceneName;
             setCurrentSceneUrl(imageUrl);
             channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
+            (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName);
           }
         })
 
@@ -1311,12 +1357,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   };
 
   // ── Player send ───────────────────────────────────────────────────────────────
-  const handleSend = async (actionText?: string) => {
+  const handleSend = async (actionText?: string, bypassTurn = false) => {
     const text = (actionText ?? input).trim();
     if (!text || isTyping) return;
     const order    = turnOrderRef.current;
     const isMyTurn = order.length === 0 || order[currentTurnIndexRef.current] === userId || characterRef.current?.id === partyLeaderId;
-    if (!isMyTurn) return;
+    if (!isMyTurn && !bypassTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
     setDiceRollTarget(null); // clear roll highlight when player acts
@@ -1441,6 +1487,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTimeout(() => setStateNotice(null), 3000);
   }, []);
 
+  const giftCurrency = useCallback(async (amount: number, denom: "cp"|"sp"|"ep"|"gp"|"pp", toChar: Character) => {
+    const char = characterRef.current;
+    if (!char || amount <= 0) return;
+    const denomKey = denom === "gp" ? "gold" : denom;
+    const current = (char.inventory[denomKey as keyof typeof char.inventory] as number | undefined) ?? 0;
+    if (amount > current) { setStateNotice(`Not enough ${denom}.`); setTimeout(() => setStateNotice(null), 2500); return; }
+    const newInv = { ...char.inventory, [denomKey]: current - amount };
+    setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
+    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    channelRef.current?.send({ type: "broadcast", event: "currency_gifted", payload: {
+      toUserId: toChar.user_id, toCharId: toChar.id, amount, denom, fromCharName: char.name,
+    }});
+    setTradingCurrency(false);
+    setCurrencyAmount("");
+    setStateNotice(`${amount}${denom} sent to ${toChar.name}.`);
+    setTimeout(() => setStateNotice(null), 3000);
+  }, []);
+
   const handleUseItem = useCallback(async (itemName: string) => {
     const char = characterRef.current;
     if (!char) return;
@@ -1538,7 +1603,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const handleDiceResult = (result: number, diceType: number) => {
     setShowDice(false);
     setRequiredDiceType(null);
-    handleSend(`[Rolled a ${result} on a d${diceType}]`);
+    handleSend(`[Rolled a ${result} on a d${diceType}]`, true);
   };
 
   const handleGuestJoin = async () => {
@@ -1590,9 +1655,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
         if (lastDm) {
           resumeNarrationRef.current = lastDm.content;
-          fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: lastDm.content, currentScene: "" }) })
+          fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: lastDm.content, currentScene: "", campaignDescription: campaignDescriptionRef.current }) })
             .then(r => r.json())
-            .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => { if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); } })
+            .then(({ sceneName, imageUrl }: { sceneName: string; imageUrl: string | null }) => { if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName); } })
             .catch(() => {});
         }
       }
@@ -1708,7 +1773,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       {!sessionStarted && !showGuestJoin && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
           <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
-            <div style={{ fontSize: "3.5rem", marginBottom: "24px" }}>⚔️</div>
+            {character?.portrait_url ? (
+              <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${CLASS_COLORS[character.class] ?? "rgba(139,92,246,0.7)"}`, boxShadow: `0 0 24px ${CLASS_COLORS[character.class] ?? "rgba(139,92,246,0.4)"}40`, margin: "0 auto 24px", flexShrink: 0 }}>
+                <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+              </div>
+            ) : (
+              <div style={{ fontSize: "3.5rem", marginBottom: "24px" }}>
+                {character?.class === "Wizard" ? "🧙" : character?.class === "Rogue" ? "🗡️" : character?.class === "Cleric" ? "✝" : character?.class === "Ranger" ? "🏹" : character?.class === "Druid" ? "🌿" : character?.class === "Bard" ? "🎵" : "⚔️"}
+              </div>
+            )}
             <h1 style={{ fontSize: "2.2rem", fontWeight: "bold", marginBottom: "10px" }}>Your adventure awaits</h1>
             <p style={{ color: "#64748b", marginBottom: "40px", lineHeight: 1.6 }}>The torchlight flickers as your party gathers in the shadows…</p>
             <button className="btn-primary"
@@ -2109,7 +2182,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(s => {
                           const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
-                          return <span key={s} style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em" }}>{s}</span>;
+                          const hkey = `${char.id}-${s}`;
+                          return (
+                            <span key={s} style={{ position: "relative" }}
+                              onMouseEnter={() => setHoveredStatus(hkey)}
+                              onMouseLeave={() => setHoveredStatus(null)}
+                            >
+                              <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
+                              {hoveredStatus === hkey && STATUS_DESCRIPTIONS[s] && (
+                                <span style={{ position: "absolute", bottom: "calc(100% + 5px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", zIndex: 600, width: "190px", pointerEvents: "none", fontSize: "0.68rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal", display: "block", fontWeight: "normal" }}>
+                                  <span style={{ fontWeight: "bold", color: st.color, marginBottom: "3px", display: "block" }}>{s}</span>
+                                  {STATUS_DESCRIPTIONS[s]}
+                                </span>
+                              )}
+                            </span>
+                          );
                         })}
                       </div>
                     )}
@@ -2313,7 +2400,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                     {character.status_effects!.map(s => {
                       const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
-                      return <span key={s} style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40` }}>{s}</span>;
+                      return (
+                        <span key={s} style={{ position: "relative" }}
+                          onMouseEnter={() => setHoveredStatus(`sheet-${s}`)}
+                          onMouseLeave={() => setHoveredStatus(null)}
+                        >
+                          <span style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
+                          {hoveredStatus === `sheet-${s}` && STATUS_DESCRIPTIONS[s] && (
+                            <span style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", zIndex: 600, width: "210px", pointerEvents: "none", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal", display: "block", fontWeight: "normal" }}>
+                              <span style={{ fontWeight: "bold", color: st.color, marginBottom: "4px", display: "block" }}>{s}</span>
+                              {STATUS_DESCRIPTIONS[s]}
+                            </span>
+                          )}
+                        </span>
+                      );
                     })}
                   </div>
                 )}
@@ -2529,9 +2629,61 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 {/* Inventory with drop buttons */}
                 <div>
                   <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Inventory</h3>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", marginBottom: "6px", fontSize: "0.85rem" }}>
-                    <span>Gold</span>
-                    <span style={{ color: "#fbbf24", fontWeight: "bold" }}>{character.inventory?.gold ?? 0}gp</span>
+                  {/* Currency */}
+                  <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "6px", padding: "8px 10px", marginBottom: "6px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "0.78rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }}>Currency</span>
+                      {campaignParty.filter(c => c.id !== character.id).length > 0 && (
+                        <button onClick={() => { setTradingCurrency(!tradingCurrency); setCurrencyAmount(""); setCurrencyTarget(null); }}
+                          style={{ fontSize: "0.62rem", color: tradingCurrency ? "#a78bfa" : "#64748b", background: tradingCurrency ? "rgba(139,92,246,0.15)" : "none", border: tradingCurrency ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 6px" }}>
+                          {tradingCurrency ? "cancel" : "send"}
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: "0.82rem" }}>
+                      {([
+                        { key: "pp" as const, color: "#e2e8f0", amount: character.inventory?.pp ?? 0 },
+                        { key: "gp" as const, color: "#fbbf24", amount: character.inventory?.gold ?? 0 },
+                        { key: "ep" as const, color: "#34d399", amount: character.inventory?.ep ?? 0 },
+                        { key: "sp" as const, color: "#94a3b8", amount: character.inventory?.sp ?? 0 },
+                        { key: "cp" as const, color: "#f97316", amount: character.inventory?.cp ?? 0 },
+                      ]).map(({ key, color, amount }) => (
+                        <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1 }}>
+                          <span style={{ color, fontWeight: "bold" }}>{amount}</span>
+                          <span style={{ color: "#64748b", fontSize: "0.72rem" }}>{key}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {tradingCurrency && (
+                      <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                        <div style={{ display: "flex", gap: "5px", alignItems: "center", marginBottom: "6px", flexWrap: "wrap" }}>
+                          <input type="number" min={1} value={currencyAmount} onChange={e => setCurrencyAmount(e.target.value)} placeholder="Amt"
+                            style={{ width: "60px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: "0.78rem" }} />
+                          <select value={currencyDenom} onChange={e => setCurrencyDenom(e.target.value as "cp"|"sp"|"ep"|"gp"|"pp")}
+                            style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 5px", fontSize: "0.78rem" }}>
+                            <option value="pp">pp</option>
+                            <option value="gp">gp</option>
+                            <option value="ep">ep</option>
+                            <option value="sp">sp</option>
+                            <option value="cp">cp</option>
+                          </select>
+                          <span style={{ color: "#475569", fontSize: "0.72rem" }}>to</span>
+                          <select value={currencyTarget?.id ?? ""} onChange={e => setCurrencyTarget(campaignParty.find(c => c.id === e.target.value) ?? null)}
+                            style={{ flex: 1, minWidth: "80px", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: "0.78rem" }}>
+                            <option value="">Select…</option>
+                            {campaignParty.filter(c => c.id !== character.id).map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => { const amt = parseInt(currencyAmount, 10); if (!isNaN(amt) && amt > 0 && currencyTarget) giftCurrency(amt, currencyDenom, currencyTarget); }}
+                          disabled={!currencyAmount || !currencyTarget || parseInt(currencyAmount, 10) <= 0}
+                          style={{ width: "100%", padding: "5px", background: "rgba(139,92,246,0.2)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "4px", color: "#c4b5fd", fontSize: "0.78rem", cursor: "pointer", opacity: (!currencyAmount || !currencyTarget || parseInt(currencyAmount,10) <= 0) ? 0.4 : 1 }}>
+                          Send Currency
+                        </button>
+                      </div>
+                    )}
                   </div>
                   {[
                     ...(character.inventory?.weapons ?? []).map(w => ({ name: w, slot: "weapon" as const })),

@@ -3,18 +3,123 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 
-const TAVERN_TRACK       = "/Tavern_Theme.mp3";
-const TAVERN_MUSIC_POOL  = [TAVERN_TRACK];
+// ── Music pools ───────────────────────────────────────────────────────────────
+// All archive.org URLs serve via HTTP 302 → CDN; <audio> follows redirects.
+const MIST_CROWN = "https://archive.org/download/the-eldritch-chime-of-the-ashen-fortress-wkylnl/Mist%20Crown%20-%20The%20Eldritch%20Chime%20Of%20The%20Ashen%20Fortress%20-%20";
+const MEDIEVAL   = "https://archive.org/download/medieval-instrumental-background-music/";
 
-// ── Dungeon music pool ────────────────────────────────────────────────────────
-const DUNGEON_MUSIC_POOL = [
-  "https://archive.org/download/medieval-instrumental-background-music/Cold%20Journey.mp3",
-];
+const POOLS: Record<string, string[]> = {
+  tavern: [
+    "/Tavern_Theme.mp3",
+    `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
+    `${MEDIEVAL}Celebration.mp3`,
+    "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
+  ],
+
+  // Social hubs (tavern scene, shop, port, village, street)
+  social: [
+    "/Tavern_Theme.mp3",
+    `${MEDIEVAL}Dancing%20at%20the%20Inn.mp3`,
+    `${MEDIEVAL}Celebration.mp3`,
+    "https://archive.org/download/minstrel-voyage-medieval-tavern-music-the-medieval-serenade/Minstrel%20Voyage%20%E2%80%94%20Medieval%20Tavern%20Music%20TheMedievalSerenade.mp3",
+  ],
+
+  // Active combat
+  combat: [
+    `${MIST_CROWN}06%20Din%20of%20Battle.mp3`,
+    "https://archive.org/download/battle-ia-item/battle-orchestra-music.mp3",
+    "https://archive.org/download/battle-ia-item/epic-cinematic-battle-theme.mp3",
+    "https://archive.org/download/battle-ia-item/to-the-death.mp3",
+  ],
+
+  // Dark / underground (dungeon, cave, prison, graveyard)
+  dungeon: [
+    `${MIST_CROWN}03%20Flickering%20Torchlight.mp3`,
+    `${MIST_CROWN}04%20Cursed%20Halls.mp3`,
+    `${MIST_CROWN}08%20Twisting%20Corridors.mp3`,
+    `${MIST_CROWN}10%20Red%20Abyss.mp3`,
+    "https://archive.org/download/dark-fantasy-music-a-blackened-heart/Dark%20Fantasy%20Music%20-%20A%20Blackened%20Heart.mp3",
+    `${MEDIEVAL}Cold%20Journey.mp3`,
+  ],
+
+  // Nature / outdoors (forest, wilderness, swamp, mountain, desert)
+  nature: [
+    `${MEDIEVAL}Cold%20Journey.mp3`,
+    `${MEDIEVAL}Nordic%20Wist.mp3`,
+    "https://archive.org/download/jamendo-190464/01-1720369-Sapere%20Aude-Fantasy%20Forest.mp3",
+    "https://archive.org/download/jamendo-190464/03-1720368-Sapere%20Aude-Elven%20Dance.mp3",
+  ],
+
+  // Mystical / sacred (temple, library, ruins)
+  mystical: [
+    `${MIST_CROWN}05%20Long%20Ago%2C%20When%20the%20Light%20Fought%20Shadow.mp3`,
+    "https://archive.org/download/dark-fantasy-music-the-witch/Dark%20Fantasy%20Music%20-%20The%20Witch.mp3",
+    "https://archive.org/download/magic-fantasy-music-the-last-of-her-kind/Magic%20Fantasy%20Music%20-%20The%20Last%20of%20Her%20Kind.mp3",
+    "https://archive.org/download/jamendo-190464/04-1720366-Sapere%20Aude-Mystic%20Swamp.mp3",
+  ],
+
+  // Majestic / grand (castle, arena)
+  epic: [
+    `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
+    `${MIST_CROWN}13%20Citadel%20of%20Mist.mp3`,
+    `${MEDIEVAL}The%20Britons.mp3`,
+    `${MEDIEVAL}Royal%20Coupling.mp3`,
+    "https://archive.org/download/epic-fantasy-music-the-wolf-and-the-moon/Epic%20Fantasy%20Music%20-%20The%20Wolf%20and%20the%20Moon.mp3",
+  ],
+
+  // Maritime (ship)
+  sea: [
+    `${MEDIEVAL}Cold%20Journey.mp3`,
+    `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
+  ],
+};
+
+// Maps detect-scene keys → pool name
+const SCENE_TO_POOL: Record<string, string> = {
+  tavern_combat:     "combat",
+  dungeon_combat:    "combat",
+  forest_combat:     "combat",
+  cave_combat:       "combat",
+  ruins_combat:      "combat",
+  castle_combat:     "combat",
+  street_combat:     "combat",
+  temple_combat:     "combat",
+  wilderness_combat: "combat",
+  ship_combat:       "combat",
+  arena:             "combat",
+  dungeon:           "dungeon",
+  cave:              "dungeon",
+  prison:            "dungeon",
+  graveyard:         "dungeon",
+  forest:            "nature",
+  wilderness:        "nature",
+  swamp:             "nature",
+  mountain:          "nature",
+  desert:            "nature",
+  temple:            "mystical",
+  library:           "mystical",
+  ruins:             "mystical",
+  tavern:            "social",
+  shop:              "social",
+  port:              "social",
+  village:           "social",
+  street:            "social",
+  castle:            "epic",
+  ship:              "sea",
+};
+
+const POOL_LABELS: Record<string, string> = {
+  tavern: "Tavern", social: "Town", combat: "Combat", dungeon: "Dungeon",
+  nature: "Wilds", mystical: "Mystical", epic: "Castle", sea: "Sea",
+};
 
 const MAX_SKIP = 6;
 
 declare global {
-  interface Window { __dndMusicPlay?: () => void; }
+  interface Window {
+    __dndMusicPlay?: () => void;
+    __dndSetMusicScene?: (scene: string) => void;
+  }
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -38,34 +143,83 @@ export function MusicPlayer() {
 
   const [playing,   setPlaying]   = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [volume,    setVolume]    = useState(0.25);
+  const [volume,    setVolume]    = useState(0.15);
+  const [poolLabel, setPoolLabel] = useState("Tavern");
 
-  const targetVolume = useRef(0.25);
-  const activeTrack  = useRef<"tavern" | "dungeon">("tavern");
-  const fadeTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const musicQueue   = useRef<string[]>([]);
-  const musicErrors  = useRef(0);
+  const targetVolume  = useRef(0.15);
+  const activePoolKey = useRef<string>("tavern");
+  const fadeTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const musicQueue    = useRef<string[]>([]);
+  const musicErrors   = useRef(0);
 
-  const trackKey  = pathname?.startsWith("/campaign") ? "dungeon" : "tavern";
-  const musicPool = trackKey === "dungeon" ? DUNGEON_MUSIC_POOL : TAVERN_MUSIC_POOL;
+  const isOnCampaign = !!pathname?.startsWith("/campaign");
+  const defaultPool  = isOnCampaign ? "dungeon" : "tavern";
 
-  // ── Music helpers ────────────────────────────────────────────────────────────
+  const getPool = (key: string) => POOLS[key] ?? POOLS.dungeon;
+
+  const clearFade = useCallback(() => {
+    if (fadeTimer.current) { clearInterval(fadeTimer.current); fadeTimer.current = null; }
+  }, []);
+
+  // ── Load and play a single track ─────────────────────────────────────────────
   const loadAndPlay = useCallback((src: string, startVol?: number) => {
     const audio = audioRef.current;
     if (!audio || !src) return;
-    audio.src = src;
+    audio.src    = src;
     audio.volume = startVol ?? targetVolume.current;
     audio.load();
     audio.play().catch(() => {});
   }, []);
 
   const playNextMusic = useCallback((startVol?: number) => {
-    const { src, queue } = nextFrom(musicQueue.current, musicPool);
+    const pool = getPool(activePoolKey.current);
+    const { src, queue } = nextFrom(musicQueue.current, pool);
     musicQueue.current = queue;
     loadAndPlay(src, startVol);
-  }, [musicPool, loadAndPlay]);
+  }, [loadAndPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Expose global play handle ─────────────────────────────────────────────
+  // ── Cross-fade to a new pool ──────────────────────────────────────────────────
+  const fadeTo = useCallback((targetPool: string) => {
+    if (activePoolKey.current === targetPool) return;
+    const pool  = getPool(targetPool);
+    const audio = audioRef.current;
+
+    activePoolKey.current = targetPool;
+    musicQueue.current    = [];
+    musicErrors.current   = 0;
+    setPoolLabel(POOL_LABELS[targetPool] ?? targetPool);
+
+    if (!audio || audio.paused) return;
+
+    clearFade();
+    fadeTimer.current = setInterval(() => {
+      const a = audioRef.current;
+      if (!a) { clearFade(); return; }
+      if (a.volume > 0.04) {
+        a.volume = Math.max(0, a.volume - 0.04);
+      } else {
+        clearFade();
+        const { src, queue } = nextFrom(musicQueue.current, pool);
+        musicQueue.current = queue;
+        a.src    = src;
+        a.volume = 0;
+        a.load();
+        a.play().catch(() => {});
+        fadeTimer.current = setInterval(() => {
+          const b = audioRef.current;
+          if (!b) { clearFade(); return; }
+          if (b.volume < targetVolume.current - 0.03) {
+            b.volume = Math.min(targetVolume.current, b.volume + 0.04);
+          } else {
+            b.volume = targetVolume.current;
+            clearFade();
+          }
+        }, 40);
+      }
+    }, 40);
+  }, [clearFade]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Expose global handles ───────────────────────────────────────────────────
   useEffect(() => {
     window.__dndMusicPlay = () => {
       const audio = audioRef.current;
@@ -74,42 +228,19 @@ export function MusicPlayer() {
       if (!audio.src) playNextMusic();
       else audio.play().catch(() => {});
     };
-    return () => { delete window.__dndMusicPlay; };
-  }, [playNextMusic]);
 
-  // ── Cross-fade on route change ───────────────────────────────────────────────
+    window.__dndSetMusicScene = (scene: string) => {
+      const pool = SCENE_TO_POOL[scene] ?? "dungeon";
+      fadeTo(pool);
+    };
+
+    return () => { delete window.__dndMusicPlay; delete window.__dndSetMusicScene; };
+  }, [playNextMusic, fadeTo]);
+
+  // ── Switch pool on route change (campaign ↔ dashboard) ──────────────────────
   useEffect(() => {
-    if (activeTrack.current === trackKey) return;
-    activeTrack.current = trackKey;
-    musicQueue.current  = [];
-    musicErrors.current = 0;
-
-    const audio = audioRef.current;
-    if (!audio || audio.paused) return;
-
-    if (fadeTimer.current) clearInterval(fadeTimer.current);
-
-    fadeTimer.current = setInterval(() => {
-      if (!audioRef.current) return;
-      if (audioRef.current.volume > 0.04) {
-        audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.04);
-      } else {
-        if (fadeTimer.current) clearInterval(fadeTimer.current);
-        playNextMusic(0);
-        fadeTimer.current = setInterval(() => {
-          if (!audioRef.current) return;
-          if (audioRef.current.volume < targetVolume.current - 0.03) {
-            audioRef.current.volume = Math.min(targetVolume.current, audioRef.current.volume + 0.04);
-          } else {
-            audioRef.current.volume = targetVolume.current;
-            if (fadeTimer.current) clearInterval(fadeTimer.current);
-          }
-        }, 40);
-      }
-    }, 40);
-
-    return () => { if (fadeTimer.current) clearInterval(fadeTimer.current); };
-  }, [trackKey, playNextMusic]);
+    fadeTo(defaultPool);
+  }, [defaultPool, fadeTo]);
 
   // ── Sync volume knob ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -131,15 +262,17 @@ export function MusicPlayer() {
     }
   }, [playNextMusic]);
 
+  const isTavern = activePoolKey.current === "tavern" || activePoolKey.current === "social";
+
   return (
     <>
       <audio
         ref={audioRef}
         preload="none"
-        loop={trackKey === "tavern"}
+        loop={isTavern}
         onPlay={()  => { setPlaying(true); setLoadError(false); musicErrors.current = 0; }}
         onPause={()  => { setPlaying(false); }}
-        onEnded={() => { if (trackKey !== "tavern") playNextMusic(); }}
+        onEnded={() => { if (!isTavern) playNextMusic(); }}
         onError={() => {
           musicErrors.current++;
           if (musicErrors.current >= MAX_SKIP) {
@@ -196,7 +329,7 @@ export function MusicPlayer() {
         {playing && !loadError && (
           <>
             <span style={{ fontSize: "0.65rem", color: "#64748b", whiteSpace: "nowrap" }}>
-              {trackKey === "dungeon" ? "Dungeon" : "Tavern"}
+              {poolLabel}
             </span>
             <input
               type="range"
