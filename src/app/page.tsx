@@ -97,26 +97,42 @@ export default async function Home() {
         <div style={{ position: "absolute", top: "5%", left: "8%", width: "500px", height: "500px", background: "var(--primary)", filter: "blur(180px)", opacity: 0.13, zIndex: -1, borderRadius: "50%" }} />
         <div style={{ position: "absolute", bottom: "5%", right: "8%", width: "420px", height: "420px", background: "#f59e0b", filter: "blur(180px)", opacity: 0.07, zIndex: -1, borderRadius: "50%" }} />
 
-        {/* Dragon — looms to the left of the headline */}
+        {/* Dragon — outer div handles the flip, inner handles float so transforms don't conflict */}
         <div style={{
           position: "absolute",
-          left: "6%",
-          top: "32%",
-          transform: "translateY(-50%) scaleX(-1)",
-          fontSize: "clamp(200px, 24vw, 340px)",
-          lineHeight: 1,
-          opacity: 0.18,
-          filter: "drop-shadow(0 0 48px rgba(251,146,60,0.9)) drop-shadow(0 0 100px rgba(239,68,68,0.55)) drop-shadow(0 0 4px rgba(251,191,36,0.8))",
-          animation: "float 5s ease-in-out infinite",
-          animationDelay: "0.5s",
+          left: "3%",
+          top: "9%",
+          transform: "scaleX(-1)",
           userSelect: "none",
           pointerEvents: "none",
           zIndex: 0,
         }}>
-          🐉
+          <div className="animate-float" style={{
+            fontSize: "clamp(180px, 21vw, 300px)",
+            lineHeight: 1,
+            opacity: 0.2,
+            filter: "drop-shadow(0 0 48px rgba(251,146,60,0.9)) drop-shadow(0 0 100px rgba(239,68,68,0.55)) drop-shadow(0 0 4px rgba(251,191,36,0.8))",
+            animationDelay: "0.5s",
+          }}>🐉</div>
         </div>
-        {/* Faint fire glow behind the dragon */}
-        <div style={{ position: "absolute", left: "6%", top: "32%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
+
+        {/* Ramen bowl — in front of the dragon's face (right side after flip) */}
+        <div className="animate-float" style={{
+          position: "absolute",
+          left: "calc(3% + clamp(150px, 18vw, 250px))",
+          top: "calc(9% + clamp(110px, 13vw, 180px))",
+          fontSize: "clamp(48px, 5.5vw, 72px)",
+          lineHeight: 1,
+          opacity: 0.22,
+          filter: "drop-shadow(0 0 20px rgba(251,146,60,0.75)) drop-shadow(0 0 8px rgba(251,191,36,0.6))",
+          animationDelay: "1.2s",
+          userSelect: "none",
+          pointerEvents: "none",
+          zIndex: 0,
+        }}>🍜</div>
+
+        {/* Fire glow behind the dragon */}
+        <div style={{ position: "absolute", left: "3%", top: "9%", width: "clamp(200px, 25vw, 360px)", height: "clamp(200px, 25vw, 360px)", background: "radial-gradient(circle, rgba(251,146,60,0.16) 0%, rgba(239,68,68,0.07) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
