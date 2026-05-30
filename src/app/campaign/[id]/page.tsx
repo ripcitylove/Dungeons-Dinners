@@ -825,6 +825,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
+        // Focus the party panel on the character whose turn the DM just announced
+        if (campaignPartyRef.current.length > 1) {
+          const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
+          const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
+          if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+        }
         // Generate suggestions for this player if it's now their turn
         const order = turnOrderRef.current;
         const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === characterRef.current?.id;
@@ -842,6 +848,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.userId === userIdRef.current) return;
         setCurrentTurnIndex(payload.newIndex);
         currentTurnIndexRef.current = payload.newIndex;
+        // Focus the party panel on the newly active character
+        if (campaignPartyRef.current.length > 1) {
+          const turnCharId = turnOrderRef.current[payload.newIndex];
+          const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
+          if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+        }
         // Generate suggestions if the turn just landed on this player
         const order = turnOrderRef.current;
         const isNowMyTurn = order.length <= 1 || order[payload.newIndex] === characterRef.current?.id;
@@ -1795,6 +1807,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       ]).then(({ error }) => { if (error) console.error("[campaign] save:", error); });
 
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userId, content: full } });
+
+      // Focus the party panel on the character whose turn the DM just announced
+      if (campaignPartyRef.current.length > 1) {
+        const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
+        const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
+        if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+      }
 
       // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
       if (!isOpeningScene) {
