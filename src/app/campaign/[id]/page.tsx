@@ -2347,12 +2347,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       position: "relative",
                     }}
                   >
-                    {/* Portrait */}
-                    <div style={{ width: "100%", aspectRatio: "1", borderRadius: "7px", overflow: "hidden", marginBottom: "6px", background: "rgba(0,0,0,0.5)", border: `1.5px solid ${isTargeted ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.06)"}`, position: "relative" }}>
+                    {/* Portrait — padding-bottom keeps the box square without relying on aspect-ratio CSS */}
+                    <div style={{ width: "100%", paddingBottom: "100%", borderRadius: "7px", overflow: "hidden", marginBottom: "6px", background: "rgba(0,0,0,0.5)", border: `1.5px solid ${isTargeted ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.06)"}`, position: "relative" }}>
                       {e.portrait_url ? (
-                        <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover", filter: e.is_defeated ? "grayscale(1)" : "none" }} />
+                        <img src={e.portrait_url} alt={e.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", filter: e.is_defeated ? "grayscale(1)" : "none" }} />
                       ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>
+                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>
                           {e.portrait_emoji}
                         </div>
                       )}
@@ -2891,11 +2891,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                 {/* Identity with portrait */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
+                  <div style={{ width: "100%", paddingBottom: "75%", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", position: "relative", flexShrink: 0 }}>
                     {character.portrait_url ? (
-                      <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                      <img src={character.portrait_url} alt={character.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                     ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
                     )}
                   </div>
                   <div style={{ textAlign: "center" }}>

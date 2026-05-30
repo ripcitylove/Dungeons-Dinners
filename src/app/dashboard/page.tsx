@@ -609,11 +609,11 @@ export default function Dashboard() {
                       onClick={() => setSelectedChar(char)}
                       style={{ padding: "10px", cursor: "pointer", display: "flex", flexDirection: "column", gap: "7px" }}
                     >
-                      {/* Portrait */}
-                      <div style={{ width: "100%", aspectRatio: "1", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: `2px solid ${classColor}33`, position: "relative", flexShrink: 0 }}>
+                      {/* Portrait — padding-bottom keeps the box square without relying on aspect-ratio CSS */}
+                      <div style={{ width: "100%", paddingBottom: "100%", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: `2px solid ${classColor}33`, position: "relative", flexShrink: 0 }}>
                         {char.portrait_url
-                          ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <div style={{ width: "100%", height: "100%", background: `${classColor}10` }} />
+                          ? <img src={char.portrait_url} alt={char.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                          : <div style={{ position: "absolute", inset: 0, background: `${classColor}10` }} />
                         }
                         <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.62rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3 }}>
                           Lv {char.level}
