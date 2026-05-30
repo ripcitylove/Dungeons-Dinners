@@ -362,7 +362,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const characterRef         = useRef<Character | null>(null);
   const channelRef           = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef            = useRef<string | null>(null);
-  const currentNarElRef      = useRef<HTMLAudioElement | null>(null);
+  const narAudioRef          = useRef<HTMLAudioElement | null>(null);
   const audioPlayingRef      = useRef(false);
   const messagesRef          = useRef<Message[]>(OPENING_MESSAGES);
   const isTypingRef          = useRef(false);
@@ -383,7 +383,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const autoOpenedRef        = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
-  const narSlotsRef          = useRef<(HTMLAudioElement | "SKIP" | null)[]>([]);
+  const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
   const narPlaySlotRef       = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef  = useRef<number>(0);
@@ -1038,20 +1038,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narPlaySlotRef.current++;
     if (entry === "SKIP") { playNextInQueue(); return; }
 
+    const el = narAudioRef.current;
+    if (!el) { playNextInQueue(); return; }
+
     audioPlayingRef.current = true;
-    const el = entry as HTMLAudioElement;
 
     const cleanup = () => {
-      currentNarElRef.current = null;
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
 
-    currentNarElRef.current = el;
     el.onended = cleanup;
     el.onerror = () => cleanup();
+    el.src = entry as string;
     setNarrating(true);
+    el.load();
     const p = el.play();
     if (p instanceof Promise) p.catch(() => cleanup());
   }, []);
@@ -1059,9 +1061,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const enqueueNarration = useCallback((text: string) => {
     const slot = narSlotCounterRef.current++;
     const qs = new URLSearchParams({ text: text.slice(0, 5000), voice: selectedVoiceRef.current ?? "chronicler" });
-    const el = new Audio(`/api/narrate?${qs}`);
-    el.preload = "auto";
-    narSlotsRef.current[slot] = el;
+    narSlotsRef.current[slot] = `/api/narrate?${qs}`;
     playNextInQueue();
   }, [playNextInQueue]);
 
@@ -1403,7 +1403,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     abortRef.current = controller;
 
     // Reset narration queue
-    if (currentNarElRef.current) { currentNarElRef.current.pause(); currentNarElRef.current = null; }
+    if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
     narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
     audioPlayingRef.current   = false;
     setNarrating(false);
@@ -2148,6 +2148,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
+                // Activate the narration audio element inside the user gesture so Xbox
+                // Edge grants it permission to play later without requiring another click.
+                try { narAudioRef.current?.play().catch(() => {}); } catch { /* no src yet — expected */ }
+
                 // Start background music — must be synchronous for user-gesture gate.
                 window.__dndMusicPlay?.();
 
@@ -2229,7 +2233,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       // audioPlayingRef can get stuck true (browser paused audio on
                       // the dropdown click, so onended never fires), silently
                       // breaking all future narration.
-                      if (currentNarElRef.current) { currentNarElRef.current.pause(); currentNarElRef.current = null; }
+                      if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
                       narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
                       audioPlayingRef.current = false;
                       setNarrating(false);
@@ -2256,7 +2260,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 ))}
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
-                  <button onClick={() => { if (currentNarElRef.current) { currentNarElRef.current.pause(); currentNarElRef.current = null; } audioPlayingRef.current = false; setNarrating(false); setNarrationEnabled(false); setVoicePickerOpen(false); }}
+                  <button onClick={() => { if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; } audioPlayingRef.current = false; setNarrating(false); setNarrationEnabled(false); setVoicePickerOpen(false); }}
                     style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", borderRadius: "7px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.75rem", color: "#64748b", transition: "color 0.15s" }}
                     onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                     onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}>
@@ -3550,6 +3554,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         </div>
       )}
+
+      {/* Persistent narration audio element — must be in the DOM so Xbox Edge grants
+          it play permission when activated inside the Begin Adventure user gesture. */}
+      <audio ref={narAudioRef} preload="none" style={{ display: "none" }} />
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
