@@ -120,6 +120,56 @@ const VOICES = [
   { id: "sage",        label: "Sage",        desc: "♂ Wise & measured — aged counsel"           },
 ] as const;
 
+const CAMPAIGN_TUTORIAL_STEPS = [
+  {
+    icon: "🐉",
+    title: "Welcome to DnD Legends",
+    body: "The AI is your Dungeon Master. It narrates the world, runs enemies, hands out loot, and responds to every action you take. No human DM needed — just type and play.",
+    tip: "You don't need to know D&D 5e rules. The DM handles all mechanics automatically.",
+  },
+  {
+    icon: "💬",
+    title: "Type Your Actions",
+    body: "Read the DM's narration in the center panel, then describe your action in the text box at the bottom. Be specific and in-character for the best results.",
+    tip: "Try: \"I kick open the door and charge in with my sword raised\" instead of just \"I attack.\"",
+    diagram: "chat" as const,
+  },
+  {
+    icon: "⚔️",
+    title: "Turns & The Party Panel",
+    body: "In multiplayer, everyone takes turns in order. The left panel shows your party — the card glowing purple is the active player. Your text box unlocks when it's your turn.",
+    tip: "Playing solo? The input is always active — no waiting.",
+    diagram: "party" as const,
+  },
+  {
+    icon: "🎲",
+    title: "Rolling Dice",
+    body: "The DM asks you to roll at key moments — attacks, saving throws, skill checks. Click the 🎲 button in the header or press D. Your result goes straight to the DM.",
+    tip: "The DM specifies the die and the difficulty — just roll and report what you get.",
+    diagram: "dice" as const,
+  },
+  {
+    icon: "📋",
+    title: "Your Character Sheet",
+    body: "Click the Sheet tab on the right sidebar to see your stats, spells, inventory, and HP. Hover any stat for a plain-English description. Click a spell or item to use it in the story.",
+    tip: "The Party tab shows every adventurer and their HP in real time.",
+    diagram: "sheet" as const,
+  },
+  {
+    icon: "🔊",
+    title: "Narration & Music",
+    body: "Click 🔊 in the header to enable AI voice narration — the DM speaks the story aloud. The music player (bottom-right) sets the atmosphere. Both work great on TV and console!",
+    tip: "Match the music to the scene: swap between combat, exploration, or tavern tracks.",
+    diagram: "audio" as const,
+  },
+  {
+    icon: "✨",
+    title: "Begin Your Adventure",
+    body: "The DM will open your campaign with an immersive scene. Read it, then type your first action. The world responds to everything you do — make it count.",
+    tip: "Re-open this guide anytime with the ? button in the header.",
+  },
+] as const;
+
 // ── Colored narrative — red for damage, green for healing ─────────────────────
 const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightning|thunder|poison|acid|necrotic|radiant|psychic|force)\s+)?damage\b/gi;
 const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
@@ -201,6 +251,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [isTyping,         setIsTyping]          = useState(false);
   const [showDice,         setShowDice]          = useState(false);
   const [showChatHint,     setShowChatHint]      = useState(false);
+  const [tutorialStep,     setTutorialStep]       = useState<number | null>(null);
   const [character,        setCharacter]         = useState<Character | null>(null);
   const [stateNotice,      setStateNotice]       = useState<string | null>(null);
   const [players,          setPlayers]           = useState<PresencePlayer[]>([]);
@@ -311,8 +362,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [currencyDenom,    setCurrencyDenom]     = useState<"cp"|"sp"|"ep"|"gp"|"pp">("gp");
   const [currencyTarget,   setCurrencyTarget]    = useState<Character | null>(null);
 
-  // Stat tooltip hover
+  // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
+  const [hoveredCurrency,  setHoveredCurrency]    = useState<string | null>(null);
 
   // Item / status tooltip hover
   const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
@@ -415,6 +467,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { playersRef.current            = players;             }, [players]);
   useEffect(() => { rollRequestedUserIdRef.current = rollRequestedUserId; }, [rollRequestedUserId]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
+
+  useEffect(() => {
+    const done = localStorage.getItem("dnd_campaign_tutorial_done");
+    if (!done) {
+      const t = setTimeout(() => setTutorialStep(0), 1400);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   // Build turn order from campaign party (character IDs sorted by name) — works with any number of accounts
   useEffect(() => {
@@ -1546,6 +1606,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(prevActorName && nextPromptName && prevActorName !== nextPromptName && { prevActingPlayerName: prevActorName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
+          ...(opts?.allActed && { pendingReconciliation: true }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
         signal: controller.signal,
@@ -1691,7 +1752,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "round_reset",  payload: {} });
     channelRef.current?.send({ type: "broadcast", event: "turn_taken",   payload: { userId, newIndex: 0 } });
     if (campaignPartyRef.current.length > 1) setActiveCharIdx(0);
-    await sendToAI(msgs, false, { roundSummary: summary });
+    const lastActor = summary[summary.length - 1]?.name ?? null;
+    await sendToAI(msgs, false, { roundSummary: summary, prevPlayerName: lastActor });
   };
 
   // ── Player send ───────────────────────────────────────────────────────────────
@@ -2072,6 +2134,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     STR: "strength", DEX: "dexterity", CON: "constitution",
     INT: "intelligence", WIS: "wisdom", CHA: "charisma",
   };
+  const STAT_FULL: Record<string, string> = {
+    STR: "Strength", DEX: "Dexterity", CON: "Constitution",
+    INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma",
+  };
+  const STAT_GENERAL_DESC: Record<string, string> = {
+    STR: "Melee attack rolls, damage, Athletics checks, and carrying capacity.",
+    DEX: "Ranged attacks, AC in light armor, Initiative, Stealth, Acrobatics, and Sleight of Hand.",
+    CON: "Hit points gained at each level and Constitution saving throws.",
+    INT: "Investigation, Arcana, History, Nature, and spellcasting modifier for Wizards.",
+    WIS: "Perception, Insight, Survival, Medicine, and spellcasting for Clerics and Druids.",
+    CHA: "Persuasion, Deception, Intimidation, and spellcasting for Bards, Sorcerers, and Warlocks.",
+  };
+  const CURRENCY_INFO: Record<string, { name: string; exchange: string }> = {
+    pp: { name: "Platinum Pieces", exchange: "1 pp = 10 gp" },
+    gp: { name: "Gold Pieces",     exchange: "Standard currency · 1 gp = 10 sp" },
+    ep: { name: "Electrum Pieces", exchange: "1 ep = 5 sp · rarely used outside old empires" },
+    sp: { name: "Silver Pieces",   exchange: "1 sp = 10 cp · 10 sp = 1 gp" },
+    cp: { name: "Copper Pieces",   exchange: "Smallest coin · 100 cp = 1 gp" },
+  };
   const itemBonuses    = character
     ? computeInventoryBonuses(character.inventory?.items ?? [], character.inventory?.weapons ?? [])
     : null;
@@ -2082,6 +2163,155 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
+      {/* ── Tutorial modal ── */}
+      {tutorialStep !== null && (() => {
+        const step = CAMPAIGN_TUTORIAL_STEPS[tutorialStep];
+        const isLast = tutorialStep === CAMPAIGN_TUTORIAL_STEPS.length - 1;
+        const closeTutorial = (markDone = true) => {
+          if (markDone) localStorage.setItem("dnd_campaign_tutorial_done", "1");
+          setTutorialStep(null);
+        };
+
+        const Diagram = () => {
+          const d = (step as { diagram?: string }).diagram;
+          if (!d) return null;
+          const base: React.CSSProperties = { margin: "0 0 18px", padding: "14px", background: "rgba(0,0,0,0.35)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.07)", fontSize: "0.72rem" };
+          if (d === "chat") return (
+            <div style={base}>
+              <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: "8px", padding: "10px 12px", marginBottom: "8px" }}>
+                <div style={{ color: "#8b5cf6", fontWeight: "bold", marginBottom: "4px" }}>🎭 Dungeon Master</div>
+                <div style={{ color: "#94a3b8", lineHeight: 1.5 }}>&quot;The iron door groans open. Beyond it, torchlight flickers across stone walls...&quot;</div>
+              </div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <div style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "6px", padding: "8px 10px", color: "#64748b" }}>I draw my sword and step through carefully...</div>
+                <div style={{ background: "var(--primary)", borderRadius: "6px", padding: "8px 12px", color: "white", fontWeight: "bold" }}>→</div>
+              </div>
+            </div>
+          );
+          if (d === "party") return (
+            <div style={{ ...base, display: "flex", gap: "8px" }}>
+              <div style={{ flex: 1, padding: "10px", borderRadius: "8px", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "6px" }}>
+                  <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>⚔</div>
+                  <div><div style={{ color: "white", fontSize: "0.8rem", fontWeight: "bold" }}>Thorin</div><div style={{ color: "#64748b", fontSize: "0.65rem" }}>Dwarf Fighter</div></div>
+                </div>
+                <div style={{ height: "4px", background: "#3f3f46", borderRadius: "2px" }}><div style={{ width: "80%", height: "100%", background: "#22c55e", borderRadius: "2px" }} /></div>
+                <div style={{ color: "#64748b", fontSize: "0.65rem", marginTop: "4px", textAlign: "center" }}>Waiting</div>
+              </div>
+              <div style={{ flex: 1, padding: "10px", borderRadius: "8px", background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.8)", boxShadow: "0 0 14px rgba(139,92,246,0.3)" }}>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "6px" }}>
+                  <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(139,92,246,0.3)", border: "1.5px solid rgba(139,92,246,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>🧙</div>
+                  <div><div style={{ color: "#c4b5fd", fontSize: "0.8rem", fontWeight: "bold" }}>Lyra</div><div style={{ color: "#64748b", fontSize: "0.65rem" }}>Elf Wizard</div></div>
+                </div>
+                <div style={{ height: "4px", background: "#3f3f46", borderRadius: "2px" }}><div style={{ width: "65%", height: "100%", background: "#8b5cf6", borderRadius: "2px" }} /></div>
+                <div style={{ color: "#c4b5fd", fontSize: "0.65rem", marginTop: "4px", textAlign: "center", fontWeight: "bold" }}>⚡ Acting</div>
+              </div>
+            </div>
+          );
+          if (d === "dice") return (
+            <div style={{ ...base, textAlign: "center" }}>
+              <div style={{ display: "flex", justifyContent: "center", gap: "12px", alignItems: "center" }}>
+                <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>← Tavern</div>
+                <div style={{ flex: 1, padding: "6px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", color: "#64748b", fontSize: "0.78rem" }}>My Campaign</div>
+                <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>🔇</div>
+                <div style={{ padding: "8px 14px", background: "rgba(251,191,36,0.2)", border: "1.5px solid rgba(251,191,36,0.7)", borderRadius: "8px", color: "#fbbf24", fontSize: "1rem", fontWeight: "bold", boxShadow: "0 0 12px rgba(251,191,36,0.3)" }}>🎲</div>
+              </div>
+              <div style={{ color: "#f59e0b", fontSize: "0.68rem", marginTop: "8px" }}>↑ Click here or press D to roll</div>
+            </div>
+          );
+          if (d === "sheet") return (
+            <div style={base}>
+              <div style={{ display: "flex", gap: "2px", marginBottom: "10px" }}>
+                {(["Party", "Sheet", "Log", "⚔ Combat"] as const).map(tab => (
+                  <div key={tab} style={{ flex: 1, padding: "6px 2px", borderRadius: "6px", textAlign: "center", fontSize: "0.65rem", background: tab === "Sheet" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.04)", border: tab === "Sheet" ? "1px solid rgba(139,92,246,0.6)" : "1px solid rgba(255,255,255,0.06)", color: tab === "Sheet" ? "#c4b5fd" : "#64748b", fontWeight: tab === "Sheet" ? "bold" : "normal" }}>{tab}</div>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px" }}>
+                {[["Strength","16","+3"],["Dexterity","12","+1"],["Constitution","14","+2"],["Intelligence","10","+0"],["Wisdom","13","+1"],["Charisma","8","-1"]].map(([name, score, mod]) => (
+                  <div key={name} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "6px", padding: "5px 2px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ fontSize: "0.5rem", color: "#64748b", marginBottom: "1px" }}>{name}</div>
+                    <div style={{ fontSize: "0.82rem", fontWeight: "bold" }}>{score}</div>
+                    <div style={{ fontSize: "0.6rem", color: "#22c55e" }}>{mod}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+          if (d === "audio") return (
+            <div style={{ ...base, display: "flex", gap: "10px", alignItems: "center" }}>
+              <div style={{ flex: 1, padding: "10px 12px", background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.5)", borderRadius: "8px", textAlign: "center" }}>
+                <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>🔊</div>
+                <div style={{ color: "#c4b5fd", fontSize: "0.7rem", fontWeight: "bold" }}>Voice Narration</div>
+                <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "2px" }}>Header button</div>
+              </div>
+              <div style={{ color: "#475569", fontSize: "1rem" }}>+</div>
+              <div style={{ flex: 1, padding: "10px 12px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: "8px", textAlign: "center" }}>
+                <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>🎵</div>
+                <div style={{ color: "#34d399", fontSize: "0.7rem", fontWeight: "bold" }}>Music Player</div>
+                <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "2px" }}>Bottom right corner</div>
+              </div>
+            </div>
+          );
+          return null;
+        };
+
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(10px)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+            onClick={() => {}} // no click-outside dismiss — explicit buttons only
+          >
+            <div className="glass-panel animate-fade-in" style={{ width: "100%", maxWidth: "480px", padding: "32px", position: "relative" }} onClick={e => e.stopPropagation()}>
+              {/* Progress dots */}
+              <div style={{ display: "flex", gap: "5px", justifyContent: "center", marginBottom: "24px" }}>
+                {CAMPAIGN_TUTORIAL_STEPS.map((_, i) => (
+                  <button key={i} onClick={() => setTutorialStep(i)} style={{ width: i === tutorialStep ? "20px" : "7px", height: "7px", borderRadius: "4px", background: i === tutorialStep ? "var(--primary)" : i < tutorialStep ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", transition: "all 0.25s", padding: 0 }} />
+                ))}
+              </div>
+
+              {/* Icon */}
+              <div style={{ textAlign: "center", fontSize: "2.8rem", marginBottom: "12px", lineHeight: 1 }}>{step.icon}</div>
+
+              {/* Title */}
+              <h2 style={{ textAlign: "center", fontSize: "1.2rem", fontWeight: "bold", marginBottom: "12px" }}>{step.title}</h2>
+
+              {/* Diagram */}
+              <Diagram />
+
+              {/* Body */}
+              <p style={{ color: "#94a3b8", fontSize: "0.88rem", lineHeight: 1.65, textAlign: "center", marginBottom: (step as { tip?: string }).tip ? "14px" : "28px" }}>
+                {step.body}
+              </p>
+
+              {/* Tip */}
+              {(step as { tip?: string }).tip && (
+                <div style={{ display: "flex", gap: "8px", alignItems: "flex-start", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: "8px", padding: "10px 12px", marginBottom: "28px" }}>
+                  <span style={{ fontSize: "0.9rem", flexShrink: 0, marginTop: "1px" }}>💡</span>
+                  <span style={{ fontSize: "0.78rem", color: "#fcd34d", lineHeight: 1.5 }}>{(step as { tip?: string }).tip}</span>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button onClick={() => closeTutorial(true)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.78rem", padding: "4px 0", transition: "color 0.15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}>
+                  Skip Tutorial
+                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {tutorialStep > 0 && (
+                    <button className="btn-secondary" onClick={() => setTutorialStep(t => t! - 1)} style={{ padding: "9px 18px", fontSize: "0.85rem" }}>← Back</button>
+                  )}
+                  {isLast ? (
+                    <button className="btn-primary" onClick={() => closeTutorial(true)} style={{ padding: "9px 22px", fontSize: "0.85rem" }}>Let&apos;s Play! →</button>
+                  ) : (
+                    <button className="btn-primary" onClick={() => setTutorialStep(t => t! + 1)} style={{ padding: "9px 22px", fontSize: "0.85rem" }}>Next →</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
@@ -2254,6 +2484,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaignTitle || "Loading…"}</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px" }}>DM: Claude · {campaignParty.length > 0 ? campaignParty.length : players.length} in party</p>
           </div>
+          {/* Help / tutorial */}
+          <button
+            onClick={() => setTutorialStep(0)}
+            title="Open tutorial"
+            style={{ flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "8px", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.78rem", color: "#64748b", transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
+          >?</button>
           {/* Voice/narration picker */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <button
@@ -2991,11 +3229,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     return (
                       <div
                         key={label}
-                        style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px", borderRadius: "8px", textAlign: "center", cursor: "default", transition: "border-color 0.2s" }}
+                        style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
                         onMouseEnter={() => setHoveredStat(label)}
                         onMouseLeave={() => setHoveredStat(null)}
                       >
-                        <div style={{ fontSize: "0.65rem", color: "#94a3b8", marginBottom: "2px" }}>{label}</div>
+                        <div style={{ fontSize: "0.6rem", color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
                         <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{effScore}</div>
                         <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
                         {hasItemBuf && (
@@ -3009,9 +3247,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           </div>
                         )}
                         {hoveredStat === label && (
-                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "170px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "190px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                            <div style={{ fontWeight: "bold", color: "#e2e8f0", marginBottom: "5px", fontSize: "0.75rem" }}>
+                              {STAT_FULL[label]}
+                              <span style={{ fontWeight: 400, color: "#475569", fontSize: "0.62rem", marginLeft: "5px" }}>{label}</span>
+                            </div>
+                            <div style={{ color: "#94a3b8", fontSize: "0.68rem", marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                              {STAT_GENERAL_DESC[label]}
+                            </div>
                             {hasItemBuf && (
-                              <div style={{ marginBottom: "5px", paddingBottom: "5px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                              <div style={{ marginBottom: guide ? "5px" : 0, paddingBottom: guide ? "5px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
                                 <div style={{ color: "#94a3b8", fontSize: "0.65rem", marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
                                 {addBonus !== 0 && <div style={{ color: netDiff > 0 ? "#f59e0b" : "#ef4444" }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
                                 {setBonus > baseScore && <div style={{ color: "#f59e0b" }}>Set to minimum: {setBonus}</div>}
@@ -3019,8 +3264,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             )}
                             {guide && tierStyle && (
                               <>
-                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
-                                {guide.reason}
+                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "3px", fontSize: "0.72rem" }}>{tierStyle.label} for {character.class}</div>
+                                <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{guide.reason}</div>
                               </>
                             )}
                           </div>
@@ -3176,9 +3421,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         { key: "sp" as const, color: "#94a3b8", amount: character.inventory?.sp ?? 0 },
                         { key: "cp" as const, color: "#f97316", amount: character.inventory?.cp ?? 0 },
                       ]).map(({ key, color, amount }) => (
-                        <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1 }}>
+                        <div key={key} style={{ position: "relative", display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1, cursor: "help" }}
+                          onMouseEnter={() => setHoveredCurrency(key)}
+                          onMouseLeave={() => setHoveredCurrency(null)}
+                        >
                           <span style={{ color, fontWeight: "bold" }}>{amount}</span>
                           <span style={{ color: "#64748b", fontSize: "0.72rem" }}>{key}</span>
+                          {hoveredCurrency === key && (
+                            <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "7px", padding: "8px 11px", zIndex: 600, width: "170px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.6)", whiteSpace: "normal" }}>
+                              <div style={{ fontWeight: "bold", color, marginBottom: "2px", fontSize: "0.73rem" }}>{CURRENCY_INFO[key].name}</div>
+                              <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{CURRENCY_INFO[key].exchange}</div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
