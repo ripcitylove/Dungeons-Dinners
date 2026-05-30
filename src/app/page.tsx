@@ -100,9 +100,9 @@ export default async function Home() {
         {/* Dragon — looms to the left of the headline */}
         <div style={{
           position: "absolute",
-          left: "-2%",
-          top: "50%",
-          transform: "translateY(-52%) scaleX(-1)",
+          left: "6%",
+          top: "32%",
+          transform: "translateY(-50%) scaleX(-1)",
           fontSize: "clamp(200px, 24vw, 340px)",
           lineHeight: 1,
           opacity: 0.18,
@@ -116,7 +116,7 @@ export default async function Home() {
           🐉
         </div>
         {/* Faint fire glow behind the dragon */}
-        <div style={{ position: "absolute", left: "0%", top: "50%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", left: "6%", top: "32%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
