@@ -3,7 +3,6 @@ import { NextRequest } from "next/server";
 const ALLOWED_VOICES = ["chronicler", "gravedigger", "bard", "oracle", "shade", "sage"] as const;
 type AllowedVoice = typeof ALLOWED_VOICES[number];
 
-// Maps each persona to an ElevenLabs pre-made voice + tuned settings
 const VOICE_CONFIG: Record<AllowedVoice, {
   voiceId:    string;
   stability:  number;
@@ -51,58 +50,72 @@ const VOICE_CONFIG: Record<AllowedVoice, {
 const DEFAULT_VOICE: AllowedVoice = "chronicler";
 const MODEL_ID = "eleven_turbo_v2_5";
 
+async function synthesize(text: string, voice: string): Promise<Response> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
+  if (!text?.trim()) return new Response("No text", { status: 400 });
+
+  const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
+    ? (voice as AllowedVoice)
+    : DEFAULT_VOICE;
+
+  const { voiceId, stability, similarity, style } = VOICE_CONFIG[safeVoice];
+
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method:  "POST",
+    headers: {
+      "xi-api-key":   apiKey,
+      "Content-Type": "application/json",
+      "Accept":       "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text:     text.slice(0, 5000),
+      model_id: MODEL_ID,
+      voice_settings: {
+        stability,
+        similarity_boost:  similarity,
+        style,
+        use_speaker_boost: true,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    let parsed: { detail?: { code?: string } } = {};
+    try { parsed = JSON.parse(msg); } catch { /* ignore */ }
+    if (res.status === 401 && parsed.detail?.code === "quota_exceeded") {
+      console.warn("[api/narrate] ElevenLabs quota exhausted");
+      return new Response("quota_exceeded", { status: 402 });
+    }
+    console.error("[api/narrate] ElevenLabs:", res.status, msg);
+    return new Response("TTS unavailable", { status: 500 });
+  }
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return new Response(buffer, {
+    headers: {
+      "Content-Type":  "audio/mpeg",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const text  = req.nextUrl.searchParams.get("text") ?? "";
+    const voice = req.nextUrl.searchParams.get("voice") ?? DEFAULT_VOICE;
+    return await synthesize(text, voice);
+  } catch (err) {
+    console.error("[api/narrate]", err);
+    return new Response("TTS unavailable", { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
-
     const { text, voice } = (await req.json()) as { text: string; voice?: string };
-    if (!text?.trim()) return new Response("No text", { status: 400 });
-
-    const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
-      ? (voice as AllowedVoice)
-      : DEFAULT_VOICE;
-
-    const { voiceId, stability, similarity, style } = VOICE_CONFIG[safeVoice];
-
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method:  "POST",
-      headers: {
-        "xi-api-key":   apiKey,
-        "Content-Type": "application/json",
-        "Accept":       "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text:     text.slice(0, 5000),
-        model_id: MODEL_ID,
-        voice_settings: {
-          stability,
-          similarity_boost:  similarity,
-          style,
-          use_speaker_boost: true,
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      let parsed: { detail?: { code?: string } } = {};
-      try { parsed = JSON.parse(msg); } catch { /* ignore */ }
-      if (res.status === 401 && parsed.detail?.code === "quota_exceeded") {
-        console.warn("[api/narrate] ElevenLabs quota exhausted");
-        return new Response("quota_exceeded", { status: 402 });
-      }
-      console.error("[api/narrate] ElevenLabs:", res.status, msg);
-      return new Response("TTS unavailable", { status: 500 });
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-    return new Response(buffer, {
-      headers: {
-        "Content-Type":  "audio/mpeg",
-        "Cache-Control": "no-cache",
-      },
-    });
+    return await synthesize(text, voice ?? DEFAULT_VOICE);
   } catch (err) {
     console.error("[api/narrate]", err);
     return new Response("TTS unavailable", { status: 500 });
