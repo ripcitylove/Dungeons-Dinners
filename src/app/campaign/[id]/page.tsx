@@ -1039,10 +1039,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narPlaySlotRef.current++;
     if (entry === "SKIP") { playNextInQueue(); return; }
 
-    const ctx = audioCtxRef.current;
-    if (!ctx) { playNextInQueue(); return; }
-
     audioPlayingRef.current = true;
+    const buf = entry as ArrayBuffer;
+
     const cleanup = () => {
       currentNarSourceRef.current = null;
       audioPlayingRef.current = false;
@@ -1050,20 +1049,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       playNextInQueue();
     };
 
-    // slice(0) creates a copy so the original buffer can be decoded again if needed
-    ctx.decodeAudioData((entry as ArrayBuffer).slice(0),
-      (decoded) => {
-        if (!audioCtxRef.current) { cleanup(); return; }
-        const source = audioCtxRef.current.createBufferSource();
-        source.buffer = decoded;
-        source.connect(audioCtxRef.current.destination);
-        source.onended = cleanup;
-        currentNarSourceRef.current = source;
+    // Fallback: <audio> element — used when Web Audio API is unavailable or decode fails.
+    // Creates a fresh element each time to avoid src-switching issues on constrained browsers.
+    const playViaElement = () => {
+      try {
+        const blob = new Blob([buf], { type: "audio/mpeg" });
+        const url  = URL.createObjectURL(blob);
+        const el   = new Audio(url);
+        el.onended = () => { URL.revokeObjectURL(url); cleanup(); };
+        el.onerror = () => { URL.revokeObjectURL(url); cleanup(); };
         setNarrating(true);
-        source.start(0);
-      },
-      () => { console.error("[narration] decode failed — skipping clip"); cleanup(); }
-    );
+        const p = el.play();
+        if (p instanceof Promise) p.catch(() => { URL.revokeObjectURL(url); cleanup(); });
+      } catch { cleanup(); }
+    };
+
+    // Primary: Web Audio API — resume context first (Xbox/mobile may suspend it while idle)
+    const ctx = audioCtxRef.current;
+    if (!ctx) { playViaElement(); return; }
+
+    const doPlay = () => {
+      if (!audioCtxRef.current) { playViaElement(); return; }
+      audioCtxRef.current.decodeAudioData(buf.slice(0),
+        (decoded) => {
+          if (!audioCtxRef.current) { playViaElement(); return; }
+          const source = audioCtxRef.current.createBufferSource();
+          source.buffer = decoded;
+          source.connect(audioCtxRef.current.destination);
+          source.onended = cleanup;
+          currentNarSourceRef.current = source;
+          setNarrating(true);
+          source.start(0);
+        },
+        () => playViaElement() // decode failed (codec unsupported) → fall back
+      );
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(doPlay).catch(() => playViaElement());
+    } else {
+      doPlay();
+    }
   }, []);
 
   const enqueueNarration = useCallback(async (text: string) => {
@@ -2178,14 +2204,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
-                // Create (or resume) AudioContext inside the user-gesture call stack.
-                // This is the Web Audio API equivalent of the old silent-WAV unlock.
+                // Create AudioContext inside the user-gesture call stack.
+                // Immediately play a 1-sample silent buffer to keep it in "running" state —
+                // Xbox and mobile browsers suspend idle contexts before the first real clip plays.
                 try {
-                  if (!audioCtxRef.current) {
-                    audioCtxRef.current = new (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+                  const ACtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                  if (ACtx) {
+                    if (!audioCtxRef.current) audioCtxRef.current = new ACtx();
+                    if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume().catch(() => {});
+                    const warmBuf = audioCtxRef.current.createBuffer(1, 1, 22050);
+                    const warmSrc = audioCtxRef.current.createBufferSource();
+                    warmSrc.buffer = warmBuf;
+                    warmSrc.connect(audioCtxRef.current.destination);
+                    warmSrc.start(0);
                   }
-                  if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume().catch(() => {});
-                } catch { /* browser doesn't support AudioContext — narration will be skipped */ }
+                } catch { /* AudioContext not available — narration falls back to <audio> element */ }
 
                 // Start background music — must be synchronous for user-gesture gate.
                 window.__dndMusicPlay?.();
