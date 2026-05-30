@@ -416,7 +416,7 @@ export default function CreateCampaignWizard() {
 
   // ── Labels ──
   const nextLabel =
-    phase === "count"      ? `Build ${playerCount} ${playerCount === 1 ? "Character" : "Characters"} →` :
+    phase === "count"      ? "Build Characters →" :
     phase === "characters" && charStep < totalCharSteps ? "Next Step →" :
     phase === "characters" && currentPlayerIdx + 1 < playerCount ? `Player ${currentPlayerIdx + 2} →` :
     phase === "characters" ? "Review Party →" :
