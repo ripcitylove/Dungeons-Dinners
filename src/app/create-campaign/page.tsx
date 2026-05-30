@@ -469,6 +469,12 @@ export default function CreateCampaignWizard() {
                   More players can join any time using the invite link inside your campaign — they pick their own character when they arrive.
                 </div>
               </div>
+
+              {/* Inline CTA — sits right below the tip box */}
+              <div style={{ display: "flex", justifyContent: "space-between", width: "100%", maxWidth: "480px", paddingTop: "4px" }}>
+                <button className="btn-secondary" onClick={handleBack}>Cancel</button>
+                <button className="btn-primary" onClick={handleNext}>{nextLabel}</button>
+              </div>
             </div>
           )}
 
@@ -763,11 +769,11 @@ export default function CreateCampaignWizard() {
           )}
         </div>
 
-        {/* ── Footer navigation ── */}
-        {phase !== "creating" && (
+        {/* ── Footer navigation (hidden on count phase — buttons are inline there) ── */}
+        {(phase === "characters" || phase === "review") && (
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "40px", paddingTop: "20px", borderTop: "1px solid var(--border)" }}>
             <button className="btn-secondary" onClick={handleBack}>
-              {phase === "count" ? "Cancel" : "Back"}
+              Back
             </button>
             <button
               className="btn-primary"
