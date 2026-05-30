@@ -1041,15 +1041,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     audioPlayingRef.current = true;
     const audio = narrateAudioRef.current;
     if (!audio) { audioPlayingRef.current = false; return; }
-    audio.src = entry;
-    audio.onended = () => {
+
+    const cleanup = () => {
       URL.revokeObjectURL(entry);
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
+    audio.onended = cleanup;
+    audio.onerror = () => { console.error("[narration] audio error — skipping clip"); cleanup(); };
+
+    audio.src = entry;
+    audio.load(); // required on console/mobile browsers after src change
     setNarrating(true);
-    audio.play().catch((err) => { console.error("[narration] play() blocked:", err); audioPlayingRef.current = false; setNarrating(false); playNextInQueue(); });
+    audio.play().catch((err) => { console.error("[narration] play() blocked:", err); cleanup(); });
   }, []);
 
   const enqueueNarration = useCallback(async (text: string) => {
@@ -1072,7 +1077,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
         narSlotsRef.current[slot] = "SKIP"; playNextInQueue(); return;
       }
-      const blob = await res.blob();
+      const buf  = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: "audio/mpeg" });
       narSlotsRef.current[slot] = URL.createObjectURL(blob);
       playNextInQueue();
     } catch (err) {
