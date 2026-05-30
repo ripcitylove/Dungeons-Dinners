@@ -372,6 +372,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return 0.9;
   });
 
+  // Portrait lightbox
+  const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
+
   // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
   const [hoveredCurrency,  setHoveredCurrency]    = useState<string | null>(null);
@@ -2864,7 +2867,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none" }}>
+                        <div
+                          onClick={char.portrait_url ? e => { e.stopPropagation(); setPortraitModal({ name: char.name, cls: char.class, url: char.portrait_url!, subtitle: `${char.race} ${char.class} · Level ${char.level}` }); } : undefined}
+                          style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none", cursor: char.portrait_url ? "zoom-in" : "default" }}>
                           {char.portrait_url ? (
                             <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
@@ -3016,7 +3021,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 return (
                   <div key={p.userId} style={{ padding: "12px 14px", background: bgColor2, borderRadius: "10px", border: `1.5px solid ${borderColor2}`, boxShadow: glow2, transition: "all 0.3s ease" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
-                      <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `2px solid ${isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)" }}>
+                      <div
+                        onClick={p.portraitUrl ? () => setPortraitModal({ name: p.characterName, cls: p.characterClass, url: p.portraitUrl!, subtitle: p.characterClass }) : undefined}
+                        style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `2px solid ${isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", cursor: p.portraitUrl ? "zoom-in" : "default" }}>
                         {p.portraitUrl ? (
                           <img src={p.portraitUrl} alt={p.characterName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
@@ -3184,7 +3191,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                 {/* Identity with portrait */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
+                  <div
+                    onClick={character.portrait_url ? () => setPortraitModal({ name: character.name, cls: character.class, url: character.portrait_url!, subtitle: `${character.race} ${character.class} · Level ${character.level}` }) : undefined}
+                    style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0, cursor: character.portrait_url ? "zoom-in" : "default", transition: "border-color 0.2s, box-shadow 0.2s" }}
+                    onMouseEnter={e => { if (character.portrait_url) { (e.currentTarget as HTMLDivElement).style.borderColor = `${CLASS_COLORS[character.class] ?? "#8b5cf6"}99`; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 20px ${CLASS_COLORS[character.class] ?? "#8b5cf6"}33`; } }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${CLASS_COLORS[character.class] ?? "var(--border)"}40`; (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
+                  >
                     {character.portrait_url ? (
                       <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                     ) : (
@@ -3872,6 +3884,46 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           permission to hidden elements. Positioned off-screen instead. */}
       <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
       <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
+
+      {/* Portrait lightbox */}
+      {typeof window !== "undefined" && portraitModal && createPortal(
+        <div
+          onClick={() => setPortraitModal(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 99998, background: "rgba(3,2,12,0.93)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px", cursor: "pointer" }}
+        >
+          {/* Close button */}
+          <button
+            onClick={() => setPortraitModal(null)}
+            style={{ position: "absolute", top: "20px", right: "24px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#94a3b8", fontSize: "1rem", transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#94a3b8"; }}
+          >✕</button>
+
+          {/* Portrait + name card */}
+          <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "22px" }}>
+            <div style={{
+              width: "min(400px, 82vw)", aspectRatio: "3/4",
+              borderRadius: "18px", overflow: "hidden",
+              border: `3px solid ${CLASS_COLORS[portraitModal.cls] ?? "#8b5cf6"}`,
+              boxShadow: `0 0 60px ${CLASS_COLORS[portraitModal.cls] ?? "#8b5cf6"}55, 0 0 140px ${CLASS_COLORS[portraitModal.cls] ?? "#8b5cf6"}25, inset 0 0 0 1px rgba(255,255,255,0.06)`,
+              animation: "fadeInScale 0.28s ease-out forwards",
+            }}>
+              <img src={portraitModal.url} alt={portraitModal.name}
+                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "clamp(1.5rem, 4vw, 2.1rem)", fontWeight: "bold", color: CLASS_COLORS[portraitModal.cls] ?? "white", letterSpacing: "0.04em", textShadow: `0 0 28px ${CLASS_COLORS[portraitModal.cls] ?? "#8b5cf6"}88` }}>
+                {portraitModal.name}
+              </div>
+              {portraitModal.subtitle && (
+                <div style={{ color: "#94a3b8", fontSize: "1rem", marginTop: "5px", letterSpacing: "0.03em" }}>{portraitModal.subtitle}</div>
+              )}
+            </div>
+          </div>
+          <p style={{ position: "absolute", bottom: "20px", color: "#334155", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Click anywhere to close</p>
+        </div>,
+        document.body
+      )}
 
       {/* Global tooltip portal — always on top of everything */}
       {typeof window !== "undefined" && globalTooltip && createPortal(
