@@ -13,6 +13,16 @@ All values that change during gameplay — HP, gold, XP, level, spell slots, sta
 - Never show stale values. If a value can change, it must be wired to live state.
 - Party cards must display: HP, gold, XP progress, spell slots (spellcasting classes), and status effects — all kept current in real time.
 
+# Testing Before Pushing (Non-Negotiable)
+
+Every change must be tested before pushing to live. This is not optional.
+
+- Start the dev server (`npm run dev`) and open the affected page in a browser.
+- Exercise the golden path of the changed feature — confirm it works exactly as requested.
+- Check for regressions in nearby features (e.g. if you touch the sidebar, verify chat, party cards, and sheet tabs still function).
+- Only after confirming the feature works correctly in the browser, report it as complete and offer to push.
+- Never claim a feature is working based solely on a successful build or TypeScript check — those verify correctness of code, not correctness of behavior.
+
 # Product Northstar
 
 DnD Legends is a multiplayer D&D 5e experience where **every user is a player** and **the AI is the Dungeon Master**.
