@@ -433,7 +433,13 @@ export default function CreateCampaignWizard() {
             )}
           </div>
         )}
-        {phase !== "characters" && <div style={{ marginBottom: "28px" }} />}
+        {phase === "count" && (
+          <div style={{ display: "flex", justifyContent: "space-between", width: "100%", maxWidth: "480px", margin: "16px auto 12px" }}>
+            <button className="btn-secondary" onClick={handleBack}>Cancel</button>
+            <button className="btn-primary" onClick={handleNext}>{nextLabel}</button>
+          </div>
+        )}
+        {phase !== "characters" && phase !== "count" && <div style={{ marginBottom: "28px" }} />}
 
         {/* ── Content ── */}
         <div style={{ minHeight: "320px" }}>
@@ -468,12 +474,6 @@ export default function CreateCampaignWizard() {
                   <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "3px" }}>Only set this to who&apos;s here right now.</strong>
                   More players can join any time using the invite link inside your campaign — they pick their own character when they arrive.
                 </div>
-              </div>
-
-              {/* Inline CTA — sits right below the tip box */}
-              <div style={{ display: "flex", justifyContent: "space-between", width: "100%", maxWidth: "480px", paddingTop: "4px" }}>
-                <button className="btn-secondary" onClick={handleBack}>Cancel</button>
-                <button className="btn-primary" onClick={handleNext}>{nextLabel}</button>
               </div>
             </div>
           )}
