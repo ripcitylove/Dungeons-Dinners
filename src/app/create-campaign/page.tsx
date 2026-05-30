@@ -471,6 +471,15 @@ export default function CreateCampaignWizard() {
         }, { onConflict: "campaign_id,character_id" });
       }
 
+      // Set party leader to the first character added (respects completedChars order)
+      const firstChar   = completedChars[0];
+      const firstCharId = firstChar?.rosterId
+        ?? newCharData[newChars.indexOf(firstChar)]?.id
+        ?? null;
+      if (firstCharId) {
+        await supabase.from("campaigns").update({ party_leader_id: firstCharId }).eq("id", campData.id);
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         // Generate portraits for new characters
