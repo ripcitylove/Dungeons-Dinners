@@ -97,12 +97,12 @@ export default async function Home() {
         <div style={{ position: "absolute", top: "5%", left: "8%", width: "500px", height: "500px", background: "var(--primary)", filter: "blur(180px)", opacity: 0.13, zIndex: -1, borderRadius: "50%" }} />
         <div style={{ position: "absolute", bottom: "5%", right: "8%", width: "420px", height: "420px", background: "#f59e0b", filter: "blur(180px)", opacity: 0.07, zIndex: -1, borderRadius: "50%" }} />
 
-        {/* Dragon — epic centerpiece of the hero, fire-lit and looming */}
+        {/* Dragon — looms to the left of the headline */}
         <div style={{
           position: "absolute",
-          right: "-2%",
+          left: "-2%",
           top: "50%",
-          transform: "translateY(-52%)",
+          transform: "translateY(-52%) scaleX(-1)",
           fontSize: "clamp(200px, 24vw, 340px)",
           lineHeight: 1,
           opacity: 0.18,
@@ -116,7 +116,7 @@ export default async function Home() {
           🐉
         </div>
         {/* Faint fire glow behind the dragon */}
-        <div style={{ position: "absolute", right: "0%", top: "50%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", left: "0%", top: "50%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
@@ -280,15 +280,11 @@ export default async function Home() {
       {/* ── Publisher Badge ─────────────────────────────────────────────────── */}
       <div style={{
         position: "fixed", bottom: "20px", right: "20px", zIndex: 50,
-        background: "white", borderRadius: "14px", padding: "10px",
+        background: "white", borderRadius: "14px", padding: "8px",
         boxShadow: "0 0 0 1px rgba(139,92,246,0.35), 0 0 24px rgba(139,92,246,0.45), 0 0 52px rgba(139,92,246,0.2), 0 8px 32px rgba(0,0,0,0.55)",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "5px",
       }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: "128px", height: "128px", objectFit: "contain", display: "block", borderRadius: "8px" }} />
-        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#4c1d95", letterSpacing: "0.06em", textTransform: "uppercase", lineHeight: 1.3, textAlign: "center", maxWidth: "120px" }}>
-          Drink &amp; Play Publishing
-        </div>
+        <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: "140px", height: "140px", objectFit: "cover", display: "block", borderRadius: "8px" }} />
       </div>
     </main>
   );
