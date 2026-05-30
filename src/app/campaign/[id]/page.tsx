@@ -253,11 +253,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .then(({ audioUrl }: { audioUrl?: string }) => {
         const audio = previewAudioRef.current;
         if (!audio || !audioUrl) { setTestingVoice(null); return; }
-        audio.src     = audioUrl;
-        audio.load();
+        audio.src = audioUrl;
         audio.onended = () => { setTestingVoice(null); };
         audio.onerror = () => { setTestingVoice(null); };
-        audio.play().catch(() => setTestingVoice(null));
+        audio.oncanplaythrough = () => {
+          audio.oncanplaythrough = null;
+          audio.play().catch(() => setTestingVoice(null));
+        };
+        audio.load();
       })
       .catch(() => setTestingVoice(null));
   }
@@ -1041,6 +1044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     audioPlayingRef.current = true;
 
     const cleanup = () => {
+      el.oncanplaythrough = null;
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
@@ -1049,10 +1053,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     el.onended = cleanup;
     el.onerror = () => cleanup();
     el.src = entry as string;
-    el.load(); // required on Xbox Edge with preload="none" — without this play() fires before the browser starts fetching
-    setNarrating(true);
-    const p = el.play();
-    if (p instanceof Promise) p.catch(() => cleanup());
+    // Wait for canplaythrough (same pattern as working ambiance player) before calling play().
+    // Xbox Edge requires the browser to confirm data is available; calling play() immediately
+    // after load() can silently fail on strict console browsers.
+    el.oncanplaythrough = () => {
+      el.oncanplaythrough = null;
+      setNarrating(true);
+      const p = el.play();
+      if (p instanceof Promise) p.catch(() => cleanup());
+    };
+    el.load();
   }, []);
 
   const enqueueNarration = useCallback(async (text: string) => {
@@ -2171,9 +2181,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 // Playing with no src fails and does NOT grant permission; a real URL does.
                 for (const el of [narAudioRef.current, previewAudioRef.current]) {
                   if (el) {
-                    el.src = "/api/silence";
+                    // Static CDN file — not a serverless function. Xbox Edge won't play
+                    // audio served from a Vercel function response even as an activation call.
+                    el.src = "/silence.wav";
                     el.load();
-                    el.onended = () => { el.src = ""; el.onended = null; };
                     el.play().catch(() => {});
                   }
                 }
@@ -3581,10 +3592,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
       )}
 
-      {/* Persistent audio elements — must be in the DOM so Xbox Edge grants play
-          permission when activated inside the Begin Adventure user gesture. */}
-      <audio ref={narAudioRef}     preload="none" style={{ display: "none" }} />
-      <audio ref={previewAudioRef} preload="none" style={{ display: "none" }} />
+      {/* Persistent audio elements — no display:none; Xbox Edge can refuse play()
+          permission to hidden elements. Positioned off-screen instead. */}
+      <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
+      <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
