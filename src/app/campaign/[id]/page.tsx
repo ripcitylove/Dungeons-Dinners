@@ -362,7 +362,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const characterRef         = useRef<Character | null>(null);
   const channelRef           = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef            = useRef<string | null>(null);
-  const narrateAudioRef      = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef          = useRef<AudioContext | null>(null);
+  const currentNarSourceRef  = useRef<AudioBufferSourceNode | null>(null);
   const audioPlayingRef      = useRef(false);
   const messagesRef          = useRef<Message[]>(OPENING_MESSAGES);
   const isTypingRef          = useRef(false);
@@ -383,7 +384,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const autoOpenedRef        = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
-  const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
+  const narSlotsRef          = useRef<(ArrayBuffer | "SKIP" | null)[]>([]);
   const narPlaySlotRef       = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef  = useRef<number>(0);
@@ -1032,30 +1033,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const playNextInQueue = useCallback(() => {
     if (audioPlayingRef.current) return;
     const slot = narPlaySlotRef.current;
-    if (slot >= narSlotCounterRef.current) return; // nothing pending
+    if (slot >= narSlotCounterRef.current) return;
     const entry = narSlotsRef.current[slot];
-    if (entry === null || entry === undefined) return; // slot not ready yet — will be called when it arrives
+    if (entry === null || entry === undefined) return; // not fetched yet — will retry when ready
     narPlaySlotRef.current++;
     if (entry === "SKIP") { playNextInQueue(); return; }
 
-    audioPlayingRef.current = true;
-    const audio = narrateAudioRef.current;
-    if (!audio) { audioPlayingRef.current = false; return; }
+    const ctx = audioCtxRef.current;
+    if (!ctx) { playNextInQueue(); return; }
 
+    audioPlayingRef.current = true;
     const cleanup = () => {
-      // Only blob: URLs need revocation — data: URLs do not
-      if (entry.startsWith("blob:")) URL.revokeObjectURL(entry);
+      currentNarSourceRef.current = null;
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
-    audio.onended = cleanup;
-    audio.onerror = () => { console.error("[narration] audio error — skipping clip"); cleanup(); };
 
-    audio.src = entry;
-    audio.load(); // required on console/mobile browsers after src change
-    setNarrating(true);
-    audio.play().catch((err) => { console.error("[narration] play() blocked:", err); cleanup(); });
+    // slice(0) creates a copy so the original buffer can be decoded again if needed
+    ctx.decodeAudioData((entry as ArrayBuffer).slice(0),
+      (decoded) => {
+        if (!audioCtxRef.current) { cleanup(); return; }
+        const source = audioCtxRef.current.createBufferSource();
+        source.buffer = decoded;
+        source.connect(audioCtxRef.current.destination);
+        source.onended = cleanup;
+        currentNarSourceRef.current = source;
+        setNarrating(true);
+        source.start(0);
+      },
+      () => { console.error("[narration] decode failed — skipping clip"); cleanup(); }
+    );
   }, []);
 
   const enqueueNarration = useCallback(async (text: string) => {
@@ -1078,13 +1086,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
         narSlotsRef.current[slot] = "SKIP"; playNextInQueue(); return;
       }
-      const buf   = await res.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      // Convert to base64 data URL — more widely supported than blob URLs on
-      // constrained browsers (Xbox Edge, some mobile WebViews).
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      narSlotsRef.current[slot] = `data:audio/mpeg;base64,${btoa(binary)}`;
+      narSlotsRef.current[slot] = await res.arrayBuffer();
       playNextInQueue();
     } catch (err) {
       console.error("[narration] fetch error:", err);
@@ -1431,7 +1433,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     abortRef.current = controller;
 
     // Reset narration queue
-    if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
+    if (currentNarSourceRef.current) { try { currentNarSourceRef.current.stop(); } catch { /* already stopped */ } currentNarSourceRef.current = null; }
     narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
     audioPlayingRef.current   = false;
     setNarrating(false);
@@ -2075,7 +2077,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
-      <audio ref={narrateAudioRef} preload="none" />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
@@ -2177,12 +2178,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
-                // Unlock narration audio synchronously — browser requires user-gesture call-stack.
-                const narAudio = narrateAudioRef.current;
-                if (narAudio) {
-                  narAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-                  narAudio.play().catch(() => {});
-                }
+                // Create (or resume) AudioContext inside the user-gesture call stack.
+                // This is the Web Audio API equivalent of the old silent-WAV unlock.
+                try {
+                  if (!audioCtxRef.current) {
+                    audioCtxRef.current = new (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+                  }
+                  if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume().catch(() => {});
+                } catch { /* browser doesn't support AudioContext — narration will be skipped */ }
 
                 // Start background music — must be synchronous for user-gesture gate.
                 window.__dndMusicPlay?.();
@@ -2265,7 +2268,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       // audioPlayingRef can get stuck true (browser paused audio on
                       // the dropdown click, so onended never fires), silently
                       // breaking all future narration.
-                      if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; }
+                      if (currentNarSourceRef.current) { try { currentNarSourceRef.current.stop(); } catch { /* already stopped */ } currentNarSourceRef.current = null; }
                       narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
                       audioPlayingRef.current = false;
                       setNarrating(false);
@@ -2292,7 +2295,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 ))}
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
-                  <button onClick={() => { if (narrateAudioRef.current) { narrateAudioRef.current.pause(); narrateAudioRef.current.src = ""; } setNarrationEnabled(false); setVoicePickerOpen(false); }}
+                  <button onClick={() => { if (currentNarSourceRef.current) { try { currentNarSourceRef.current.stop(); } catch { /* already stopped */ } currentNarSourceRef.current = null; } audioPlayingRef.current = false; setNarrating(false); setNarrationEnabled(false); setVoicePickerOpen(false); }}
                     style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", borderRadius: "7px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.75rem", color: "#64748b", transition: "color 0.15s" }}
                     onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                     onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}>
