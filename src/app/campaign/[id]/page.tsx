@@ -2157,6 +2157,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       {!sessionStarted && !showGuestJoin && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
           <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
+            {(() => {
+              const leaderChar = campaignParty.find(c => c.id === partyLeaderId) ?? character;
+              const leaderColor = CLASS_COLORS[leaderChar?.class ?? ""] ?? "#f59e0b";
+              return leaderChar ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "28px", gap: "10px" }}>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.15em" }}>Party Leader</span>
+                  {leaderChar.portrait_url ? (
+                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55, 0 0 60px ${leaderColor}20` }}>
+                      <img src={leaderChar.portrait_url} alt={leaderChar.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                    </div>
+                  ) : (
+                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", background: "rgba(0,0,0,0.4)" }}>
+                      {leaderChar.class === "Wizard" ? "🧙" : leaderChar.class === "Rogue" ? "🗡️" : leaderChar.class === "Cleric" ? "✝" : leaderChar.class === "Ranger" ? "🏹" : leaderChar.class === "Druid" ? "🌿" : leaderChar.class === "Bard" ? "🎵" : "⚔️"}
+                    </div>
+                  )}
+                  <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
+                </div>
+              ) : null;
+            })()}
             <h1 style={{ fontSize: "2.2rem", fontWeight: "bold", marginBottom: "10px" }}>Your adventure awaits</h1>
             <p style={{ color: "#64748b", marginBottom: "40px", lineHeight: 1.6 }}>The torchlight flickers as your party gathers in the shadows…</p>
             <button className="btn-primary"
@@ -2560,8 +2579,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const pct          = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
                 const color        = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
                 const classEmoji   = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
-                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : isActive ? "rgba(139,92,246,0.6)" : "var(--border)";
-                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : isActive ? "rgba(139,92,246,0.12)" : "rgba(0,0,0,0.3)";
+                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : "var(--border)";
+                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.3)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 return (
                   <div key={char.id}
@@ -2569,7 +2588,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isActive ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none" }}>
                           {char.portrait_url ? (
                             <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
