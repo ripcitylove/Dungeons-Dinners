@@ -26,9 +26,10 @@ type CharDraft = {
 };
 type RosterChar = {
   id: string; name: string; race: string; class: string; sex: string;
-  level: number; max_hp: number; hp: number;
+  level: number; max_hp: number; hp: number; xp?: number;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
+  user_id?: string;
   inventory: { gold: number; weapons: string[]; items: string[] };
   cantrips_known: string[]; spells_prepared: string[];
   campaign_id: string | null;
@@ -151,7 +152,7 @@ export default function CreateCampaignWizard() {
       if (!user) return;
       const { data } = await supabase
         .from("characters")
-        .select("id,name,race,class,sex,level,max_hp,hp,strength,dexterity,constitution,intelligence,wisdom,charisma,inventory,cantrips_known,spells_prepared,campaign_id,portrait_url")
+        .select("id,name,race,class,sex,level,max_hp,hp,xp,user_id,strength,dexterity,constitution,intelligence,wisdom,charisma,inventory,cantrips_known,spells_prepared,campaign_id,portrait_url")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       setRosterChars((data as RosterChar[]) ?? []);
@@ -329,6 +330,24 @@ export default function CreateCampaignWizard() {
         const { data, error: charErr } = await supabase.from("characters").insert(rows).select();
         if (charErr || !data) throw charErr ?? new Error("Character creation failed");
         newCharData = data;
+
+        // Insert campaign-specific state rows for new characters
+        const ccNewRows = (data as { id: string }[]).map((char, i) => {
+          const c = newChars[i];
+          const weapons = [c.weapon || "Iron Dagger"];
+          const items   = ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"];
+          const baseMaxHp   = startingHP(c.class, c.scores.constitution);
+          const ib          = computeInventoryBonuses(items, weapons);
+          const effectiveHp = baseMaxHp + ib.hpMaxAdd;
+          return {
+            campaign_id: campData.id, character_id: char.id, user_id: user.id,
+            hp: effectiveHp, max_hp: baseMaxHp, xp: 0, level: 1,
+            inventory: { gold: 50, weapons, items },
+            spell_slots_used: {}, status_effects: [],
+            cantrips_known: c.cantrips, spells_prepared: c.spells,
+          };
+        });
+        await supabase.from("campaign_characters").insert(ccNewRows);
       }
 
       for (const c of rosterPicks) {
@@ -338,9 +357,19 @@ export default function CreateCampaignWizard() {
         const baseMaxHp = c.rosterMaxHp ?? startingHP(c.class, c.scores.constitution);
         const fullHp    = baseMaxHp + ib.hpMaxAdd;
         const { error: rErr } = await supabase.from("characters")
-          .update({ campaign_id: campData.id, hp: fullHp, max_hp: baseMaxHp, spell_slots_used: {}, status_effects: [] })
+          .update({ campaign_id: campData.id })
           .eq("id", c.rosterId!);
         if (rErr) throw rErr;
+        // Upsert campaign-specific state for roster character (fresh HP, slots/statuses reset)
+        await supabase.from("campaign_characters").upsert({
+          campaign_id: campData.id, character_id: c.rosterId!, user_id: rChar?.user_id ?? user.id,
+          hp: fullHp, max_hp: baseMaxHp,
+          xp: rChar?.xp ?? 0, level: c.rosterLevel ?? 1,
+          inventory: rChar?.inventory ?? { gold: 50, weapons: [], items: [] },
+          spell_slots_used: {}, status_effects: [],
+          cantrips_known: rChar?.cantrips_known ?? c.cantrips,
+          spells_prepared: rChar?.spells_prepared ?? c.spells,
+        }, { onConflict: "campaign_id,character_id" });
       }
 
       const { data: { session } } = await supabase.auth.getSession();

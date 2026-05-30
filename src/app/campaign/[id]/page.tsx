@@ -18,6 +18,15 @@ import {
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
+type CampaignCharacterRow = {
+  id: string; campaign_id: string; character_id: string; user_id: string | null;
+  hp: number; max_hp: number; xp: number; level: number;
+  inventory: Character["inventory"];
+  spell_slots_used: Record<number, number>;
+  status_effects: string[];
+  cantrips_known: string[];
+  spells_prepared: string[];
+};
 type LogEntry = { id: string; timestamp: Date; role: MsgRole; sender?: string; content: string };
 type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string };
 type TradeOffer    = { id: string; fromUserId: string; fromCharId: string; fromCharName: string; toUserId: string; toCharId: string; offeredItems: { name: string; type: "item" | "weapon" }[]; offeredGold: number };
@@ -490,6 +499,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef  = useRef<number>(0);
   const playersRef           = useRef<PresencePlayer[]>([]);
+  const usesCCTableRef       = useRef(false);
+  const charWriteRef         = useRef<((charId: string, fields: Record<string, unknown>) => Promise<void>) | null>(null);
 
   // ── Ref sync effects ─────────────────────────────────────────────────────────
   useEffect(() => { characterRef.current        = character;        }, [character]);
@@ -511,6 +522,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { playersRef.current            = players;             }, [players]);
   useEffect(() => { rollRequestedUserIdRef.current = rollRequestedUserId; }, [rollRequestedUserId]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
+
+  // ── Per-campaign state write helper ──────────────────────────────────────────
+  // Routes to campaign_characters when using the CC table, otherwise characters.
+  const charWrite = useCallback(async (charId: string, fields: Record<string, unknown>) => {
+    if (usesCCTableRef.current) {
+      await supabase.from("campaign_characters").update(fields).eq("campaign_id", params.id).eq("character_id", charId);
+    } else {
+      await supabase.from("characters").update(fields).eq("id", charId);
+    }
+  }, [params.id]);
+  useEffect(() => { charWriteRef.current = charWrite; }, [charWrite]);
 
   useEffect(() => {
     const done = localStorage.getItem("dnd_campaign_tutorial_done");
@@ -548,7 +570,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setUserId(user.id);
       if (!sessionStorage.getItem(`chatHint_${params.id}`)) setShowChatHint(true);
 
-      const [charRes, historyRes, partyRes, campRes, enemiesRes] = await Promise.all([
+      const [charRes, historyRes, partyRes, campRes, enemiesRes, ccRes] = await Promise.all([
         // Load ALL of the current user's characters (no limit — used for roster + active char)
         supabase.from("characters").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("campaign_messages").select("role, content, sender, created_at").eq("campaign_id", params.id).order("created_at", { ascending: true }),
@@ -557,6 +579,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         supabase.from("characters").select("*").eq("campaign_id", params.id).order("created_at"),
         supabase.from("campaigns").select("*").eq("id", params.id).single(),
         supabase.from("campaign_enemies").select("*").eq("campaign_id", params.id).eq("is_defeated", false).order("created_at"),
+        // Campaign-specific character state (null-safe — empty if table doesn't exist yet)
+        supabase.from("campaign_characters").select("*").eq("campaign_id", params.id),
       ]);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
@@ -581,7 +605,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Roster = all user characters
       if (charRes.data) setUserRoster(charRes.data as Character[]);
 
-      const party = (partyRes.data ?? []) as Character[];
+      // Merge campaign-specific state onto party if CC table rows exist
+      const ccRows = (ccRes.data ?? []) as CampaignCharacterRow[];
+      if (ccRows.length > 0) usesCCTableRef.current = true;
+
+      const rawParty = (partyRes.data ?? []) as Character[];
+      const party = ccRows.length > 0
+        ? rawParty.map(char => {
+            const cc = ccRows.find(r => r.character_id === char.id);
+            if (!cc) return char;
+            return {
+              ...char,
+              hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
+              inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
+              status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
+              spells_prepared: cc.spells_prepared,
+            };
+          })
+        : rawParty;
 
       // Gate access: only campaign owner or party members may enter without an invite
       const userInParty = party.some(c => c.user_id === user.id);
@@ -602,7 +643,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (normalizedParty.some((c, i) => c.hp !== party[i].hp)) {
           normalizedParty.forEach(c => {
             if (c.hp !== party.find(p => p.id === c.id)?.hp) {
-              supabase.from("characters").update({ hp: c.hp }).eq("id", c.id).then(() => {});
+              if (usesCCTableRef.current) {
+                supabase.from("campaign_characters").update({ hp: c.hp }).eq("campaign_id", params.id).eq("character_id", c.id).then(() => {});
+              } else {
+                supabase.from("characters").update({ hp: c.hp }).eq("id", c.id).then(() => {});
+              }
             }
           });
         }
@@ -903,7 +948,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const newInv  = { ...char.inventory, gold: newGold, items, weapons };
         setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
         setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        charWriteRef.current?.(char.id, { inventory: newInv });
         const toName = campaignPartyRef.current.find(c => c.id === offer.toCharId)?.name ?? "party member";
         setStateNotice(`Trade complete — items sent to ${toName}.`);
         setTimeout(() => setStateNotice(null), 4000);
@@ -925,7 +970,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         };
         setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
         setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        charWriteRef.current?.(char.id, { inventory: newInv });
         setStateNotice(`${p.fromCharName} gave you ${p.itemName}!`);
         setTimeout(() => setStateNotice(null), 4000);
       })
@@ -939,7 +984,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const newInv = { ...char.inventory, [denomKey]: cur + p.amount };
         setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
         setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-        supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+        charWriteRef.current?.(char.id, { inventory: newInv });
         setStateNotice(`${p.fromCharName} sent you ${p.amount}${p.denom}!`);
         setTimeout(() => setStateNotice(null), 4000);
       })
@@ -1124,7 +1169,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
     };
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
-    await supabase.from("characters").update(dbUpdate).eq("id", char.id);
+    await charWrite(char.id, dbUpdate);
 
     // Broadcast full stat sync so every player's party card stays accurate
     channelRef.current?.send({
@@ -1147,7 +1192,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setTimeout(() => setStateNotice(null), leveledUp || newHp === 0 ? 8000 : 4000);
       setLogEntries(prev => [...prev, { id: `state-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
     }
-  }, []);
+  }, [charWrite]);
 
   // ── Ordered narration queue (slot-based) ──────────────────────────────────────
   // Each sentence gets a numbered slot BEFORE the async fetch so they always play in order.
@@ -1356,12 +1401,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const updated: Character = { ...char, hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses };
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
-    await supabase.from("characters").update({ hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses }).eq("id", char.id);
+    await charWrite(char.id, { hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses });
     const notice = `Short Rest: d${hitDie} rolled ${roll} + CON ${conMod >= 0 ? "+" : ""}${conMod} = +${gained} HP${isWarlock ? " · Pact slots restored" : ""}`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 ${notice}` }]);
-  }, []);
+  }, [charWrite]);
 
   const handleLongRest = useCallback(async () => {
     const char = characterRef.current;
@@ -1373,12 +1418,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const updated: Character = { ...char, hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses };
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
-    await supabase.from("characters").update({ hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses }).eq("id", char.id);
+    await charWrite(char.id, { hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses });
     const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots recovered, conditions cleared`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 6000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
-  }, []);
+  }, [charWrite]);
 
   const handlePartyShortRest = useCallback(async () => {
     const party = campaignPartyRef.current;
@@ -1399,7 +1444,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
 
     await Promise.all(updates.map(u =>
-      supabase.from("characters").update({ hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus }).eq("id", u.char.id)
+      charWrite(u.char.id, { hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus })
     ));
 
     setCampaignParty(prev => prev.map(c => {
@@ -1417,7 +1462,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setStateNotice(`Party Short Rest: ${summary}`);
     setTimeout(() => setStateNotice(null), 6000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 Party Short Rest — ${summary}` }]);
-  }, []);
+  }, [charWrite]);
 
   const handlePartyLongRest = useCallback(async () => {
     const party = campaignPartyRef.current;
@@ -1431,7 +1476,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
 
     await Promise.all(updates.map(u =>
-      supabase.from("characters").update({ hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus }).eq("id", u.char.id)
+      charWrite(u.char.id, { hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus })
     ));
 
     setCampaignParty(prev => prev.map(c => {
@@ -1449,7 +1494,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setStateNotice("Party Long Rest: Full HP restored, all spell slots recovered");
     setTimeout(() => setStateNotice(null), 6000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Party Long Rest — ${names} fully restored.` }]);
-  }, []);
+  }, [charWrite]);
 
   // ── Combat: enemy generation and state tracking ───────────────────────────────
   const detectCombatStart = (text: string): boolean =>
@@ -1894,10 +1939,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       weapons: itemType === "weapon" ? char.inventory.weapons.filter(w => w !== itemName) : char.inventory.weapons,
     };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
-    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    await charWrite(char.id, { inventory: newInv });
     setDroppedItems(prev => [...prev, dropped]);
     channelRef.current?.send({ type: "broadcast", event: "item_dropped", payload: dropped });
-  }, []);
+  }, [charWrite]);
 
   const takeItem = useCallback(async (dropped: DroppedItem) => {
     const char = characterRef.current;
@@ -1910,8 +1955,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       weapons: dropped.type === "weapon" ? [...char.inventory.weapons, dropped.name] : char.inventory.weapons,
     };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
-    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
-  }, []);
+    await charWrite(char.id, { inventory: newInv });
+  }, [charWrite]);
 
   const sendTradeOffer = useCallback(() => {
     const char = characterRef.current;
@@ -1941,12 +1986,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const newInv     = { ...char.inventory, gold: newGold, items: newItems, weapons: newWeapons };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    await charWrite(char.id, { inventory: newInv });
     channelRef.current?.send({ type: "broadcast", event: "trade_accepted", payload: offer });
     setIncomingTrade(null);
     setStateNotice(`Trade accepted! Received from ${offer.fromCharName}.`);
     setTimeout(() => setStateNotice(null), 4000);
-  }, []);
+  }, [charWrite]);
 
   const declineTrade = useCallback((offer: TradeOffer) => {
     channelRef.current?.send({ type: "broadcast", event: "trade_declined", payload: { id: offer.id, fromUserId: offer.fromUserId } });
@@ -1962,14 +2007,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const newInv = { ...char.inventory, items: newItems, weapons: newWeapons };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    await charWrite(char.id, { inventory: newInv });
     channelRef.current?.send({ type: "broadcast", event: "item_gifted", payload: {
       toUserId: toChar.user_id, toCharId: toChar.id, itemName, itemType, fromCharName: char.name,
     }});
     setTradingItemKey(null);
     setStateNotice(`${itemName} sent to ${toChar.name}.`);
     setTimeout(() => setStateNotice(null), 3000);
-  }, []);
+  }, [charWrite]);
 
   const giftCurrency = useCallback(async (amount: number, denom: "cp"|"sp"|"ep"|"gp"|"pp", toChar: Character) => {
     const char = characterRef.current;
@@ -1980,7 +2025,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const newInv = { ...char.inventory, [denomKey]: current - amount };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? { ...c, inventory: newInv } : c));
-    await supabase.from("characters").update({ inventory: newInv }).eq("id", char.id);
+    await charWrite(char.id, { inventory: newInv });
     channelRef.current?.send({ type: "broadcast", event: "currency_gifted", payload: {
       toUserId: toChar.user_id, toCharId: toChar.id, amount, denom, fromCharName: char.name,
     }});
@@ -1988,7 +2033,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setCurrencyAmount("");
     setStateNotice(`${amount}${denom} sent to ${toChar.name}.`);
     setTimeout(() => setStateNotice(null), 3000);
-  }, []);
+  }, [charWrite]);
 
   const handleUseItem = useCallback(async (itemName: string) => {
     const char = characterRef.current;
@@ -2020,13 +2065,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const updatedChar: Character = { ...char, hp: newHp, inventory: newInv };
     setCharacter(updatedChar);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updatedChar : c));
-    await supabase.from("characters").update({ hp: newHp, inventory: newInv }).eq("id", char.id);
+    await charWrite(char.id, { hp: newHp, inventory: newInv });
 
     const notice = parts.join(" · ");
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
     setLogEntries(prev => [...prev, { id: `use-${Date.now()}`, timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
-  }, []);
+  }, [charWrite]);
 
   // ── Party management ─────────────────────────────────────────────────────────
   const addToParty = useCallback(async (char: Character) => {
@@ -2034,23 +2079,45 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     let updated: Character;
 
-    if (char.campaign_id !== params.id) {
-      // Joining a new campaign — reset to full D&D 5e starting metrics
+    if (usesCCTableRef.current) {
+      // CC-table campaign: check for existing saved state (returning player)
+      const { data: existingCC } = await supabase.from("campaign_characters")
+        .select("*").eq("campaign_id", params.id).eq("character_id", char.id).maybeSingle();
+      if (existingCC) {
+        const cc = existingCC as CampaignCharacterRow;
+        updated = {
+          ...char, campaign_id: params.id,
+          hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
+          inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
+          status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
+          spells_prepared: cc.spells_prepared,
+        };
+        await supabase.from("characters").update({ campaign_id: params.id }).eq("id", char.id);
+      } else {
+        const ib      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+        const freshHp = char.max_hp + ib.hpMaxAdd;
+        await supabase.from("characters").update({ campaign_id: params.id }).eq("id", char.id);
+        await supabase.from("campaign_characters").insert({
+          campaign_id: params.id, character_id: char.id, user_id: userIdRef.current,
+          hp: freshHp, max_hp: char.max_hp, xp: char.xp ?? 0, level: char.level,
+          inventory: char.inventory, spell_slots_used: {}, status_effects: [],
+          cantrips_known: char.cantrips_known ?? [], spells_prepared: char.spells_prepared ?? [],
+        });
+        updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+      }
+    } else if (char.campaign_id !== params.id) {
+      // Old campaign joining new — reset to full D&D 5e starting metrics
       const ib      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
       const freshHp = char.max_hp + ib.hpMaxAdd;
       const { error } = await supabase.from("characters").update({
-        campaign_id:      params.id,
-        hp:               freshHp,
-        spell_slots_used: {},
-        status_effects:   [],
+        campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [],
       }).eq("id", char.id);
       if (error) { console.error("[addToParty]", error); return; }
       updated = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
     } else {
-      // Returning to this campaign — preserve damage, but ensure item HP bonuses are reflected
+      // Old campaign returning — preserve damage, ensure item HP bonuses are reflected
       const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
       const effectiveMax = char.max_hp + ib.hpMaxAdd;
-      // If HP is at or above base max (fresh join or fully rested), bring to full effective max
       const resolvedHp = char.hp >= char.max_hp ? effectiveMax : Math.min(char.hp, effectiveMax);
       if (resolvedHp !== char.hp) await supabase.from("characters").update({ hp: resolvedHp }).eq("id", char.id);
       updated = { ...char, hp: resolvedHp };
@@ -2107,12 +2174,44 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setGuestError("Session expired. Please refresh."); return; }
 
-      const guestIb     = computeInventoryBonuses(selectedRosterChar.inventory?.items ?? [], selectedRosterChar.inventory?.weapons ?? []);
-      const guestFullHp = selectedRosterChar.max_hp + guestIb.hpMaxAdd;
-      const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
-      if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
-
-      const char: Character = { ...selectedRosterChar, campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] };
+      let char: Character;
+      if (usesCCTableRef.current) {
+        const { data: existingCC } = await supabase.from("campaign_characters")
+          .select("*").eq("campaign_id", params.id).eq("character_id", selectedRosterChar.id).maybeSingle();
+        if (existingCC) {
+          const cc = existingCC as CampaignCharacterRow;
+          char = {
+            ...selectedRosterChar, campaign_id: params.id,
+            hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
+            inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
+            status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
+            spells_prepared: cc.spells_prepared,
+          };
+          const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", selectedRosterChar.id);
+          if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
+        } else {
+          const guestIb     = computeInventoryBonuses(selectedRosterChar.inventory?.items ?? [], selectedRosterChar.inventory?.weapons ?? []);
+          const guestFullHp = selectedRosterChar.max_hp + guestIb.hpMaxAdd;
+          const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id }).eq("id", selectedRosterChar.id);
+          if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
+          await supabase.from("campaign_characters").insert({
+            campaign_id: params.id, character_id: selectedRosterChar.id, user_id: user.id,
+            hp: guestFullHp, max_hp: selectedRosterChar.max_hp,
+            xp: selectedRosterChar.xp ?? 0, level: selectedRosterChar.level,
+            inventory: selectedRosterChar.inventory ?? { gold: 50, weapons: [], items: [] },
+            spell_slots_used: {}, status_effects: [],
+            cantrips_known: selectedRosterChar.cantrips_known ?? [],
+            spells_prepared: selectedRosterChar.spells_prepared ?? [],
+          });
+          char = { ...selectedRosterChar, campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] };
+        }
+      } else {
+        const guestIb     = computeInventoryBonuses(selectedRosterChar.inventory?.items ?? [], selectedRosterChar.inventory?.weapons ?? []);
+        const guestFullHp = selectedRosterChar.max_hp + guestIb.hpMaxAdd;
+        const { error: upErr } = await supabase.from("characters").update({ campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] }).eq("id", selectedRosterChar.id);
+        if (upErr) { setGuestError("Could not join campaign. Try again."); return; }
+        char = { ...selectedRosterChar, campaign_id: params.id, hp: guestFullHp, spell_slots_used: {}, status_effects: [] };
+      }
       const joinUserId = user.id;
 
       // ── Shared: wire up state and load campaign data ─────────────────────
