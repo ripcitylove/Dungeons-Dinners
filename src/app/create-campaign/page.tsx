@@ -484,95 +484,93 @@ export default function CreateCampaignWizard() {
 
               {/* Identity */}
               {charStep === 1 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div style={{ display: "flex", gap: "24px", alignItems: "flex-start" }}>
 
-                  {/* ── Roster import cards ── */}
-                  {rosterLoading ? (
-                    <div style={{ padding: "18px 0", textAlign: "center", fontSize: "0.82rem", color: "#475569" }}>Loading your roster…</div>
-                  ) : availableRoster.length > 0 ? (
+                  {/* Left: new character form */}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 }}>
+
+                    {/* Name */}
                     <div>
-                      <p style={{ fontSize: "0.78rem", color: "#fbbf24", fontWeight: "bold", marginBottom: "12px", letterSpacing: "0.03em" }}>
-                        📜 Import from Roster <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — click a character to skip creation)</span>
-                      </p>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: "10px" }}>
-                        {availableRoster.map(c => {
-                          const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.max_hp)) * 100));
-                          const hpCol = hpPct > 60 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
-                          const classColor = ({ Fighter:"#ef4444",Wizard:"#3b82f6",Rogue:"#94a3b8",Cleric:"#f59e0b",Paladin:"#fbbf24",Ranger:"#22c55e",Bard:"#ec4899",Warlock:"#a78bfa",Barbarian:"#f97316",Druid:"#84cc16",Monk:"#06b6d4",Sorcerer:"#8b5cf6" } as Record<string,string>)[c.class] ?? "#c4b5fd";
-                          return (
-                            <div key={c.id} onClick={() => selectRosterChar(c)}
-                              style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 10px 12px", borderRadius: "12px", border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.04)", cursor: "pointer", transition: "all 0.18s", textAlign: "center", userSelect: "none" }}
-                              onMouseEnter={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.55)"; e.currentTarget.style.background = "rgba(245,158,11,0.1)"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(245,158,11,0.15)"; }}
-                              onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
-                              {/* Portrait */}
-                              <div style={{ width: "60px", height: "60px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}55`, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "9px", flexShrink: 0 }}>
-                                {c.portrait_url && <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />}
-                              </div>
-                              {/* Name */}
-                              <div style={{ fontSize: "0.82rem", fontWeight: "bold", color: classColor, marginBottom: "2px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{c.name}</div>
-                              {/* Race · Class */}
-                              <div style={{ fontSize: "0.65rem", color: "#64748b", marginBottom: "6px" }}>{c.race} {c.class}</div>
-                              {/* Level badge */}
-                              <div style={{ fontSize: "0.62rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "10px", padding: "1px 7px", marginBottom: "7px" }}>Lvl {c.level}</div>
-                              {/* HP bar */}
-                              <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginBottom: "3px" }}>
-                                <div style={{ width: `${hpPct}%`, height: "100%", background: hpCol, transition: "width 0.3s" }} />
-                              </div>
-                              <div style={{ fontSize: "0.58rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</div>
-                              {c.campaign_id && <div style={{ fontSize: "0.55rem", color: "#475569", marginTop: "4px" }}>In campaign</div>}
-                            </div>
-                          );
-                        })}
+                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Character Name</label>
+                      <input
+                        autoFocus type="text" value={draft.name}
+                        onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
+                        placeholder="e.g. Elara Moonwhisper"
+                        style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1rem" }}
+                      />
+                      {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
+                    </div>
+
+                    {/* Race */}
+                    <div>
+                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Race</label>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                        {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
+                          <div key={race} onClick={() => setDraft(d => ({ ...d, race }))} style={{
+                            padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                            border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,
+                            background: draft.race === race ? "rgba(139,92,246,0.2)" : "transparent",
+                          }}>{race}</div>
+                        ))}
                       </div>
                     </div>
-                  ) : rosterChars !== null ? null : null}
 
-                  {/* Divider */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-                    <span style={{ fontSize: "0.72rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>or create a new character</span>
-                    <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-                  </div>
-
-                  {/* Name */}
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Character Name</label>
-                    <input
-                      autoFocus type="text" value={draft.name}
-                      onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
-                      placeholder="e.g. Elara Moonwhisper"
-                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1rem" }}
-                    />
-                    {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
-                  </div>
-
-                  {/* Race */}
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Race</label>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-                      {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
-                        <div key={race} onClick={() => setDraft(d => ({ ...d, race }))} style={{
-                          padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                          border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,
-                          background: draft.race === race ? "rgba(139,92,246,0.2)" : "transparent",
-                        }}>{race}</div>
-                      ))}
+                    {/* Sex */}
+                    <div>
+                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Sex</label>
+                      <div style={{ display: "flex", gap: "12px" }}>
+                        {(["male", "female", "non-binary"] as const).map(s => (
+                          <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))} style={{
+                            flex: 1, padding: "12px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize",
+                            border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
+                            background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
+                          }}>{s}</div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Sex */}
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Sex</label>
-                    <div style={{ display: "flex", gap: "12px" }}>
-                      {(["male", "female", "non-binary"] as const).map(s => (
-                        <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))} style={{
-                          flex: 1, padding: "12px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize",
-                          border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
-                          background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
-                        }}>{s}</div>
-                      ))}
+                  {/* Right: roster import (vertical list) */}
+                  {(rosterLoading || availableRoster.length > 0) && (
+                    <div style={{ width: "200px", flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <p style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em", lineHeight: 1.4 }}>
+                        📜 Import from Roster
+                        <span style={{ display: "block", color: "#64748b", fontWeight: 400, fontSize: "0.65rem" }}>Click a character to skip creation</span>
+                      </p>
+                      {rosterLoading ? (
+                        <div style={{ padding: "12px 0", textAlign: "center", fontSize: "0.78rem", color: "#475569" }}>Loading…</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "380px", overflowY: "auto", paddingRight: "2px" }}>
+                          {availableRoster.map(c => {
+                            const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.max_hp)) * 100));
+                            const hpCol = hpPct > 60 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
+                            const classColor = ({ Fighter:"#ef4444",Wizard:"#3b82f6",Rogue:"#94a3b8",Cleric:"#f59e0b",Paladin:"#fbbf24",Ranger:"#22c55e",Bard:"#ec4899",Warlock:"#a78bfa",Barbarian:"#f97316",Druid:"#84cc16",Monk:"#06b6d4",Sorcerer:"#8b5cf6" } as Record<string,string>)[c.class] ?? "#c4b5fd";
+                            return (
+                              <div key={c.id} onClick={() => selectRosterChar(c)}
+                                style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.04)", cursor: "pointer", transition: "all 0.18s", userSelect: "none" }}
+                                onMouseEnter={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.55)"; e.currentTarget.style.background = "rgba(245,158,11,0.1)"; e.currentTarget.style.transform = "translateX(-2px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(245,158,11,0.12)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+                                {/* Portrait */}
+                                <div style={{ width: "38px", height: "38px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}55`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
+                                  {c.portrait_url && <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />}
+                                </div>
+                                {/* Info */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: "0.8rem", fontWeight: "bold", color: classColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                                  <div style={{ fontSize: "0.62rem", color: "#64748b", marginBottom: "3px" }}>{c.race} {c.class}</div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                    <span style={{ fontSize: "0.58rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", padding: "1px 5px" }}>Lvl {c.level}</span>
+                                    <span style={{ fontSize: "0.6rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</span>
+                                  </div>
+                                  {c.campaign_id && <div style={{ fontSize: "0.55rem", color: "#475569", marginTop: "2px" }}>In campaign</div>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
