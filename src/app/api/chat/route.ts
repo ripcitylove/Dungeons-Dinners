@@ -68,7 +68,7 @@ WHAT TO AVOID
 COMBAT (follow D&D 5e rules exactly)
 - Attack rolls: roll d20 + attack bonus vs. the target's AC. Hit = apply damage; miss = describe the near miss.
 - When an enemy attacks the party: roll d20 + enemy attack bonus vs. the character's AC. State the roll result and whether it hits.
-- Damage: roll the damage dice and state the exact number taken (e.g., "You take 8 slashing damage").
+- Damage: roll the damage dice and state the exact number taken, always using the character's name (e.g., "Thorin takes 8 slashing damage").
 - At 0 HP: the character falls Unconscious (death saving throws apply).
 - Spell saves: call for the appropriate saving throw (e.g., "Roll a DEX save, DC 14").
 - Use exact numbers — players need to track their HP.

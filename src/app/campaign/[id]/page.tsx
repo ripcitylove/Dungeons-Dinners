@@ -1098,17 +1098,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [diceRollTarget]);
 
   // ── State changes (HP, gold, items, XP) ──────────────────────────────────────
+
+  // Flexible name check: null target = any character; "Aria" matches "Aria Windwalker"; exact also works.
+  const charNameMatches = useCallback((targetName: string | null, charName: string): boolean => {
+    if (!targetName) return true;
+    const t = targetName.toLowerCase();
+    const c = charName.toLowerCase();
+    return c === t || c.startsWith(t + " ") || t.startsWith(c + " ");
+  }, []);
+
   const applyStateChange = useCallback(async (change: StateChange) => {
     const char = characterRef.current;
     if (!char) return;
-    // HP changes require an explicit name match — never apply damage/healing when the target is ambiguous
-    if (change.hp_delta !== 0) {
-      const nameMatch = change.target_name &&
-        change.target_name.toLowerCase() === char.name.toLowerCase();
-      if (!nameMatch) change = { ...change, hp_delta: 0 };
+    // HP: apply when target_name is null (DM said "you take X damage") OR it matches this character's name.
+    // Supports first-name-only matches like "Aria" → "Aria Windwalker".
+    if (change.hp_delta !== 0 && !charNameMatches(change.target_name, char.name)) {
+      change = { ...change, hp_delta: 0 };
     }
-    // Non-HP changes skip if the DM named a different character
-    if (change.target_name && change.target_name.toLowerCase() !== char.name.toLowerCase()) return;
+    // Non-HP changes: skip entirely if the DM explicitly named a DIFFERENT character.
+    if (change.target_name && !charNameMatches(change.target_name, char.name)) return;
     // Items, gold, status effects, and spell slots require an explicit name match.
     // XP alone may be distributed party-wide (null target_name).
     const isExplicitTarget = !!change.target_name; // target_name matched (non-match already returned above)
@@ -1219,7 +1227,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setTimeout(() => setStateNotice(null), leveledUp || newHp === 0 ? 8000 : 4000);
       setLogEntries(prev => [...prev, { id: `state-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
     }
-  }, [charWrite]);
+  }, [charWrite, charNameMatches]);
 
   // ── Ordered narration queue (slot-based) ──────────────────────────────────────
   // Each sentence gets a numbered slot BEFORE the async fetch so they always play in order.
