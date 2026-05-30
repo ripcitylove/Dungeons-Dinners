@@ -432,6 +432,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [diceRollTarget,      setDiceRollTarget]      = useState<string | null>(null);
   // Which die type the DM is requesting (4, 6, 8, 10, 12, 20, 100 — null = player's choice)
   const [requiredDiceType,    setRequiredDiceType]    = useState<number | null>(null);
+  // Roll mode requested by DM (advantage/disadvantage/normal)
+  const [requiredRollMode,    setRequiredRollMode]    = useState<"normal" | "advantage" | "disadvantage" | null>(null);
   // userId of the player the DM explicitly called on to roll — gates isMyTurn
   const [rollRequestedUserId, setRollRequestedUserId] = useState<string | null>(null);
   // Enemy targeting — which enemy the player is focusing on
@@ -778,11 +780,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("presence", { event: "sync" }, () => {
         const all = Object.values(channel.presenceState<PresencePlayer>()).flat();
         setPlayers(all);
-        // Sync live HP from presence into campaignParty so cards update in real-time
-        setCampaignParty(prev => prev.map(char => {
-          const online = all.find(p => p.userId === char.user_id);
-          return (online && online.hp !== char.hp) ? { ...char, hp: online.hp } : char;
-        }));
+        // Presence is used only for tracking who is online; HP is synced via character_sync broadcast
+        // to avoid presence-lag overwriting real-time damage/healing.
 
         if (isInitialPresenceRef.current) {
           isInitialPresenceRef.current = false;
@@ -819,8 +818,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "dm", content: payload.content }]);
         const rollTarget = detectDiceRollTarget(payload.content as string);
+        const dmRollMode = rollTarget ? detectRollMode(payload.content as string) : "normal";
         setDiceRollTarget(rollTarget);
         setRequiredDiceType(detectRequiredDiceType(payload.content as string));
+        setRequiredRollMode(dmRollMode !== "normal" ? dmRollMode : null);
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
@@ -871,7 +872,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCampaignParty(prev => prev.map(c => c.id === charId ? { ...c, hp: newHp, max_hp: newMaxHp } : c));
       })
       .on("broadcast", { event: "character_sync" }, ({ payload }) => {
-        // Full stat sync — replaces character_hp_update for all state changes
+        // Full stat sync for all state changes
         const p = payload as {
           charId: string; hp: number; max_hp: number;
           xp?: number; level?: number;
@@ -879,19 +880,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           spell_slots_used?: Record<number, number>;
           status_effects?: string[];
         };
-        setCampaignParty(prev => prev.map(c => {
-          if (c.id !== p.charId) return c;
-          return {
-            ...c,
-            hp:      p.hp,
-            max_hp:  p.max_hp,
-            ...(p.xp              !== undefined && { xp:              p.xp              }),
-            ...(p.level           !== undefined && { level:           p.level           }),
-            ...(p.inventory       !== undefined && { inventory:       p.inventory       }),
-            ...(p.spell_slots_used !== undefined && { spell_slots_used: p.spell_slots_used }),
-            ...(p.status_effects  !== undefined && { status_effects:  p.status_effects  }),
-          };
-        }));
+        const merge = (c: Character) => ({
+          ...c,
+          hp:      p.hp,
+          max_hp:  p.max_hp,
+          ...(p.xp              !== undefined && { xp:              p.xp              }),
+          ...(p.level           !== undefined && { level:           p.level           }),
+          ...(p.inventory       !== undefined && { inventory:       p.inventory       }),
+          ...(p.spell_slots_used !== undefined && { spell_slots_used: p.spell_slots_used }),
+          ...(p.status_effects  !== undefined && { status_effects:  p.status_effects  }),
+        });
+        setCampaignParty(prev => prev.map(c => c.id !== p.charId ? c : merge(c)));
+        // Also update the active character sheet for other players' characters
+        if (characterRef.current?.id === p.charId) {
+          const updated = merge(characterRef.current);
+          setCharacter(updated);
+          characterRef.current = updated;
+        }
       })
       .on("broadcast", { event: "enemies_spawned" }, ({ payload }) => {
         const spawned = payload.enemies as CampaignEnemy[];
@@ -1090,33 +1095,43 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         change.target_name.toLowerCase() === char.name.toLowerCase();
       if (!nameMatch) change = { ...change, hp_delta: 0 };
     }
-    // Non-HP changes (XP, gold, items) skip this character if the DM named someone else
+    // Non-HP changes skip if the DM named a different character
     if (change.target_name && change.target_name.toLowerCase() !== char.name.toLowerCase()) return;
+    // Items, gold, status effects, and spell slots require an explicit name match.
+    // XP alone may be distributed party-wide (null target_name).
+    const isExplicitTarget = !!change.target_name; // target_name matched (non-match already returned above)
     const hasChange =
-      change.hp_delta !== 0 || change.gold_delta !== 0 ||
-      change.items_gained.length > 0 || change.items_lost.length > 0 ||
-      change.weapons_gained.length > 0 || change.xp_award > 0 ||
-      change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0 ||
-      change.spell_slots_used > 0;
+      change.hp_delta !== 0 ||
+      (isExplicitTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
+        change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
+        change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0 ||
+        change.spell_slots_used > 0)) ||
+      change.xp_award > 0;
     if (!hasChange) return;
 
     const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
     const effectiveMaxHp = char.max_hp + charIb.hpMaxAdd;
     const newHp          = Math.max(0, Math.min(effectiveMaxHp, char.hp + change.hp_delta));
-    const newGold    = Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta);
-    const newItems   = [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained];
-    const newWeapons = [...(char.inventory?.weapons ?? []), ...change.weapons_gained];
+    const newGold    = isExplicitTarget ? Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta) : (char.inventory?.gold ?? 0);
+    const newItems   = isExplicitTarget ? [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained] : (char.inventory?.items ?? []);
+    const newWeapons = isExplicitTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
 
-    // Status effects
+    // Status effects — only apply when explicitly targeting this character
     let newStatuses = [...(char.status_effects ?? [])];
-    if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
-    if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
-    change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
-    newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+    if (isExplicitTarget) {
+      if (newHp === 0 && change.hp_delta < 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
+      if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
+      change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
+      newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+    } else if (change.hp_delta !== 0) {
+      // HP change with no explicit target (unusual but guard unconscious state)
+      if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
+      if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
+    }
 
-    // Spell slots — skip deduction if the player already paid via click-cast
+    // Spell slots — only apply when explicitly targeting this character; skip if already paid via click-cast
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
-    if (change.spell_slots_used > 0) {
+    if (isExplicitTarget && change.spell_slots_used > 0) {
       if (pendingSpellCastRef.current > 0) {
         pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - change.spell_slots_used);
       } else {
@@ -1127,14 +1142,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const parts: string[] = [];
     if (change.hp_delta < 0) parts.push(`${Math.abs(change.hp_delta)} damage taken`);
     if (change.hp_delta > 0) parts.push(`+${change.hp_delta} HP restored`);
-    if (change.gold_delta > 0) parts.push(`+${change.gold_delta}gp`);
-    if (change.gold_delta < 0) parts.push(`${change.gold_delta}gp`);
-    change.items_gained.forEach(i   => parts.push(`+${i}`));
-    change.weapons_gained.forEach(w => parts.push(`+${w}`));
-    change.status_effects_gained.forEach(s => parts.push(`⚡ ${s}`));
-    change.status_effects_lost.forEach(s   => parts.push(`✓ ${s} cleared`));
-    if (change.spell_slots_used > 0) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
-    if (newHp === 0 && change.hp_delta < 0) parts.push("💀 UNCONSCIOUS");
+    if (isExplicitTarget && change.gold_delta > 0) parts.push(`+${change.gold_delta}gp`);
+    if (isExplicitTarget && change.gold_delta < 0) parts.push(`${change.gold_delta}gp`);
+    if (isExplicitTarget) change.items_gained.forEach(i => parts.push(`+${i}`));
+    if (isExplicitTarget) change.weapons_gained.forEach(w => parts.push(`+${w}`));
+    if (isExplicitTarget) change.status_effects_gained.forEach(s => parts.push(`⚡ ${s}`));
+    if (isExplicitTarget) change.status_effects_lost.forEach(s => parts.push(`✓ ${s} cleared`));
+    if (isExplicitTarget && change.spell_slots_used > 0) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
+    if (isExplicitTarget && newHp === 0 && change.hp_delta < 0) parts.push("💀 UNCONSCIOUS");
 
     // XP + level up
     let newXp    = char.xp ?? 0;
@@ -1572,6 +1587,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return null;
   }, []);
 
+  // ── Roll mode detection (advantage / disadvantage) ───────────────────────────
+  const detectRollMode = useCallback((narrative: string): "advantage" | "disadvantage" | "normal" => {
+    if (/\b(roll(?:s)?\s+(?:it\s+)?with\s+advantage|advantage\s+on\s+(?:the\s+)?(?:roll|check|save|saving throw|attack)|has?\s+advantage\s+on\s+(?:this|the|that)?)\b/i.test(narrative)) return "advantage";
+    if (/\b(roll(?:s)?\s+(?:it\s+)?with\s+disadvantage|disadvantage\s+on\s+(?:the\s+)?(?:roll|check|save|saving throw|attack)|has?\s+disadvantage\s+on\s+(?:this|the|that)?)\b/i.test(narrative)) return "disadvantage";
+    return "normal";
+  }, []);
+
   // ── Dice type detection ──────────────────────────────────────────────────────
   const detectRequiredDiceType = useCallback((narrative: string): number | null => {
     // Explicit die mention: "roll a d6", "roll 2d8", "d20 check"
@@ -1593,16 +1615,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Reset narration queue
-    if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
-    narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
-    audioPlayingRef.current   = false;
-    setNarrating(false);
+    // Reset narration queue unless we want to continue from a prior DM response (e.g. reconciliation after allActed)
+    if (!opts?.preserveNarration) {
+      if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
+      narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+      audioPlayingRef.current   = false;
+      setNarrating(false);
+    }
 
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
@@ -1708,6 +1732,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
           ...(opts?.allActed && { pendingReconciliation: true }),
+          ...(opts?.isRollResult && { isRollResult: true }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
         signal: controller.signal,
@@ -1747,8 +1772,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         || targetChar.id === currentTurnCharIdForRoll;
       const validRollTarget  = isCurrentTurnPlayer ? rollTarget  : null;
       const targetUserId     = isCurrentTurnPlayer ? (targetChar?.user_id ?? null) : null;
+      const detectedRollMode = validRollTarget ? detectRollMode(full) : "normal";
       setDiceRollTarget(validRollTarget);
       setRequiredDiceType(detectRequiredDiceType(full));
+      setRequiredRollMode(detectedRollMode !== "normal" ? detectedRollMode : null);
       setRollRequestedUserId(targetUserId);
       rollRequestedUserIdRef.current = targetUserId;
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
@@ -1854,7 +1881,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "turn_taken",   payload: { userId, newIndex: 0 } });
     if (campaignPartyRef.current.length > 1) setActiveCharIdx(0);
     const lastActor = summary[summary.length - 1]?.name ?? null;
-    await sendToAI(msgs, false, { roundSummary: summary, prevPlayerName: lastActor });
+    await sendToAI(msgs, false, { roundSummary: summary, prevPlayerName: lastActor, preserveNarration: true });
   };
 
   // ── Player send ───────────────────────────────────────────────────────────────
@@ -1890,7 +1917,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
     let nextPlayerName: string | null = null;
-    if (!isRollSubmit && order.length > 1) {
+    if (isRollSubmit && order.length > 1) {
+      // Roll result: stay on the current player's turn so DM addresses them after resolving the roll
+      const currentCid = order[currentTurnIndexRef.current];
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === currentCid)?.name ?? null;
+    } else if (!isRollSubmit && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
         const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
@@ -1912,6 +1943,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       nextPlayerName,
       prevPlayerName: character?.name ?? null,
       allActed:       allActedForDM,
+      ...(isRollSubmit && { isRollResult: true }),
     });
 
     // If sendToAI detected all players have acted, trigger round reconciliation
@@ -2153,10 +2185,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narratePartyEvent]);
 
-  const handleDiceResult = (result: number, diceType: number) => {
+  const handleDiceResult = (result: number, diceType: number, description?: string) => {
     setShowDice(false);
     setRequiredDiceType(null);
-    handleSend(`[Rolled a ${result} on a d${diceType}]`, true);
+    setRequiredRollMode(null);
+    const msg = description ?? `Rolled a ${result} on a d${diceType}`;
+    handleSend(`[${msg}]`, true);
   };
 
   const handleGuestJoin = async () => {
@@ -2467,7 +2501,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}

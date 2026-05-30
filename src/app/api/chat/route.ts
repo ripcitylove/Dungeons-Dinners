@@ -142,14 +142,10 @@ Rules with no exceptions:
 - One sensory detail maximum per response — pick the sharpest one and cut the rest.
 - End every response on a hook the player can immediately react to.
 
-XP AWARDS — REQUIRED
-Award XP consistently so players always feel progression. Include xp_award in the state JSON whenever one of these happens:
-- Successful attack or spell in combat: 10–25 XP per character
-- Defeating an enemy: award its full xp_value split among surviving party members
-- Clever skill check success (persuasion, stealth, investigation, acrobatics, etc.): 15–35 XP
-- Minor victory (picking a lock, solving a puzzle clue, surviving a trap): 20–50 XP
-- Significant story moment (completing an objective, major revelation, defeating a boss): 75–150 XP
-Never award 0 XP for a meaningful action. Scale higher for harder challenges.
+NEVER OUTPUT JSON OR STRUCTURED DATA
+Your responses are pure narrative prose. Never include JSON, curly braces, XP tallies, state objects, or any structured data in your output — the game engine extracts all state changes automatically from your narrative. If you output raw JSON it appears as literal text in the player's chat.
+
+Describe events naturally — the numbers are tracked invisibly. "The orc falls, a hard-won fight that sharpens your skills" is enough. Do not annotate with stats, XP values, or brackets.
 
 ${DM_LOOT_GUIDE}`;
 
@@ -176,7 +172,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -201,7 +197,9 @@ Use enemy AC values when players attack them. Use enemy ATK bonus and damage dic
 When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
   const prevActedLine = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
-    ? `${prevActingPlayerName} has just finished their turn — it is OVER. Do NOT ask ${prevActingPlayerName} what they do next. Do NOT end your response with a question directed at ${prevActingPlayerName}. `
+    ? isRollResult
+      ? `${prevActingPlayerName} just submitted their dice roll result above. Resolve the outcome of this roll in the narrative, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they want to do. `
+      : `${prevActingPlayerName} has just finished their turn — it is OVER. Do NOT ask ${prevActingPlayerName} what they do next. Do NOT end your response with a question directed at ${prevActingPlayerName}. `
     : "";
   const turnBlock = currentTurnPlayerName
     ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\nROLL RESTRICTION: In this response you may only ask ${currentTurnPlayerName} to roll dice. Do not ask any other character to roll.\n`
@@ -311,7 +309,7 @@ Reference these stats for all checks and combat. Apply proficiency bonus (${pb})
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -324,6 +322,7 @@ export async function POST(req: NextRequest) {
       roundSummary?: { name: string; action: string }[];
       partyLeaderName?: string;
       pendingReconciliation?: boolean;
+      isRollResult?: boolean;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -349,7 +348,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult),
       messages:   claudeMessages,
       stream:     true,
     });

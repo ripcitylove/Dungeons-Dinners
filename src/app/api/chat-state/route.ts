@@ -48,10 +48,10 @@ HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
   If any condition is not met, set hp_delta to 0 and target_name to null.
   Enemy attacks that miss, flavor descriptions of violence, or narration about monsters do NOT count.
 - A creature falling to 0 HP = Unconscious (if not dead).
-- Status effects: only add when DM explicitly applies the condition to a player character.
-- Spell slots: only count when a leveled spell is explicitly cast.
-- Currency: "a pouch of coins", "a purse of gold", "handful of silver" — estimate the gold value. NPC gifts count.
-- Items received from NPCs as rewards, gifts, or trades count as items_gained or weapons_gained.
+- Status effects: only add when DM explicitly applies the condition to a player character; always set target_name.
+- Spell slots: only count when a leveled spell is explicitly cast; set target_name to the caster.
+- CRITICAL — items/weapons/gold rules: ALWAYS set target_name when awarding items, weapons, or gold to a specific character. If the DM says "Thorin finds a Potion of Healing", set target_name to "Thorin". If it is truly unclear who receives an item (e.g. "the chest contains a sword" with no recipient named), output 0/[] for that item — do NOT set target_name to null with items populated.
+- Currency: only set gold_delta when a character explicitly receives/loses gold and you set target_name; estimate value from "pouch of coins", "purse of gold", etc.
 - Use the exact item name the DM stated.
 
 XP RULES (infer generously — players must always feel progression):

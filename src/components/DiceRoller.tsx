@@ -136,17 +136,21 @@ function playResultSound(q: Quality) {
 export default function DiceRoller({
   onRollComplete,
   requiredDice,
+  requiredRollMode,
 }: {
-  onRollComplete: (result: number, diceType: number) => void;
+  onRollComplete: (result: number, diceType: number, description?: string) => void;
   requiredDice?: number | null;
+  requiredRollMode?: "normal" | "advantage" | "disadvantage" | null;
 }) {
   const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(null);
   const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">("idle");
   const [result,       setResult]       = useState<number | null>(null);
+  const [altResult,    setAltResult]    = useState<number | null>(null);
   const [displayNum,   setDisplayNum]   = useState<number | null>(null);
   const [wrongDie,     setWrongDie]     = useState(false);
   const countupRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isAdvDis = !!requiredRollMode && requiredRollMode !== "normal";
   const quality = result !== null && selectedDie !== null ? getQuality(result, selectedDie) : null;
   const qs      = quality ? QUALITY[quality] : null;
 
@@ -162,10 +166,26 @@ export default function DiceRoller({
     setSelectedDie(sides);
     setPhase("rolling");
     setResult(null);
+    setAltResult(null);
     setDisplayNum(null);
     playRollSound();
 
-    const finalResult = Math.floor(Math.random() * sides) + 1;
+    const r1 = Math.floor(Math.random() * sides) + 1;
+    const r2 = isAdvDis ? Math.floor(Math.random() * sides) + 1 : null;
+
+    let kept: number;
+    let dropped: number | null = null;
+    if (r2 !== null) {
+      if (requiredRollMode === "advantage") {
+        kept = Math.max(r1, r2);
+        dropped = Math.min(r1, r2);
+      } else {
+        kept = Math.min(r1, r2);
+        dropped = Math.max(r1, r2);
+      }
+    } else {
+      kept = r1;
+    }
 
     // Start number count-up at 680ms
     setTimeout(() => {
@@ -177,16 +197,28 @@ export default function DiceRoller({
     // Settle at 1350ms
     setTimeout(() => {
       if (countupRef.current) { clearInterval(countupRef.current); countupRef.current = null; }
-      setResult(finalResult);
-      setDisplayNum(finalResult);
+      setResult(kept);
+      setAltResult(dropped);
+      setDisplayNum(kept);
       setPhase("result");
-      const q = getQuality(finalResult, sides);
+      const q = getQuality(kept, sides);
       playResultSound(q);
-      setTimeout(() => onRollComplete(finalResult, sides), 2800);
+      const description = r2 !== null
+        ? `Rolled with ${requiredRollMode}: ${r1} and ${r2}, taking ${kept} on a d${sides}`
+        : undefined;
+      setTimeout(() => onRollComplete(kept, sides, description), 2800);
     }, 1350);
   };
 
   useEffect(() => () => { if (countupRef.current) clearInterval(countupRef.current); }, []);
+
+  const headerLabel = requiredRollMode === "advantage"
+    ? "⚔ Roll with Advantage"
+    : requiredRollMode === "disadvantage"
+    ? "⚔ Roll with Disadvantage"
+    : requiredDice
+    ? "⚔ The DM Calls for a Roll"
+    : "Choose Your Die";
 
   return (
     <div style={{
@@ -203,12 +235,17 @@ export default function DiceRoller({
 
       {/* Header */}
       <p style={{ color: "#6366f1", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: "8px" }}>
-        {requiredDice ? "⚔ The DM Calls for a Roll" : "Choose Your Die"}
+        {headerLabel}
       </p>
 
       {requiredDice ? (
         <p style={{ fontSize: "1.6rem", fontWeight: 800, color: "white", marginBottom: "40px", letterSpacing: "-0.01em" }}>
           Roll a <span style={{ color: "#a78bfa", textShadow: "0 0 20px rgba(139,92,246,0.7)" }}>d{requiredDice}</span>
+          {isAdvDis && (
+            <span style={{ fontSize: "1rem", color: "#64748b", marginLeft: "12px", fontWeight: 600 }}>
+              ({requiredRollMode})
+            </span>
+          )}
         </p>
       ) : (
         <div style={{ marginBottom: "40px" }} />
@@ -303,7 +340,7 @@ export default function DiceRoller({
             )}
           </div>
           <p style={{ color: "#6366f1", fontSize: "0.9rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", animation: "breathe 1s ease-in-out infinite alternate" }}>
-            Casting the fates…
+            {isAdvDis ? "Rolling twice…" : "Casting the fates…"}
           </p>
         </div>
       )}
@@ -369,6 +406,31 @@ export default function DiceRoller({
               </p>
             )}
           </div>
+
+          {/* Advantage / disadvantage secondary roll */}
+          {altResult !== null && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "14px",
+              padding: "10px 20px",
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: "10px",
+              border: "1px solid rgba(255,255,255,0.07)",
+              marginTop: "-12px",
+            }}>
+              <span style={{
+                fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
+                color: requiredRollMode === "advantage" ? "#4ade80" : "#f87171",
+              }}>
+                {requiredRollMode === "advantage" ? "▲ Advantage" : "▼ Disadvantage"}
+              </span>
+              <span style={{ fontSize: "0.8rem", color: "#475569" }}>
+                Also rolled:{" "}
+                <span style={{ textDecoration: "line-through", color: "#334155", fontWeight: 700 }}>
+                  {altResult}
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       )}
 
