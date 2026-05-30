@@ -82,19 +82,26 @@ function CharacterModal({
         </button>
 
         {/* Header */}
-        <div style={{ display: "flex", gap: "24px", alignItems: "flex-end", marginBottom: "28px" }}>
-          <div style={{ width: "80px", height: "80px", flexShrink: 0, borderRadius: "10px", overflow: "hidden", border: "2px solid var(--border)", background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px", marginBottom: "28px" }}>
+          {/* Portrait — large and centered */}
+          <div style={{
+            width: "160px", height: "160px", flexShrink: 0, borderRadius: "50%", overflow: "hidden",
+            border: `3px solid ${CLASS_COLORS[char.class] ?? "var(--border)"}`,
+            boxShadow: `0 0 32px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}44, 0 0 80px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}18`,
+            background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
             {char.portrait_url
-              ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[char.class] ?? "#6b7280"}20` }} />
+              ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+              : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[char.class] ?? "#6b7280"}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
             }
           </div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "1.7rem", fontWeight: "bold", marginBottom: "4px", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</h2>
-            <p style={{ color: "var(--subtle)", fontSize: "0.9rem", marginBottom: "12px" }}>
+          {/* Name + subtitle */}
+          <div style={{ textAlign: "center" }}>
+            <h2 style={{ fontSize: "1.8rem", fontWeight: "bold", marginBottom: "4px", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</h2>
+            <p style={{ color: "var(--subtle)", fontSize: "0.9rem", marginBottom: "14px" }}>
               {char.race} {char.class} · Level {char.level}
             </p>
-            <div style={{ fontSize: "0.78rem", display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+            <div style={{ fontSize: "0.78rem", display: "flex", justifyContent: "space-between", marginBottom: "5px", gap: "12px" }}>
               <span style={{ color: "var(--muted)" }}>Hit Points</span>
               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                 <span style={{ color: hpColor, fontWeight: "bold" }}>{char.hp} / {modalMaxHp}</span>
@@ -103,7 +110,7 @@ function CharacterModal({
                 )}
               </div>
             </div>
-            <div style={{ height: "8px", borderRadius: "4px", background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+            <div style={{ height: "8px", borderRadius: "4px", background: "rgba(255,255,255,0.07)", overflow: "hidden", minWidth: "280px" }}>
               <div style={{ height: "100%", width: `${hpPct}%`, background: hpColor, borderRadius: "4px", transition: "width 0.4s ease" }} />
             </div>
           </div>
