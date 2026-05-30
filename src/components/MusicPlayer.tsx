@@ -4,15 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 
 // ── Music pools ───────────────────────────────────────────────────────────────
-// All archive.org URLs serve via HTTP 302 → CDN; <audio> follows redirects.
 const MIST_CROWN = "https://archive.org/download/the-eldritch-chime-of-the-ashen-fortress-wkylnl/Mist%20Crown%20-%20The%20Eldritch%20Chime%20Of%20The%20Ashen%20Fortress%20-%20";
 const MEDIEVAL   = "https://archive.org/download/medieval-instrumental-background-music/";
-const KM         = "https://archive.org/download/Incompetech/mp3-royaltyfree/"; // Kevin MacLeod – CC BY 3.0
+const KM         = "https://archive.org/download/Incompetech/mp3-royaltyfree/";
 const DARK_AMB   = "https://archive.org/download/darkambient_201908/";
 const BATTLE_IA  = "https://archive.org/download/battle-ia-item/";
 const JAMENDO    = "https://archive.org/download/jamendo-190464/";
 
-// Tavern and social share the same track list (same vibe, same pool)
 const TAVERN_TRACKS: string[] = [
   "/Tavern_Theme.mp3",
   `${MEDIEVAL}Celebration.mp3`,
@@ -28,8 +26,6 @@ const TAVERN_TRACKS: string[] = [
 const POOLS: Record<string, string[]> = {
   tavern: TAVERN_TRACKS,
   social: TAVERN_TRACKS,
-
-  // Active combat
   combat: [
     `${MIST_CROWN}06%20Din%20of%20Battle.mp3`,
     `${BATTLE_IA}battle-orchestra-music.mp3`,
@@ -47,8 +43,6 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2016/07/Into-Battle.mp3",
     "https://soundimage.org/wp-content/uploads/2016/07/Forward-Assault.mp3",
   ],
-
-  // Dark / underground (dungeon, cave, prison, graveyard)
   dungeon: [
     `${MIST_CROWN}03%20Flickering%20Torchlight.mp3`,
     `${MIST_CROWN}04%20Cursed%20Halls.mp3`,
@@ -66,8 +60,6 @@ const POOLS: Record<string, string[]> = {
     `${DARK_AMB}Nightmare.mp3`,
     `${DARK_AMB}Suspense%20Piano.mp3`,
   ],
-
-  // Nature / outdoors (forest, wilderness, swamp, mountain, desert)
   nature: [
     `${MEDIEVAL}Cold%20Journey.mp3`,
     `${MEDIEVAL}Nordic%20Wist.mp3`,
@@ -81,8 +73,6 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2023/12/Lost-Jungle.mp3",
     "https://soundimage.org/wp-content/uploads/2020/06/Misty-Bog_remixed.mp3",
   ],
-
-  // Mystical / sacred (temple, library, ruins)
   mystical: [
     `${MIST_CROWN}05%20Long%20Ago%2C%20When%20the%20Light%20Fought%20Shadow.mp3`,
     `${MIST_CROWN}12%20Mist%20Crown.mp3`,
@@ -96,8 +86,6 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2023/12/Magic-Clock-Shop.mp3",
     "https://soundimage.org/wp-content/uploads/2023/12/Magic-Ocean.mp3",
   ],
-
-  // Majestic / grand (castle, arena)
   epic: [
     `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
     `${MIST_CROWN}13%20Citadel%20of%20Mist.mp3`,
@@ -113,8 +101,6 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2020/06/The-Key-to-the-Kingdom.mp3",
     "https://soundimage.org/wp-content/uploads/2020/06/Comrades-Always.mp3",
   ],
-
-  // Maritime (ship)
   sea: [
     `${MEDIEVAL}Cold%20Journey.mp3`,
     `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
@@ -125,53 +111,34 @@ const POOLS: Record<string, string[]> = {
   ],
 };
 
-// Maps detect-scene keys → pool name
 const SCENE_TO_POOL: Record<string, string> = {
-  // Combat variants — every scene type gets one
-  tavern_combat:     "combat",
-  dungeon_combat:    "combat",
-  forest_combat:     "combat",
-  cave_combat:       "combat",
-  ruins_combat:      "combat",
-  castle_combat:     "combat",
-  street_combat:     "combat",
-  temple_combat:     "combat",
-  wilderness_combat: "combat",
-  ship_combat:       "combat",
-  graveyard_combat:  "combat",
-  prison_combat:     "combat",
-  library_combat:    "combat",
-  port_combat:       "combat",
-  desert_combat:     "combat",
-  mountain_combat:   "combat",
-  swamp_combat:      "combat",
-  village_combat:    "combat",
-  shop_combat:       "combat",
-  arena:             "combat",
-  // Non-combat
-  dungeon:           "dungeon",
-  cave:              "dungeon",
-  prison:            "dungeon",
-  graveyard:         "dungeon",
-  forest:            "nature",
-  wilderness:        "nature",
-  swamp:             "nature",
-  mountain:          "nature",
-  desert:            "nature",
-  temple:            "mystical",
-  library:           "mystical",
-  ruins:             "mystical",
-  tavern:            "social",
-  shop:              "social",
-  port:              "social",
-  village:           "social",
-  street:            "social",
-  castle:            "epic",
-  ship:              "sea",
+  tavern_combat: "combat", dungeon_combat: "combat", forest_combat: "combat",
+  cave_combat: "combat", ruins_combat: "combat", castle_combat: "combat",
+  street_combat: "combat", temple_combat: "combat", wilderness_combat: "combat",
+  ship_combat: "combat", graveyard_combat: "combat", prison_combat: "combat",
+  library_combat: "combat", port_combat: "combat", desert_combat: "combat",
+  mountain_combat: "combat", swamp_combat: "combat", village_combat: "combat",
+  shop_combat: "combat", arena: "combat",
+  dungeon: "dungeon", cave: "dungeon", prison: "dungeon", graveyard: "dungeon",
+  forest: "nature", wilderness: "nature", swamp: "nature", mountain: "nature", desert: "nature",
+  temple: "mystical", library: "mystical", ruins: "mystical",
+  tavern: "social", shop: "social", port: "social", village: "social", street: "social",
+  castle: "epic", ship: "sea",
 };
 
+// ── Pool metadata for the picker ──────────────────────────────────────────────
+const POOL_META: { key: string; icon: string; label: string; desc: string }[] = [
+  { key: "social",   icon: "🍺", label: "Tavern",   desc: "Folk, warm & social" },
+  { key: "nature",   icon: "🌲", label: "Wilds",    desc: "Outdoor & epic nature" },
+  { key: "dungeon",  icon: "💀", label: "Dungeon",  desc: "Dark & underground" },
+  { key: "mystical", icon: "✨", label: "Mystical", desc: "Arcane & ethereal" },
+  { key: "epic",     icon: "🏰", label: "Castle",   desc: "Grand & majestic" },
+  { key: "sea",      icon: "⚓", label: "Sea",      desc: "Maritime adventure" },
+  { key: "combat",   icon: "⚔",  label: "Combat",   desc: "Intense battle" },
+];
+
 const POOL_LABELS: Record<string, string> = {
-  tavern: "Tavern", social: "Town", combat: "Combat", dungeon: "Dungeon",
+  tavern: "Tavern", social: "Tavern", combat: "Combat", dungeon: "Dungeon",
   nature: "Wilds", mystical: "Mystical", epic: "Castle", sea: "Sea",
 };
 
@@ -200,6 +167,26 @@ function nextFrom(queue: string[], pool: string[]): { src: string; queue: string
   return { src: src ?? pool[0], queue: rest };
 }
 
+// Pure function — computes which pool best matches a scene without side effects
+function computePool(scene: string, sceneType?: string, mods?: string[]): string {
+  if (scene.endsWith("_combat")) return "combat";
+  if (mods && mods.length > 0) {
+    const modSet = new Set(mods);
+    if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial")) return "mystical";
+    if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal")) return "sea";
+    if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively")) return "social";
+    if ((modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard")) &&
+        (sceneType === "wilderness" || sceneType === "mountain" || sceneType === "forest")) return "nature";
+    if ((modSet.has("ancient") || modSet.has("ethereal") || modSet.has("arcane") || modSet.has("mystical")) &&
+        (sceneType === "ruins" || sceneType === "temple" || sceneType === "library")) return "mystical";
+  }
+  if (SCENE_TO_POOL[scene]) return SCENE_TO_POOL[scene];
+  const baseKey = Object.keys(SCENE_TO_POOL)
+    .filter(k => scene.startsWith(k + "_") || scene === k)
+    .sort((a, b) => b.length - a.length)[0];
+  return SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon";
+}
+
 export function MusicPlayer() {
   const pathname = usePathname();
   const audioRef    = useRef<HTMLAudioElement | null>(null);
@@ -211,6 +198,8 @@ export function MusicPlayer() {
   const [ambianceVol,   setAmbianceVol]   = useState(0.60);
   const [ambianceReady, setAmbianceReady] = useState(false);
   const [poolLabel,     setPoolLabel]     = useState("Tavern");
+  const [pickerOpen,    setPickerOpen]    = useState(false);
+  const [recommended,   setRecommended]   = useState<string | null>(null);
 
   const targetVolume    = useRef(0.10);
   const targetAmbianceV = useRef(0.60);
@@ -219,6 +208,7 @@ export function MusicPlayer() {
   const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);
   const musicQueue      = useRef<string[]>([]);
   const musicErrors     = useRef(0);
+  const lastSceneArgs   = useRef<{ scene: string; type?: string; mods?: string[] } | null>(null);
 
   const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
@@ -230,7 +220,6 @@ export function MusicPlayer() {
     if (fadeTimer.current) { clearInterval(fadeTimer.current); fadeTimer.current = null; }
   }, []);
 
-  // ── Load and play a single track ─────────────────────────────────────────────
   const loadAndPlay = useCallback((src: string, startVol?: number) => {
     const audio = audioRef.current;
     if (!audio || !src) return;
@@ -247,7 +236,6 @@ export function MusicPlayer() {
     loadAndPlay(src, startVol);
   }, [loadAndPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Cross-fade to a new pool ──────────────────────────────────────────────────
   const fadeTo = useCallback((targetPool: string) => {
     if (activePoolKey.current === targetPool) return;
     const pool  = getPool(targetPool);
@@ -288,7 +276,6 @@ export function MusicPlayer() {
     }, 40);
   }, [clearFade]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Ambiance fade helpers ────────────────────────────────────────────────────
   const clearAmbianceFade = useCallback(() => {
     if (ambianceFade.current) { clearInterval(ambianceFade.current); ambianceFade.current = null; }
   }, []);
@@ -329,7 +316,7 @@ export function MusicPlayer() {
     }, 60);
   }, [clearAmbianceFade]);
 
-  // ── Expose global handles ───────────────────────────────────────────────────
+  // ── Expose global handles ────────────────────────────────────────────────────
   useEffect(() => {
     window.__dndMusicPlay = () => {
       const audio = audioRef.current;
@@ -340,39 +327,23 @@ export function MusicPlayer() {
     };
 
     window.__dndSetMusicScene = (scene: string, sceneType?: string, mods?: string[]) => {
-      // Priority 1: combat suffix always wins
-      if (scene.endsWith("_combat")) { fadeTo("combat"); return; }
+      // Store for "match scene" button in the picker
+      lastSceneArgs.current = { scene, type: sceneType, mods };
+      setRecommended(computePool(scene, sceneType, mods));
 
-      // Priority 2: modifier-based pool overrides
+      // Auto-switch pool
+      if (scene.endsWith("_combat")) { fadeTo("combat"); return; }
       if (mods && mods.length > 0) {
         const modSet = new Set(mods);
-        // Sacred/divine locations → mystical
-        if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial")) {
-          fadeTo("mystical"); return;
-        }
-        // Nautical modifiers on non-ship scenes → sea
-        if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal")) {
-          fadeTo("sea"); return;
-        }
-        // Festive/crowded → social
-        if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively")) {
-          fadeTo("social"); return;
-        }
-        // Frozen outdoors → nature (frozen dungeons stay dungeon)
+        if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial")) { fadeTo("mystical"); return; }
+        if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal")) { fadeTo("sea"); return; }
+        if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively")) { fadeTo("social"); return; }
         if ((modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard")) &&
-            (sceneType === "wilderness" || sceneType === "mountain" || sceneType === "forest")) {
-          fadeTo("nature"); return;
-        }
-        // Arcane/ethereal ruins or temples → mystical
+            (sceneType === "wilderness" || sceneType === "mountain" || sceneType === "forest")) { fadeTo("nature"); return; }
         if ((modSet.has("ancient") || modSet.has("ethereal") || modSet.has("arcane") || modSet.has("mystical")) &&
-            (sceneType === "ruins" || sceneType === "temple" || sceneType === "library")) {
-          fadeTo("mystical"); return;
-        }
+            (sceneType === "ruins" || sceneType === "temple" || sceneType === "library")) { fadeTo("mystical"); return; }
       }
-
-      // Priority 3: exact match in table
       if (SCENE_TO_POOL[scene]) { fadeTo(SCENE_TO_POOL[scene]); return; }
-      // Priority 4: strip modifiers — find the longest base key that prefixes the scene
       const baseKey = Object.keys(SCENE_TO_POOL)
         .filter(k => scene.startsWith(k + "_") || scene === k)
         .sort((a, b) => b.length - a.length)[0];
@@ -396,12 +367,8 @@ export function MusicPlayer() {
     return () => { delete window.__dndMusicPlay; delete window.__dndSetMusicScene; delete window.__dndSetAmbiance; };
   }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance]);
 
-  // ── Switch pool on route change (campaign ↔ dashboard) ──────────────────────
-  useEffect(() => {
-    fadeTo(defaultPool);
-  }, [defaultPool, fadeTo]);
+  useEffect(() => { fadeTo(defaultPool); }, [defaultPool, fadeTo]);
 
-  // ── Sync volume knobs ────────────────────────────────────────────────────────
   useEffect(() => {
     targetVolume.current = volume;
     if (audioRef.current) audioRef.current.volume = volume;
@@ -412,7 +379,6 @@ export function MusicPlayer() {
     if (ambianceRef.current && !ambianceRef.current.paused) ambianceRef.current.volume = ambianceVol;
   }, [ambianceVol]);
 
-  // ── Toggle play / pause ──────────────────────────────────────────────────────
   const toggle = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -426,7 +392,26 @@ export function MusicPlayer() {
     }
   }, [playNextMusic]);
 
+  const skip = useCallback(() => {
+    if (!audioRef.current || audioRef.current.paused) return;
+    musicErrors.current = 0;
+    playNextMusic(targetVolume.current);
+  }, [playNextMusic]);
+
+  const selectPool = useCallback((key: string) => {
+    fadeTo(key);
+    setPickerOpen(false);
+  }, [fadeTo]);
+
+  const matchScene = useCallback(() => {
+    const args = lastSceneArgs.current;
+    if (args) window.__dndSetMusicScene?.(args.scene, args.type, args.mods);
+    setPickerOpen(false);
+  }, []);
+
   const isTavern = activePoolKey.current === "tavern" || activePoolKey.current === "social";
+  // Normalize current active key for comparison (tavern aliases to social in POOL_META)
+  const activeMetaKey = activePoolKey.current === "tavern" ? "social" : activePoolKey.current;
 
   if (isOnLanding) return null;
 
@@ -456,72 +441,188 @@ export function MusicPlayer() {
         onCanPlayThrough={() => { if (ambianceRef.current?.src) fadeInAmbiance(); }}
       />
 
+      {/* Click-away backdrop */}
+      {pickerOpen && (
+        <div
+          onClick={() => setPickerOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 49 }}
+        />
+      )}
+
       <div
         style={{
           position: "fixed",
           bottom: "20px",
           left: "20px",
           zIndex: 50,
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          background: "rgba(10, 7, 24, 0.88)",
-          backdropFilter: "blur(14px)",
-          border: `1px solid ${loadError ? "rgba(239,68,68,0.5)" : playing ? "rgba(139, 92, 246, 0.45)" : "rgba(255,255,255,0.08)"}`,
-          borderRadius: "100px",
-          padding: "7px 14px",
-          boxShadow: playing ? "0 0 16px rgba(139,92,246,0.15)" : "0 2px 12px rgba(0,0,0,0.4)",
-          transition: "border 0.3s, box-shadow 0.3s",
           userSelect: "none",
         }}
       >
-        <button
-          onClick={toggle}
-          title={loadError ? "Music failed to load — click to retry" : playing ? "Pause" : "Play background music"}
+        {/* Pool picker — floats above the pill */}
+        {pickerOpen && (
+          <div
+            className="animate-fade-in"
+            style={{
+              position: "absolute",
+              bottom: "calc(100% + 8px)",
+              left: 0,
+              background: "rgba(10, 7, 24, 0.97)",
+              backdropFilter: "blur(14px)",
+              border: "1px solid rgba(139,92,246,0.4)",
+              borderRadius: "12px",
+              padding: "6px",
+              minWidth: "200px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            }}
+          >
+            {/* Match scene button */}
+            {recommended && (
+              <button
+                onClick={matchScene}
+                style={{
+                  display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                  padding: "7px 10px", borderRadius: "8px", border: "none",
+                  background: "rgba(139,92,246,0.15)", cursor: "pointer",
+                  marginBottom: "4px", transition: "background 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.15)"; }}
+              >
+                <span style={{ fontSize: "0.75rem" }}>✦</span>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#c4b5fd" }}>Match Scene</div>
+                  <div style={{ fontSize: "0.62rem", color: "#64748b" }}>
+                    {POOL_META.find(p => p.key === recommended)?.icon}{" "}
+                    {POOL_META.find(p => p.key === recommended)?.label ?? recommended}
+                  </div>
+                </div>
+              </button>
+            )}
+
+            <div style={{ borderTop: recommended ? "1px solid rgba(255,255,255,0.07)" : "none", paddingTop: recommended ? "4px" : 0, display: "flex", flexDirection: "column", gap: "1px" }}>
+              {POOL_META.map(p => {
+                const isActive = p.key === activeMetaKey;
+                const isRec    = p.key === recommended && p.key !== activeMetaKey;
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => selectPool(p.key)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                      padding: "7px 10px", borderRadius: "8px", border: "none",
+                      background: isActive ? "rgba(139,92,246,0.25)" : "transparent",
+                      cursor: "pointer", transition: "background 0.15s",
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(139,92,246,0.12)"; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span style={{ fontSize: "0.9rem", flexShrink: 0 }}>{p.icon}</span>
+                    <div style={{ flex: 1, textAlign: "left" }}>
+                      <div style={{ fontSize: "0.78rem", fontWeight: "bold", color: isActive ? "#c4b5fd" : "white" }}>{p.label}</div>
+                      <div style={{ fontSize: "0.62rem", color: "#64748b" }}>{p.desc}</div>
+                    </div>
+                    {isActive && <span style={{ fontSize: "0.62rem", color: "#8b5cf6", flexShrink: 0 }}>●</span>}
+                    {isRec    && <span style={{ fontSize: "0.62rem", color: "#64748b", flexShrink: 0 }} title="Matches current scene">✦</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Pill */}
+        <div
           style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: "0.95rem",
-            padding: 0,
-            lineHeight: 1,
-            color: loadError ? "#ef4444" : playing ? "var(--primary)" : "#475569",
-            transition: "color 0.2s",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: "rgba(10, 7, 24, 0.88)",
+            backdropFilter: "blur(14px)",
+            border: `1px solid ${loadError ? "rgba(239,68,68,0.5)" : playing ? "rgba(139, 92, 246, 0.45)" : "rgba(255,255,255,0.08)"}`,
+            borderRadius: "100px",
+            padding: "7px 14px",
+            boxShadow: playing ? "0 0 16px rgba(139,92,246,0.15)" : "0 2px 12px rgba(0,0,0,0.4)",
+            transition: "border 0.3s, box-shadow 0.3s",
           }}
         >
-          {loadError ? "⚠" : playing ? "⏸" : "♪"}
-        </button>
+          {/* Play / pause */}
+          <button
+            onClick={toggle}
+            title={loadError ? "Music failed to load — click to retry" : playing ? "Pause" : "Play background music"}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              fontSize: "0.95rem", padding: 0, lineHeight: 1,
+              color: loadError ? "#ef4444" : playing ? "var(--primary)" : "#475569",
+              transition: "color 0.2s",
+            }}
+          >
+            {loadError ? "⚠" : playing ? "⏸" : "♪"}
+          </button>
 
-        {loadError && (
-          <span style={{ fontSize: "0.65rem", color: "#ef4444", whiteSpace: "nowrap" }}>
-            music unavailable
-          </span>
-        )}
-
-        {playing && !loadError && (
-          <>
-            <span style={{ fontSize: "0.65rem", color: "#64748b", whiteSpace: "nowrap" }}>
-              {poolLabel}
+          {loadError && (
+            <span style={{ fontSize: "0.65rem", color: "#ef4444", whiteSpace: "nowrap" }}>
+              music unavailable
             </span>
-            <input
-              type="range" min={0} max={1} step={0.05} value={volume}
-              onChange={e => setVolume(parseFloat(e.target.value))}
-              title="Music volume"
-              style={{ width: "48px", accentColor: "var(--primary)", cursor: "pointer" }}
-            />
-          </>
-        )}
-        {ambianceReady && (
-          <>
-            <span style={{ fontSize: "0.65rem", color: "#475569", whiteSpace: "nowrap" }}>🌫</span>
-            <input
-              type="range" min={0} max={1} step={0.05} value={ambianceVol}
-              onChange={e => setAmbianceVol(parseFloat(e.target.value))}
-              title="Ambiance volume"
-              style={{ width: "42px", accentColor: "#64748b", cursor: "pointer" }}
-            />
-          </>
-        )}
+          )}
+
+          {!loadError && (
+            <>
+              {/* Pool label — opens picker */}
+              <button
+                onClick={() => setPickerOpen(v => !v)}
+                title="Change music mood"
+                style={{
+                  background: pickerOpen ? "rgba(139,92,246,0.18)" : "none",
+                  border: "none", cursor: "pointer", padding: "2px 5px",
+                  borderRadius: "5px", fontSize: "0.65rem", color: playing ? "#94a3b8" : "#475569",
+                  whiteSpace: "nowrap", transition: "all 0.15s", display: "flex", alignItems: "center", gap: "3px",
+                }}
+              >
+                {poolLabel} <span style={{ fontSize: "0.5rem", opacity: 0.7 }}>▾</span>
+              </button>
+
+              {/* Skip track */}
+              {playing && (
+                <button
+                  onClick={skip}
+                  title="Skip track"
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    fontSize: "0.75rem", padding: 0, lineHeight: 1,
+                    color: "#475569", transition: "color 0.15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}
+                >
+                  ⏭
+                </button>
+              )}
+
+              {/* Music volume */}
+              {playing && (
+                <input
+                  type="range" min={0} max={1} step={0.05} value={volume}
+                  onChange={e => setVolume(parseFloat(e.target.value))}
+                  title="Music volume"
+                  style={{ width: "48px", accentColor: "var(--primary)", cursor: "pointer" }}
+                />
+              )}
+            </>
+          )}
+
+          {/* Ambiance volume */}
+          {ambianceReady && (
+            <>
+              <span style={{ fontSize: "0.65rem", color: "#475569", whiteSpace: "nowrap" }}>🌫</span>
+              <input
+                type="range" min={0} max={1} step={0.05} value={ambianceVol}
+                onChange={e => setAmbianceVol(parseFloat(e.target.value))}
+                title="Ambiance volume"
+                style={{ width: "42px", accentColor: "#64748b", cursor: "pointer" }}
+              />
+            </>
+          )}
+        </div>
       </div>
     </>
   );
