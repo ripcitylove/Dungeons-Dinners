@@ -1,4 +1,12 @@
+import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import { NextRequest } from "next/server";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 const ALLOWED_VOICES = ["chronicler", "gravedigger", "bard", "oracle", "shade", "sage"] as const;
 type AllowedVoice = typeof ALLOWED_VOICES[number];
@@ -10,37 +18,37 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   style:      number;
 }> = {
   chronicler: {
-    voiceId:    "JBFqnCBsd6RMkjVDRZzb", // George ♂ — Warm, Captivating Storyteller (British)
+    voiceId:    "JBFqnCBsd6RMkjVDRZzb",
     stability:  0.75,
     similarity: 0.75,
     style:      0.30,
   },
   gravedigger: {
-    voiceId:    "N2lVS1w4EtoT3dr4eOWO", // Callum ♂ — Husky, Dark (American)
+    voiceId:    "N2lVS1w4EtoT3dr4eOWO",
     stability:  0.55,
     similarity: 0.75,
     style:      0.55,
   },
   bard: {
-    voiceId:    "pFZP5JQG7iQjIQuC4Bku", // Lily ♀ — Velvety Actress (British)
+    voiceId:    "pFZP5JQG7iQjIQuC4Bku",
     stability:  0.30,
     similarity: 0.75,
     style:      0.70,
   },
   oracle: {
-    voiceId:    "Xb7hH8MSUJpSbSDYk0k2", // Alice ♀ — Clear, Engaging (British)
+    voiceId:    "Xb7hH8MSUJpSbSDYk0k2",
     stability:  0.82,
     similarity: 0.80,
     style:      0.12,
   },
   shade: {
-    voiceId:    "SOYHLrjzK2X1ezoPC6cr", // Harry ♂ — Fierce Warrior (American)
+    voiceId:    "SOYHLrjzK2X1ezoPC6cr",
     stability:  0.50,
     similarity: 0.75,
     style:      0.42,
   },
   sage: {
-    voiceId:    "pqHfZKP75CvOlQylNhV4", // Bill ♂ — Wise, Mature, Balanced (American)
+    voiceId:    "pqHfZKP75CvOlQylNhV4",
     stability:  0.82,
     similarity: 0.80,
     style:      0.12,
@@ -49,7 +57,11 @@ const VOICE_CONFIG: Record<AllowedVoice, {
 
 const DEFAULT_VOICE: AllowedVoice = "chronicler";
 const MODEL_ID = "eleven_turbo_v2_5";
+const BUCKET = "scenes";
 
+// Generate TTS via ElevenLabs, upload to Supabase Storage, return the public
+// CDN URL. Xbox Edge (and other constrained browsers) can play static CDN URLs
+// but refuse audio served directly from serverless API responses.
 async function synthesize(text: string, voice: string): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
@@ -58,10 +70,26 @@ async function synthesize(text: string, voice: string): Promise<Response> {
   const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
     ? (voice as AllowedVoice)
     : DEFAULT_VOICE;
-
   const { voiceId, stability, similarity, style } = VOICE_CONFIG[safeVoice];
 
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+  // Deterministic storage key — same text+voice always maps to the same file
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${safeVoice}:${text.slice(0, 5000)}`)
+    .digest("hex")
+    .slice(0, 24);
+  const storageFile = `narration/${hash}.mp3`;
+
+  // Cache hit: redirect immediately without calling ElevenLabs
+  const { data: listed } = await supabase.storage.from(BUCKET).list("narration", { search: hash.slice(0, 8) });
+  const cached = listed?.find(f => f.name === `${hash}.mp3`);
+  if (cached) {
+    const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
+    return Response.redirect(publicUrl, 302);
+  }
+
+  // Generate audio
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method:  "POST",
     headers: {
       "xi-api-key":   apiKey,
@@ -92,14 +120,20 @@ async function synthesize(text: string, voice: string): Promise<Response> {
     return new Response("TTS unavailable", { status: 500 });
   }
 
-  // Pipe the stream directly — browser starts receiving audio within ~300 ms
-  // instead of waiting 3–5 s for the full ElevenLabs response to buffer.
-  return new Response(res.body, {
-    headers: {
-      "Content-Type":  "audio/mpeg",
-      "Cache-Control": "no-cache",
-    },
-  });
+  const audioBuffer = Buffer.from(await res.arrayBuffer());
+
+  // Upload to Supabase Storage so the browser gets a static CDN URL
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(storageFile, audioBuffer, { contentType: "audio/mpeg", upsert: true });
+
+  if (error) {
+    console.error("[api/narrate] Supabase upload:", error.message);
+    return new Response("Upload failed", { status: 500 });
+  }
+
+  const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
+  return Response.redirect(publicUrl, 302);
 }
 
 export async function GET(req: NextRequest) {
