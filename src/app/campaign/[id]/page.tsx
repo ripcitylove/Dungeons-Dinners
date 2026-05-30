@@ -254,6 +254,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const audio = previewAudioRef.current;
         if (!audio || !audioUrl) { setTestingVoice(null); return; }
         audio.src     = audioUrl;
+        audio.load();
         audio.onended = () => { setTestingVoice(null); };
         audio.onerror = () => { setTestingVoice(null); };
         audio.play().catch(() => setTestingVoice(null));
@@ -1048,6 +1049,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     el.onended = cleanup;
     el.onerror = () => cleanup();
     el.src = entry as string;
+    el.load(); // required on Xbox Edge with preload="none" — without this play() fires before the browser starts fetching
     setNarrating(true);
     const p = el.play();
     if (p instanceof Promise) p.catch(() => cleanup());
@@ -2170,6 +2172,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 for (const el of [narAudioRef.current, previewAudioRef.current]) {
                   if (el) {
                     el.src = "/api/silence";
+                    el.load();
                     el.onended = () => { el.src = ""; el.onended = null; };
                     el.play().catch(() => {});
                   }
