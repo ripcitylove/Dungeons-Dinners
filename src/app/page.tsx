@@ -108,7 +108,7 @@ export default async function Home() {
           zIndex: 0,
         }}>
           <div className="animate-float" style={{
-            fontSize: "clamp(180px, 21vw, 300px)",
+            fontSize: "clamp(260px, 30vw, 420px)",
             lineHeight: 1,
             opacity: 0.2,
             filter: "drop-shadow(0 0 48px rgba(251,146,60,0.9)) drop-shadow(0 0 100px rgba(239,68,68,0.55)) drop-shadow(0 0 4px rgba(251,191,36,0.8))",
@@ -119,9 +119,9 @@ export default async function Home() {
         {/* Ramen bowl — in front of the dragon's face (right side after flip) */}
         <div className="animate-float" style={{
           position: "absolute",
-          left: "calc(3% + clamp(220px, 25vw, 350px))",
-          top: "calc(9% + clamp(30px, 4vw, 55px))",
-          fontSize: "clamp(48px, 5.5vw, 72px)",
+          left: "calc(3% + clamp(310px, 36vw, 500px))",
+          top: "calc(9% + clamp(40px, 5vw, 70px))",
+          fontSize: "clamp(72px, 8.5vw, 110px)",
           lineHeight: 1,
           opacity: 0.22,
           filter: "drop-shadow(0 0 20px rgba(251,146,60,0.75)) drop-shadow(0 0 8px rgba(251,191,36,0.6))",
