@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import "./globals.css";
+import LandingNav from "../components/LandingNav";
 
 const CLASS_COLORS: Record<string, string> = {
   Fighter: "#ef4444", Wizard: "#8b5cf6", Rogue: "#94a3b8",
@@ -86,21 +87,36 @@ export default async function Home() {
     <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
       {/* ── Navigation ─────────────────────────────────────────────────────── */}
-      <nav className="glass-panel" style={{ margin: "20px", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
-        <div style={{ fontSize: "1.5rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ color: "var(--primary)" }}>⬡</span>
-          <span>Dungeons &amp; Dinner Legends</span>
-        </div>
-        <Link href="/auth"><button className="btn-secondary">Log In</button></Link>
-      </nav>
+      <LandingNav />
 
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <section style={{ minHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "60px 20px 80px", position: "relative" }}>
+      <section style={{ minHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "60px 20px 80px", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, zIndex: -2 }}>
           <Image src="/hero_bg.png" alt="" fill style={{ objectFit: "cover", opacity: 0.13, mixBlendMode: "screen" }} priority />
         </div>
         <div style={{ position: "absolute", top: "5%", left: "8%", width: "500px", height: "500px", background: "var(--primary)", filter: "blur(180px)", opacity: 0.13, zIndex: -1, borderRadius: "50%" }} />
         <div style={{ position: "absolute", bottom: "5%", right: "8%", width: "420px", height: "420px", background: "#f59e0b", filter: "blur(180px)", opacity: 0.07, zIndex: -1, borderRadius: "50%" }} />
+
+        {/* Dragon — epic centerpiece of the hero, fire-lit and looming */}
+        <div style={{
+          position: "absolute",
+          right: "-2%",
+          top: "50%",
+          transform: "translateY(-52%)",
+          fontSize: "clamp(200px, 24vw, 340px)",
+          lineHeight: 1,
+          opacity: 0.18,
+          filter: "drop-shadow(0 0 48px rgba(251,146,60,0.9)) drop-shadow(0 0 100px rgba(239,68,68,0.55)) drop-shadow(0 0 4px rgba(251,191,36,0.8))",
+          animation: "float 5s ease-in-out infinite",
+          animationDelay: "0.5s",
+          userSelect: "none",
+          pointerEvents: "none",
+          zIndex: 0,
+        }}>
+          🐉
+        </div>
+        {/* Faint fire glow behind the dragon */}
+        <div style={{ position: "absolute", right: "0%", top: "50%", transform: "translateY(-50%)", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(251,146,60,0.18) 0%, rgba(239,68,68,0.08) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
@@ -262,9 +278,17 @@ export default async function Home() {
       </section>
 
       {/* ── Publisher Badge ─────────────────────────────────────────────────── */}
-      <div style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 50, background: "white", borderRadius: "12px", padding: "8px", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{
+        position: "fixed", bottom: "20px", right: "20px", zIndex: 50,
+        background: "white", borderRadius: "14px", padding: "10px",
+        boxShadow: "0 0 0 1px rgba(139,92,246,0.35), 0 0 24px rgba(139,92,246,0.45), 0 0 52px rgba(139,92,246,0.2), 0 8px 32px rgba(0,0,0,0.55)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "5px",
+      }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: "90px", height: "90px", objectFit: "contain", display: "block", borderRadius: "6px" }} />
+        <img src="/DrinkPlayLogo.jpg" alt="Drink and Play Publishing" style={{ width: "128px", height: "128px", objectFit: "contain", display: "block", borderRadius: "8px" }} />
+        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#4c1d95", letterSpacing: "0.06em", textTransform: "uppercase", lineHeight: 1.3, textAlign: "center", maxWidth: "120px" }}>
+          Drink &amp; Play Publishing
+        </div>
       </div>
     </main>
   );
