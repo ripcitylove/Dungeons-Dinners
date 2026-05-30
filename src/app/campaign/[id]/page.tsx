@@ -2227,7 +2227,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           key={currentSceneUrl ?? "default"}
           src={currentSceneUrl ?? "/hero_bg.png"}
           alt="Current Scene"
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.75, animation: "fadeIn 1.2s ease" }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", opacity: 0.75, animation: "fadeIn 1.2s ease" }}
         />
         {/* Scene loading indicator */}
         {sceneLoading && (
@@ -2355,7 +2355,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     key={e.id}
                     onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
                     style={{
-                      flexShrink: 0, width: "88px",
+                      flexShrink: 0, width: "clamp(72px, 5.5rem, 104px)",
                       background: e.is_defeated ? "rgba(0,0,0,0.2)" : isTargeted ? "rgba(120,0,0,0.7)" : "rgba(60,0,0,0.55)",
                       border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`,
                       borderRadius: "10px", padding: "8px 8px 7px",
@@ -2910,7 +2910,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                 {/* Identity with portrait */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "100%", height: "180px", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
+                  <div style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${CLASS_COLORS[character.class] ?? "var(--border)"}40`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
                     {character.portrait_url ? (
                       <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                     ) : (
