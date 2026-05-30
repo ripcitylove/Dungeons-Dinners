@@ -363,6 +363,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [currencyDenom,    setCurrencyDenom]     = useState<"cp"|"sp"|"ep"|"gp"|"pp">("gp");
   const [currencyTarget,   setCurrencyTarget]    = useState<Character | null>(null);
 
+  // Chat font size — persisted across sessions
+  const [chatFontSize, setChatFontSize] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = parseFloat(localStorage.getItem("dnd_chat_font_size") ?? "");
+      if (!isNaN(saved) && saved >= 0.65 && saved <= 1.35) return saved;
+    }
+    return 0.9;
+  });
+
   // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
   const [hoveredCurrency,  setHoveredCurrency]    = useState<string | null>(null);
@@ -952,7 +961,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character?.hp, character?.id]);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingContent]);
+  useEffect(() => {
+    // Delay slightly so layout reflows (e.g. suggestions box appearing) before we scroll
+    const t = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 40);
+    return () => clearTimeout(t);
+  }, [messages, streamingContent, suggestions]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet
@@ -2498,6 +2511,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
           >?</button>
+          {/* Font size controls */}
+          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+            <button
+              onClick={() => { const v = Math.max(0.65, parseFloat((chatFontSize - 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
+              title="Decrease font size"
+              disabled={chatFontSize <= 0.65}
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize <= 0.65 ? "not-allowed" : "pointer", opacity: chatFontSize <= 0.65 ? 0.35 : 1, fontSize: "0.62rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
+              onMouseEnter={e => { if (chatFontSize > 0.65) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
+            >A−</button>
+            <button
+              onClick={() => { const v = Math.min(1.35, parseFloat((chatFontSize + 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
+              title="Increase font size"
+              disabled={chatFontSize >= 1.35}
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize >= 1.35 ? "not-allowed" : "pointer", opacity: chatFontSize >= 1.35 ? 0.35 : 1, fontSize: "0.9rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
+              onMouseEnter={e => { if (chatFontSize < 1.35) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
+            >A+</button>
+          </div>
           {/* Voice/narration picker */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <button
@@ -2656,7 +2688,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div key={idx} className="animate-fade-in" style={{ alignSelf: msg.role === "player" ? "flex-end" : "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: msg.role === "player" ? "flex-end" : "flex-start" }}>
               {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
               {msg.role === "dm"     && <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>}
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: "0.9rem", lineHeight: 1.55, whiteSpace: "pre-wrap",
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, whiteSpace: "pre-wrap",
                 background: msg.role === "dm" ? "rgba(139,92,246,0.15)" : msg.role === "system" ? "transparent" : "var(--card-bg)",
                 border:     msg.role === "dm" ? "1px solid rgba(139,92,246,0.3)" : msg.role === "system" ? "none" : "1px solid var(--border)",
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
@@ -2682,7 +2714,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {(isTyping || streamingContent) && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: "0.9rem", lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
                 {streamingContent || <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>}
                 {streamingContent && <span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />}
               </div>
