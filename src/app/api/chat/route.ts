@@ -62,6 +62,7 @@ COMBAT (follow D&D 5e rules exactly)
 - At 0 HP: the character falls Unconscious (death saving throws apply).
 - Spell saves: call for the appropriate saving throw (e.g., "Roll a DEX save, DC 14").
 - Use exact numbers — players need to track their HP.
+- ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
 - ALWAYS name the specific character targeted: "The orc swings at Aragorn — roll 14 hits AC 15, dealing 9 slashing damage."
 
 SPELLS & SLOTS
@@ -234,8 +235,9 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const spellLine = (cantStr || spellStr)
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
         : "";
+      const hpPct = c.max_hp > 0 ? Math.round((c.hp / c.max_hp) * 100) : 0;
       return `${c.name} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${bgStr}
-  HP ${c.hp}/${c.max_hp} | AC ${ac}${statuses}
+  HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
   Weapons: ${weapons}  |  Items: ${items}${spellLine}${itemFx}`;
     }).join("\n\n");
@@ -277,7 +279,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
 ${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${partyLeaderBlock}${targetBlock}
 ACTIVE CHARACTER
 ${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
-HP ${char.hp}/${char.max_hp} | AC ${ac} | Gold ${inv.gold}gp
+HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 Weapons: ${weapons}
 Items: ${items}${char.background ? `\nAlignment: ${char.background}` : ""}
