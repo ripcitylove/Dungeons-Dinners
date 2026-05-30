@@ -420,7 +420,7 @@ export default function CreateCampaignWizard() {
         {/* ── Title ── */}
         <h1 style={{ fontSize: "1.9rem", marginBottom: "6px", textAlign: "center" }}>{stepTitle}</h1>
         {phase === "characters" && (
-          <div style={{ textAlign: "center", marginBottom: "28px" }}>
+          <div style={{ textAlign: "center", marginBottom: charStep === 1 ? "16px" : "28px" }}>
             <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
               Building <strong style={{ color: "var(--primary)" }}>
                 {draft.name.trim() || `Player ${currentPlayerIdx + 1}`}
@@ -430,6 +430,13 @@ export default function CreateCampaignWizard() {
               <p style={{ fontSize: "0.75rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "20px", padding: "3px 12px" }}>
                 👑 <span>Player 1&apos;s character becomes the <strong style={{ color: "#c4b5fd" }}>Party Leader</strong> — they can invite others and manage the party</span>
               </p>
+            )}
+            {/* Inline nav on step 1 — sits right below the disclaimer */}
+            {charStep === 1 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px" }}>
+                <button className="btn-secondary" onClick={handleBack}>Back</button>
+                <button className="btn-primary" onClick={handleNext} disabled={nextDisabled}>{nextLabel}</button>
+              </div>
             )}
           </div>
         )}
@@ -551,8 +558,11 @@ export default function CreateCampaignWizard() {
                                 onMouseEnter={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.55)"; e.currentTarget.style.background = "rgba(245,158,11,0.1)"; e.currentTarget.style.transform = "translateX(-2px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(245,158,11,0.12)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
                                 {/* Portrait */}
-                                <div style={{ width: "38px", height: "38px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}55`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
-                                  {c.portrait_url && <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />}
+                                <div style={{ width: "56px", height: "56px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}`, boxShadow: `0 0 10px ${classColor}44`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
+                                  {c.portrait_url
+                                    ? <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                                    : <div style={{ width: "100%", height: "100%", background: `${classColor}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>🧙</div>
+                                  }
                                 </div>
                                 {/* Info */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -767,8 +777,8 @@ export default function CreateCampaignWizard() {
           )}
         </div>
 
-        {/* ── Footer navigation (hidden on count phase — buttons are inline there) ── */}
-        {(phase === "characters" || phase === "review") && (
+        {/* ── Footer navigation (hidden on count phase and charStep 1 — buttons are inline there) ── */}
+        {((phase === "characters" && charStep > 1) || phase === "review") && (
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "40px", paddingTop: "20px", borderTop: "1px solid var(--border)" }}>
             <button className="btn-secondary" onClick={handleBack}>
               Back
