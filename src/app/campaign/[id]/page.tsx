@@ -237,12 +237,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   };
 
   function testVoice(voiceId: string) {
-    // Stop any in-progress preview
-    if (previewAudioRef.current) {
-      previewAudioRef.current.pause();
-      if (previewAudioRef.current.src.startsWith("blob:")) URL.revokeObjectURL(previewAudioRef.current.src);
-      previewAudioRef.current.src = "";
-    }
+    const el = previewAudioRef.current;
+    if (el) { el.pause(); el.src = ""; }
     if (testingVoice === voiceId) { setTestingVoice(null); return; }
 
     setTestingVoice(voiceId);
@@ -253,14 +249,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ text, voice: voiceId }),
     })
-      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
-      .then(blob => {
-        const url   = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        previewAudioRef.current = audio;
-        audio.play();
-        audio.onended = () => { URL.revokeObjectURL(url); setTestingVoice(null); };
-        audio.onerror = () => { URL.revokeObjectURL(url); setTestingVoice(null); };
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(({ audioUrl }: { audioUrl?: string }) => {
+        const audio = previewAudioRef.current;
+        if (!audio || !audioUrl) { setTestingVoice(null); return; }
+        audio.src     = audioUrl;
+        audio.onended = () => { setTestingVoice(null); };
+        audio.onerror = () => { setTestingVoice(null); };
+        audio.play().catch(() => setTestingVoice(null));
       })
       .catch(() => setTestingVoice(null));
   }
@@ -1057,10 +1053,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (p instanceof Promise) p.catch(() => cleanup());
   }, []);
 
-  const enqueueNarration = useCallback((text: string) => {
+  const enqueueNarration = useCallback(async (text: string) => {
     const slot = narSlotCounterRef.current++;
-    const qs = new URLSearchParams({ text: text.slice(0, 5000), voice: selectedVoiceRef.current ?? "chronicler" });
-    narSlotsRef.current[slot] = `/api/narrate?${qs}`;
+    narSlotsRef.current[slot] = null; // reserve — not ready yet
+    try {
+      const res = await fetch("/api/narrate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ text, voice: selectedVoiceRef.current ?? "chronicler" }),
+      });
+      if (!res.ok) {
+        if (res.status === 402) {
+          setNarrationEnabled(false);
+          narrationEnabledRef.current = false;
+          setToastMsg("Voice narration quota reached — upgrade your ElevenLabs plan to re-enable it.");
+        }
+        narSlotsRef.current[slot] = "SKIP";
+      } else {
+        const { audioUrl } = await res.json() as { audioUrl?: string };
+        // Set the CDN URL directly — the <audio> element must never see the slow
+        // API URL. Xbox Edge times out if the audio src takes more than ~1 s to
+        // respond; Supabase CDN responds in milliseconds.
+        narSlotsRef.current[slot] = audioUrl ?? "SKIP";
+      }
+    } catch {
+      narSlotsRef.current[slot] = "SKIP";
+    }
     playNextInQueue();
   }, [playNextInQueue]);
 
@@ -2147,14 +2165,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
-                // Activate the narration audio element with a real src inside the user
-                // gesture. Playing with no src fails silently and does NOT grant
-                // permission; playing a real URL does.
-                const narEl = narAudioRef.current;
-                if (narEl) {
-                  narEl.src = "/api/silence";
-                  narEl.onended = () => { narEl.src = ""; narEl.onended = null; };
-                  narEl.play().catch(() => {});
+                // Activate both audio elements with a real src inside the user gesture.
+                // Playing with no src fails and does NOT grant permission; a real URL does.
+                for (const el of [narAudioRef.current, previewAudioRef.current]) {
+                  if (el) {
+                    el.src = "/api/silence";
+                    el.onended = () => { el.src = ""; el.onended = null; };
+                    el.play().catch(() => {});
+                  }
                 }
 
                 // Start background music — must be synchronous for user-gesture gate.
@@ -3560,9 +3578,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
       )}
 
-      {/* Persistent narration audio element — must be in the DOM so Xbox Edge grants
-          it play permission when activated inside the Begin Adventure user gesture. */}
-      <audio ref={narAudioRef} preload="none" style={{ display: "none" }} />
+      {/* Persistent audio elements — must be in the DOM so Xbox Edge grants play
+          permission when activated inside the Begin Adventure user gesture. */}
+      <audio ref={narAudioRef}     preload="none" style={{ display: "none" }} />
+      <audio ref={previewAudioRef} preload="none" style={{ display: "none" }} />
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }

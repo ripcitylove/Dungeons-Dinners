@@ -85,7 +85,7 @@ async function synthesize(text: string, voice: string): Promise<Response> {
   const cached = listed?.find(f => f.name === `${hash}.mp3`);
   if (cached) {
     const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
-    return Response.redirect(publicUrl, 302);
+    return Response.json({ audioUrl: publicUrl });
   }
 
   // Generate audio
@@ -133,18 +133,9 @@ async function synthesize(text: string, voice: string): Promise<Response> {
   }
 
   const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
-  return Response.redirect(publicUrl, 302);
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const text  = req.nextUrl.searchParams.get("text") ?? "";
-    const voice = req.nextUrl.searchParams.get("voice") ?? DEFAULT_VOICE;
-    return await synthesize(text, voice);
-  } catch (err) {
-    console.error("[api/narrate]", err);
-    return new Response("TTS unavailable", { status: 500 });
-  }
+  // Return the CDN URL as JSON so the client sets it directly on the <audio>
+  // element — the element must never see the slow API URL (Xbox times out).
+  return Response.json({ audioUrl: publicUrl });
 }
 
 export async function POST(req: NextRequest) {
@@ -153,6 +144,6 @@ export async function POST(req: NextRequest) {
     return await synthesize(text, voice ?? DEFAULT_VOICE);
   } catch (err) {
     console.error("[api/narrate]", err);
-    return new Response("TTS unavailable", { status: 500 });
+    return Response.json({ error: "TTS unavailable" }, { status: 500 });
   }
 }
