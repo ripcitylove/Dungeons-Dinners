@@ -318,9 +318,9 @@ export async function POST(req: NextRequest) {
       claudeMessages.push({ role: "user", content: "Continue the story." });
     }
 
-    // Reconciliation resolves a full round (all players + enemies) so give it more room.
-    // Opening scenes get a modest budget. Everything else is kept tight for pacing.
-    const maxTokens = roundSummary?.length ? 380 : openingScene ? 280 : 220;
+    // Pacing instruction keeps responses short; max_tokens is a hard ceiling only.
+    // Must be high enough that the model never truncates mid-sentence.
+    const maxTokens = roundSummary?.length ? 520 : openingScene ? 480 : 380;
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
