@@ -27,6 +27,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Scale the rem baseline with viewport so all rem-based sizes grow on large
+     screens (TV/Xbox) and shrink on small ones. Clamps between 14px and 20px. */
+  font-size: clamp(14px, 1.15vw, 20px);
 }
 
 body {

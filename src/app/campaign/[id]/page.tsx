@@ -2246,7 +2246,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       </div>
 
       {/* ── Pane 2: Chat ── */}
-      <div style={{ flex: "0 0 520px", display: "flex", flexDirection: "column", background: "var(--background)", borderRight: "1px solid var(--border)" }}>
+      <div style={{ flex: "0 0 clamp(320px, 30vw, 560px)", display: "flex", flexDirection: "column", background: "var(--background)", borderRight: "1px solid var(--border)" }}>
         {/* Header */}
         <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
           <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
@@ -2505,7 +2505,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       </div>
 
       {/* ── Pane 3: Sidebar ── */}
-      <div style={{ flex: "0 0 300px", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: "0 0 clamp(230px, 18vw, 320px)", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Tab toggle */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           {(["party", "sheet", "log"] as const).map(tab => {
