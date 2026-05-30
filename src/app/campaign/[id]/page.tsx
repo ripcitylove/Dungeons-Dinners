@@ -244,42 +244,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTestingVoice(voiceId);
     const text = VOICE_SAMPLES[voiceId] ?? VOICE_SAMPLES.chronicler;
 
-    setToastMsg("Voice test: fetching audio…");
     fetch("/api/narrate", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ text, voice: voiceId }),
     })
       .then(r => {
-        if (!r.ok) { setToastMsg(`Voice test: API error ${r.status}`); return Promise.reject(r.status); }
+        if (!r.ok) { setToastMsg(`Voice unavailable (${r.status})`); return Promise.reject(r.status); }
         return r.json();
       })
       .then(({ audioUrl }: { audioUrl?: string }) => {
         const audio = previewAudioRef.current;
-        if (!audioUrl) { setToastMsg("Voice test: no audioUrl returned"); setTestingVoice(null); return; }
-        if (!audio)   { setToastMsg("Voice test: audio element missing"); setTestingVoice(null); return; }
-        setToastMsg(`Voice test: got URL, loading…`);
+        if (!audioUrl || !audio) { setTestingVoice(null); return; }
         audio.src = audioUrl;
         audio.onended = () => { setTestingVoice(null); };
-        audio.onerror = (e) => {
-          const code = (e as ErrorEvent & { target?: { error?: { code?: number } } })?.target?.error?.code;
-          setToastMsg(`Voice test: audio error (code ${code ?? "?"})`);
-          setTestingVoice(null);
-        };
+        audio.onerror = () => { setTestingVoice(null); };
         audio.oncanplaythrough = () => {
           audio.oncanplaythrough = null;
-          setToastMsg("Voice test: canplaythrough — calling play()");
-          audio.play()
-            .then(() => setToastMsg("Voice test: playing ✓"))
-            .catch((err: unknown) => {
-              setToastMsg(`Voice test: play() rejected — ${err instanceof Error ? err.message : String(err)}`);
-              setTestingVoice(null);
-            });
+          audio.play().catch(() => setTestingVoice(null));
         };
         audio.load();
       })
       .catch((err: unknown) => {
-        if (typeof err !== "number") setToastMsg(`Voice test: fetch error — ${err instanceof Error ? err.message : String(err)}`);
+        if (typeof err !== "number") setToastMsg(`Voice unavailable`);
         setTestingVoice(null);
       });
   }
