@@ -1053,7 +1053,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     el.onerror = () => cleanup();
     el.src = entry as string;
     setNarrating(true);
-    el.load();
     const p = el.play();
     if (p instanceof Promise) p.catch(() => cleanup());
   }, []);
