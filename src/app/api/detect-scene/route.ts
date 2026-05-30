@@ -134,34 +134,31 @@ export async function POST(req: NextRequest) {
 
     const raw = detect.content[0].type === "text" ? detect.content[0].text.trim() : "";
 
-    let sceneType   = currentScene.replace("_combat", "") || "wilderness";
-    let modifiers:  string[] = [];
-    let description = "";
-    let shouldChange = false;
+    let sceneType    = currentScene.replace("_combat", "") || "wilderness";
+    let modifiers:   string[] = [];
+    let description  = "";
+    let shouldChange = true; // default open — only suppress when AI explicitly says false
 
     try {
       const parsed = JSON.parse(raw);
       if (parsed.type && SCENE_BASE[parsed.type]) sceneType = parsed.type;
       if (Array.isArray(parsed.modifiers)) modifiers = parsed.modifiers.map((m: unknown) => String(m).toLowerCase().replace(/[^a-z]/g, "")).filter(Boolean).slice(0, 3);
       if (parsed.description) description = String(parsed.description).slice(0, 400);
-      shouldChange = !!parsed.shouldChange;
+      shouldChange = parsed.shouldChange !== false; // treat missing/null as true
     } catch {
+      // JSON parse failed — extract scene type from raw text, proceed with generation
       const word = raw.toLowerCase().match(/\b(tavern|dungeon|forest|cave|ruins|castle|street|shop|temple|wilderness|ship|graveyard|prison|arena|port|desert|mountain|swamp|library|village)\b/)?.[1];
       if (word) sceneType = word;
-      // If parse fails we conservatively skip the change
     }
 
     const sceneName = buildCacheKey(sceneType, modifiers, isCombat);
 
-    // No visual change warranted — return current scene info without touching image
-    if (!shouldChange && sceneName === currentScene) {
+    // Same scene key AND AI confirmed no meaningful visual change — nothing to do
+    if (sceneName === currentScene && !shouldChange) {
       return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description });
     }
-
-    // Scene changed but AI said it's not visually meaningful enough for a new image
-    if (!shouldChange) {
-      return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description });
-    }
+    // Different key always proceeds (new scene type or modifiers = new image needed);
+    // same key with shouldChange=true also proceeds (dramatic in-place transformation)
 
     // Step 2: Check cache — exact key match reuses saved image
     const { data: allCached } = await supabase.from("scenes").select("name, image_url");

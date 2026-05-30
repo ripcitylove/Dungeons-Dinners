@@ -433,6 +433,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
+  const msgContainerRef      = useRef<HTMLDivElement>(null);
   const logEndRef            = useRef<HTMLDivElement>(null);
   const abortRef             = useRef<AbortController | null>(null);
   const characterRef         = useRef<Character | null>(null);
@@ -965,8 +966,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [character?.hp, character?.id]);
 
   useEffect(() => {
-    // Delay slightly so layout reflows (e.g. suggestions box appearing) before we scroll
-    const t = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 40);
+    // Scroll the container directly — more reliable than scrollIntoView when
+    // the container's own height changes (e.g. suggestions box appearing/disappearing).
+    const t = setTimeout(() => {
+      const el = msgContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 60);
     return () => clearTimeout(t);
   }, [messages, streamingContent, suggestions]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
@@ -2686,7 +2691,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div ref={msgContainerRef} style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: "14px" }}>
           {messages.map((msg, idx) => (
             <div key={idx} className="animate-fade-in" style={{ alignSelf: msg.role === "player" ? "flex-end" : "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: msg.role === "player" ? "flex-end" : "flex-start" }}>
               {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
