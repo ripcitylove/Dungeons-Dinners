@@ -119,8 +119,8 @@ export default async function Home() {
         {/* Ramen bowl — in front of the dragon's face (right side after flip) */}
         <div className="animate-float" style={{
           position: "absolute",
-          left: "calc(3% + clamp(150px, 18vw, 250px))",
-          top: "calc(9% + clamp(110px, 13vw, 180px))",
+          left: "calc(3% + clamp(220px, 25vw, 350px))",
+          top: "calc(9% + clamp(30px, 4vw, 55px))",
           fontSize: "clamp(48px, 5.5vw, 72px)",
           lineHeight: 1,
           opacity: 0.22,
