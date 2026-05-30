@@ -8,6 +8,7 @@ import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
 } from "../../lib/spellData";
+import { computeInventoryBonuses } from "../../lib/lootData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type AbilityScores = {
@@ -295,38 +296,49 @@ export default function CreateCampaignWizard() {
 
       let newCharData: { id: string }[] = [];
       if (newChars.length > 0) {
-        const rows = newChars.map(c => ({
-          user_id:      user.id,
-          campaign_id:  campData.id,
-          name:         c.name.trim(),
-          race:         c.race,
-          class:        c.class,
-          sex:          c.sex,
-          level:        1,
-          xp:           0,
-          max_hp:       startingHP(c.class, c.scores.constitution),
-          hp:           startingHP(c.class, c.scores.constitution),
-          strength:     c.scores.strength,
-          dexterity:    c.scores.dexterity,
-          constitution: c.scores.constitution,
-          intelligence: c.scores.intelligence,
-          wisdom:       c.scores.wisdom,
-          charisma:     c.scores.charisma,
-          inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"] },
-          cantrips_known:   c.cantrips,
-          spells_prepared:  c.spells,
-          spell_slots_used: {},
-          status_effects:   [],
-        }));
+        const rows = newChars.map(c => {
+          const weapons = [c.weapon || "Iron Dagger"];
+          const items   = ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"];
+          const baseMaxHp   = startingHP(c.class, c.scores.constitution);
+          const ib          = computeInventoryBonuses(items, weapons);
+          const effectiveHp = baseMaxHp + ib.hpMaxAdd;
+          return {
+            user_id:      user.id,
+            campaign_id:  campData.id,
+            name:         c.name.trim(),
+            race:         c.race,
+            class:        c.class,
+            sex:          c.sex,
+            level:        1,
+            xp:           0,
+            max_hp:       baseMaxHp,
+            hp:           effectiveHp,
+            strength:     c.scores.strength,
+            dexterity:    c.scores.dexterity,
+            constitution: c.scores.constitution,
+            intelligence: c.scores.intelligence,
+            wisdom:       c.scores.wisdom,
+            charisma:     c.scores.charisma,
+            inventory:    { gold: 50, weapons, items },
+            cantrips_known:   c.cantrips,
+            spells_prepared:  c.spells,
+            spell_slots_used: {},
+            status_effects:   [],
+          };
+        });
         const { data, error: charErr } = await supabase.from("characters").insert(rows).select();
         if (charErr || !data) throw charErr ?? new Error("Character creation failed");
         newCharData = data;
       }
 
       for (const c of rosterPicks) {
-        const maxHp = c.rosterMaxHp ?? startingHP(c.class, c.scores.constitution);
+        const rChar     = rosterChars?.find(r => r.id === c.rosterId);
+        const inv       = rChar?.inventory ?? { items: [], weapons: [] };
+        const ib        = computeInventoryBonuses(inv.items ?? [], inv.weapons ?? []);
+        const baseMaxHp = c.rosterMaxHp ?? startingHP(c.class, c.scores.constitution);
+        const fullHp    = baseMaxHp + ib.hpMaxAdd;
         const { error: rErr } = await supabase.from("characters")
-          .update({ campaign_id: campData.id, hp: maxHp, max_hp: maxHp, spell_slots_used: {}, status_effects: [] })
+          .update({ campaign_id: campData.id, hp: fullHp, max_hp: baseMaxHp, spell_slots_used: {}, status_effects: [] })
           .eq("id", c.rosterId!);
         if (rErr) throw rErr;
       }
