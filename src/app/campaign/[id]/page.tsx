@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, use, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { ALLOWED_EMAIL } from "../../../lib/allowedUsers";
@@ -370,6 +371,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [hoveredItem,      setHoveredItem]        = useState<string | null>(null);
   const [hoveredSpell,     setHoveredSpell]       = useState<string | null>(null);
   const [hoveredStatus,    setHoveredStatus]      = useState<string | null>(null);
+
+  // Global tooltip portal — always renders above ALL elements regardless of stacking context
+  const [globalTooltip, setGlobalTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
+  const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => setGlobalTooltip({ content, x: e.clientX, y: e.clientY }), []);
+  const hideTooltip = useCallback(() => setGlobalTooltip(null), []);
 
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
@@ -2656,7 +2662,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
-              }}>{msg.role === "dm" ? <ColorizedText text={msg.content} playerColors={Object.fromEntries(campaignParty.map(c => [c.name, CLASS_COLORS[c.class] ?? "#94a3b8"]))} /> : msg.content}</div>
+              }}>{msg.role === "dm" ? <ColorizedText text={msg.content} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} /> : msg.content}</div>
             </div>
           ))}
 
@@ -2950,17 +2956,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
                           const hkey = `${char.id}-${s}`;
                           return (
-                            <span key={s} style={{ position: "relative" }}
-                              onMouseEnter={() => setHoveredStatus(hkey)}
-                              onMouseLeave={() => setHoveredStatus(null)}
-                            >
-                              <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
-                              {hoveredStatus === hkey && STATUS_DESCRIPTIONS[s] && (
-                                <span style={{ position: "absolute", bottom: "calc(100% + 5px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", zIndex: 600, width: "190px", pointerEvents: "none", fontSize: "0.68rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal", display: "block", fontWeight: "normal" }}>
+                            <span key={s}
+                              onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
+                                <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", width: "190px", fontSize: "0.68rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
                                   <span style={{ fontWeight: "bold", color: st.color, marginBottom: "3px", display: "block" }}>{s}</span>
                                   {STATUS_DESCRIPTIONS[s]}
-                                </span>
-                              )}
+                                </div>, e)}
+                              onMouseLeave={hideTooltip}
+                            >
+                              <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
                             </span>
                           );
                         })}
@@ -3167,17 +3171,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     {character.status_effects!.map(s => {
                       const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
                       return (
-                        <span key={s} style={{ position: "relative" }}
-                          onMouseEnter={() => setHoveredStatus(`sheet-${s}`)}
-                          onMouseLeave={() => setHoveredStatus(null)}
-                        >
-                          <span style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
-                          {hoveredStatus === `sheet-${s}` && STATUS_DESCRIPTIONS[s] && (
-                            <span style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", zIndex: 600, width: "210px", pointerEvents: "none", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal", display: "block", fontWeight: "normal" }}>
+                        <span key={s}
+                          onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
+                            <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", width: "210px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
                               <span style={{ fontWeight: "bold", color: st.color, marginBottom: "4px", display: "block" }}>{s}</span>
                               {STATUS_DESCRIPTIONS[s]}
-                            </span>
-                          )}
+                            </div>, e)}
+                          onMouseLeave={hideTooltip}
+                        >
+                          <span style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
                         </span>
                       );
                     })}
@@ -3230,24 +3232,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div
                         key={label}
                         style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
-                        onMouseEnter={() => setHoveredStat(label)}
-                        onMouseLeave={() => setHoveredStat(null)}
-                      >
-                        <div style={{ fontSize: "0.6rem", color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
-                        <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{effScore}</div>
-                        <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
-                        {hasItemBuf && (
-                          <div style={{ fontSize: "0.5rem", color: netDiff > 0 ? "#f59e0b" : "#ef4444", marginTop: "1px", fontWeight: "bold" }}>
-                            {netDiff > 0 ? `✦+${netDiff}` : `✦${netDiff}`}
-                          </div>
-                        )}
-                        {tierStyle && !hasItemBuf && (
-                          <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
-                            {tierStyle.label.toUpperCase()}
-                          </div>
-                        )}
-                        {hoveredStat === label && (
-                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "190px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                        onMouseEnter={e => { setHoveredStat(label); showTooltip(
+                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", width: "190px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
                             <div style={{ fontWeight: "bold", color: "#e2e8f0", marginBottom: "5px", fontSize: "0.75rem" }}>
                               {STAT_FULL[label]}
                               <span style={{ fontWeight: 400, color: "#475569", fontSize: "0.62rem", marginLeft: "5px" }}>{label}</span>
@@ -3268,6 +3254,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{guide.reason}</div>
                               </>
                             )}
+                          </div>, e); }}
+                        onMouseLeave={() => { setHoveredStat(null); hideTooltip(); }}
+                      >
+                        <div style={{ fontSize: "0.6rem", color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
+                        <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{effScore}</div>
+                        <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
+                        {hasItemBuf && (
+                          <div style={{ fontSize: "0.5rem", color: netDiff > 0 ? "#f59e0b" : "#ef4444", marginTop: "1px", fontWeight: "bold" }}>
+                            {netDiff > 0 ? `✦+${netDiff}` : `✦${netDiff}`}
+                          </div>
+                        )}
+                        {tierStyle && !hasItemBuf && (
+                          <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
+                            {tierStyle.label.toUpperCase()}
                           </div>
                         )}
                       </div>
@@ -3317,19 +3317,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               <div
                                 role="button"
                                 onClick={() => { if (!isTyping) handleSend(`I cast ${s}.`); }}
-                                onMouseEnter={() => setHoveredSpell(`c-${i}`)}
-                                onMouseLeave={() => setHoveredSpell(null)}
+                                onMouseEnter={e => { setHoveredSpell(`c-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
                                 style={{ padding: "6px 10px", background: active ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.08)", borderRadius: "5px", fontSize: "0.8rem", cursor: isTyping ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: isTyping ? 0.55 : 1 }}
                               >
                                 <span>✦ {s}</span>
                                 <span style={{ fontSize: "0.58rem", color: "#8b5cf6", fontWeight: 600 }}>at-will</span>
                               </div>
-                              {active && entry && (
-                                <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5 }}>
-                                  <div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div>
-                                  <div style={{ color: "#94a3b8" }}>{entry.desc}</div>
-                                </div>
-                              )}
                             </div>
                           );
                         })}
@@ -3375,8 +3369,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     pendingSpellCastRef.current += 1;
                                     handleSend(`I cast ${s}.`);
                                   }}
-                                  onMouseEnter={() => setHoveredSpell(`p-${i}`)}
-                                  onMouseLeave={() => setHoveredSpell(null)}
+                                  onMouseEnter={e => { setHoveredSpell(`p-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                  onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
                                   style={{ padding: "6px 10px", background: canCast && active ? "rgba(139,92,246,0.22)" : canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: "0.8rem", cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active && canCast ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: canCast ? 1 : 0.4 }}
                                 >
                                   <span style={{ color: canCast ? undefined : "#475569" }}>◈ {s}</span>
@@ -3384,12 +3378,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     {availLvl !== null ? `L${availLvl} slot` : "no slots"}
                                   </span>
                                 </div>
-                                {active && entry && (
-                                  <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5 }}>
-                                    <div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div>
-                                    <div style={{ color: "#94a3b8" }}>{entry.desc}</div>
-                                  </div>
-                                )}
                               </div>
                             );
                           })}
@@ -3421,18 +3409,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         { key: "sp" as const, color: "#94a3b8", amount: character.inventory?.sp ?? 0 },
                         { key: "cp" as const, color: "#f97316", amount: character.inventory?.cp ?? 0 },
                       ]).map(({ key, color, amount }) => (
-                        <div key={key} style={{ position: "relative", display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1, cursor: "help" }}
-                          onMouseEnter={() => setHoveredCurrency(key)}
-                          onMouseLeave={() => setHoveredCurrency(null)}
+                        <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1, cursor: "help" }}
+                          onMouseEnter={e => showTooltip(
+                            <div style={{ background: "#1a1730", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "7px", padding: "8px 11px", width: "170px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.6)", whiteSpace: "normal" }}>
+                              <div style={{ fontWeight: "bold", color, marginBottom: "2px", fontSize: "0.73rem" }}>{CURRENCY_INFO[key].name}</div>
+                              <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{CURRENCY_INFO[key].exchange}</div>
+                            </div>, e)}
+                          onMouseLeave={hideTooltip}
                         >
                           <span style={{ color, fontWeight: "bold" }}>{amount}</span>
                           <span style={{ color: "#64748b", fontSize: "0.72rem" }}>{key}</span>
-                          {hoveredCurrency === key && (
-                            <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "7px", padding: "8px 11px", zIndex: 600, width: "170px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.6)", whiteSpace: "normal" }}>
-                              <div style={{ fontWeight: "bold", color, marginBottom: "2px", fontSize: "0.73rem" }}>{CURRENCY_INFO[key].name}</div>
-                              <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{CURRENCY_INFO[key].exchange}</div>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -3483,8 +3469,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ position: "relative" }}>
                           <div
                             style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: isTrading ? "6px 6px 0 0" : "6px", fontSize: "0.82rem", border: `1px solid ${isTrading ? "rgba(139,92,246,0.5)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
-                            onMouseEnter={() => setHoveredItem(itemKey)}
-                            onMouseLeave={() => setHoveredItem(null)}
+                            onMouseEnter={e => { setHoveredItem(itemKey); if (catalogItem && !isTrading) showTooltip(
+                              <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                                  <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
+                                  <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
+                                </div>
+                                <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
+                                {catalogItem.effects.map((fx, fi) => fx.description && (
+                                  <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
+                                    {fx.description}
+                                  </div>
+                                ))}
+                                {catalogItem.requiresAttunement && (
+                                  <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
+                                )}
+                              </div>, e); }}
+                            onMouseLeave={() => { setHoveredItem(null); hideTooltip(); }}
                           >
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
                               <span style={{ flexShrink: 0 }}>{icon}</span>
@@ -3524,23 +3525,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               >drop</button>
                             </div>
                           </div>
-                          {isHovered && !isTrading && catalogItem && (
-                            <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", zIndex: 500, pointerEvents: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                                <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
-                                <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
-                              </div>
-                              <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
-                              {catalogItem.effects.map((fx, fi) => fx.description && (
-                                <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
-                                  {fx.description}
-                                </div>
-                              ))}
-                              {catalogItem.requiresAttunement && (
-                                <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
-                              )}
-                            </div>
-                          )}
                         </div>
                         {isTrading && (
                           <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.4)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "6px 8px" }}>
@@ -3856,6 +3840,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           permission to hidden elements. Positioned off-screen instead. */}
       <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
       <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
+
+      {/* Global tooltip portal — always on top of everything */}
+      {typeof window !== "undefined" && globalTooltip && createPortal(
+        <div style={{ position: "fixed", left: globalTooltip.x, top: globalTooltip.y - 10, transform: "translate(-50%, -100%)", zIndex: 99999, pointerEvents: "none" }}>
+          {globalTooltip.content}
+        </div>,
+        document.body
+      )}
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
