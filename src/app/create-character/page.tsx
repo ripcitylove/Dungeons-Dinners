@@ -158,7 +158,7 @@ export default function CreateCharacter() {
   const router = useRouter();
 
   const [character, setCharacter] = useState({
-    name: '', race: '', class: '', alignment: '', weapon: '', trinket: '', sex: 'male',
+    name: '', race: '', class: '', alignment: '', weapon: '', trinket: '', sex: 'male', shield: false,
   });
   const [rollingStats,  setRollingStats]  = useState(false);
   const [revealCount,   setRevealCount]   = useState(6);
@@ -261,7 +261,7 @@ export default function CreateCharacter() {
       const startingInv = {
         gold: 50,
         weapons: character.weapon ? [character.weapon] : ['Iron Dagger'],
-        items:   ['Bedroll', 'Rations (5 days)', character.trinket || 'Mysterious Coin'],
+        items:   ['Bedroll', 'Rations (5 days)', ...(character.shield ? ['Shield'] : []), character.trinket || 'Mysterious Coin'],
       };
 
       const { data: newChar, error: insertError } = await supabase.from('characters').insert([{
@@ -583,6 +583,31 @@ export default function CreateCharacter() {
                   ))}
                 </div>
               </div>
+
+              {/* Shield — only for proficient classes */}
+              {['Fighter', 'Paladin', 'Ranger', 'Cleric', 'Druid', 'Barbarian'].includes(character.class) && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Shield</label>
+                  <div
+                    onClick={() => setCharacter(c => ({ ...c, shield: !c.shield }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s',
+                      border: `1px solid ${character.shield ? 'var(--primary)' : 'var(--border)'}`,
+                      background: character.shield ? 'rgba(139,92,246,0.2)' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>🛡</span>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Shield <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>+2 AC</span></div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Requires one free hand — pairs well with one-handed weapons</div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${character.shield ? 'var(--primary)' : 'var(--border)'}`, background: character.shield ? 'var(--primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.7rem' }}>
+                      {character.shield && '✓'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Starting Trinket (Flavor)</label>
                 <input type="text" value={character.trinket}

@@ -16,7 +16,7 @@ type AbilityScores = {
 };
 type CharDraft = {
   name: string; race: string; sex: string; class: string;
-  weapon: string; trinket: string;
+  weapon: string; trinket: string; shield: boolean;
   scores: AbilityScores;
   cantrips: string[]; spells: string[];
   rosterId?: string;
@@ -63,8 +63,10 @@ function rollAll(): AbilityScores {
 function startingHP(cls: string, con: number): number {
   return Math.max(1, (CLASS_HIT_DIE[cls] ?? 8) + Math.floor((con - 10) / 2));
 }
+const SHIELD_CLASSES = new Set(["Fighter", "Paladin", "Ranger", "Cleric", "Druid", "Barbarian"]);
+
 function emptyDraft(): CharDraft {
-  return { name: "", race: "", sex: "male", class: "", weapon: "", trinket: "", scores: DEFAULT_SCORES, cantrips: [], spells: [] };
+  return { name: "", race: "", sex: "male", class: "", weapon: "", trinket: "", shield: false, scores: DEFAULT_SCORES, cantrips: [], spells: [] };
 }
 
 // ── SpellCard ──────────────────────────────────────────────────────────────────
@@ -176,6 +178,7 @@ export default function CreateCampaignWizard() {
       name: char.name, race: char.race, sex: char.sex, class: char.class,
       weapon: char.inventory?.weapons?.[0] ?? "",
       trinket: "",
+      shield: char.inventory?.items?.includes("Shield") ?? false,
       scores: {
         strength: char.strength, dexterity: char.dexterity, constitution: char.constitution,
         intelligence: char.intelligence, wisdom: char.wisdom, charisma: char.charisma,
@@ -309,7 +312,7 @@ export default function CreateCampaignWizard() {
           intelligence: c.scores.intelligence,
           wisdom:       c.scores.wisdom,
           charisma:     c.scores.charisma,
-          inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", c.trinket || "Mysterious Coin"] },
+          inventory:    { gold: 50, weapons: [c.weapon || "Iron Dagger"], items: ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"] },
           cantrips_known:   c.cantrips,
           spells_prepared:  c.spells,
           spell_slots_used: {},
@@ -663,6 +666,31 @@ export default function CreateCampaignWizard() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Shield — only for proficient classes */}
+                  {SHIELD_CLASSES.has(draft.class) && (
+                    <div>
+                      <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8" }}>Shield</label>
+                      <div
+                        onClick={() => setDraft(d => ({ ...d, shield: !d.shield }))}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s",
+                          border: `1px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`,
+                          background: draft.shield ? "rgba(139,92,246,0.2)" : "transparent",
+                        }}
+                      >
+                        <span style={{ fontSize: "1.5rem" }}>🛡</span>
+                        <div>
+                          <div style={{ fontWeight: "bold", fontSize: "0.9rem" }}>Shield <span style={{ color: "#22c55e", fontSize: "0.8rem" }}>+2 AC</span></div>
+                          <div style={{ fontSize: "0.72rem", color: "#64748b" }}>Requires one free hand — pairs well with one-handed weapons</div>
+                        </div>
+                        <div style={{ marginLeft: "auto", width: "20px", height: "20px", borderRadius: "50%", border: `2px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`, background: draft.shield ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.7rem" }}>
+                          {draft.shield && "✓"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
                       Starting Trinket <span style={{ color: "#475569" }}>(optional)</span>
@@ -756,6 +784,7 @@ export default function CreateCampaignWizard() {
                       <div style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "2px" }}>
                         ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
                         {!c.rosterId && ` · ${c.weapon || "Iron Dagger"}`}
+                        {!c.rosterId && c.shield && " · 🛡 Shield"}
                         {c.cantrips.length > 0 && ` · ${c.cantrips.length} cantrip${c.cantrips.length > 1 ? "s" : ""}`}
                       </div>
                       {c.rosterId && (
