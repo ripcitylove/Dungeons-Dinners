@@ -50,8 +50,9 @@ function makeSupabase(authHeader: string | null) {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization");
-    const { race, cls, sex, charId } = (await req.json()) as {
+    const { race, cls, sex, charId, title, alignment, background } = (await req.json()) as {
       race: string; cls: string; sex: string; charId: string;
+      title?: string | null; alignment?: string | null; background?: string | null;
     };
 
     if (!charId?.trim()) return Response.json({ error: "Missing charId" }, { status: 400 });
@@ -71,11 +72,14 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const genderWord = sex === "female" ? "woman" : sex === "non-binary" ? "androgynous person" : "man";
-    const raceDesc   = RACE_DESC[race]  ?? race.toLowerCase();
-    const classDesc  = CLASS_DESC[cls]  ?? cls.toLowerCase();
+    const genderWord  = sex === "female" ? "woman" : sex === "non-binary" ? "androgynous person" : "man";
+    const raceDesc    = RACE_DESC[race]  ?? race.toLowerCase();
+    const classDesc   = CLASS_DESC[cls]  ?? cls.toLowerCase();
+    const titlePart   = title ? `, known as "${title}"` : "";
+    const alignPart   = alignment ? ` ${alignment} in moral alignment.` : "";
+    const bgPart      = background ? ` ${background.slice(0, 120)}.` : "";
 
-    const prompt = `Fantasy RPG character portrait. A ${genderWord} who is a ${raceDesc}, ${classDesc}. Dark fantasy painterly style, dramatic side lighting, highly detailed face, head-and-shoulders composition. Cinematic epic fantasy art. No text, no watermarks, no logos.`;
+    const prompt = `Fantasy RPG character portrait. A ${genderWord} who is a ${raceDesc}${titlePart}, ${classDesc}.${alignPart}${bgPart} Dark fantasy painterly style, dramatic side lighting, highly detailed face, head-and-shoulders composition. Cinematic epic fantasy art. No text, no watermarks, no logos.`;
 
     const imgResponse = await openai.images.generate({
       model:   "gpt-image-1",

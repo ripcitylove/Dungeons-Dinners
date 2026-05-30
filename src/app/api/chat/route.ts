@@ -20,13 +20,23 @@ type Character = {
   sex?: string;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
+  title?: string;
+  alignment?: string;
   background?: string;
+  skill_proficiencies?: string[];
   status_effects?: string[];
   cantrips_known?: string[];
   spells_prepared?: string[];
   spell_slots_used?: Record<number, number>;
   inventory: { gold: number; weapons: string[]; items: string[] };
   active_item_effects?: string[];
+};
+
+const CLASS_SAVES: Record<string, string[]> = {
+  Barbarian: ["STR","CON"], Bard: ["DEX","CHA"], Cleric: ["WIS","CHA"],
+  Druid: ["INT","WIS"], Fighter: ["STR","CON"], Monk: ["STR","DEX"],
+  Paladin: ["WIS","CHA"], Ranger: ["STR","DEX"], Rogue: ["DEX","INT"],
+  Sorcerer: ["CON","CHA"], Warlock: ["WIS","CHA"], Wizard: ["INT","WIS"],
 };
 
 function mod(score: number) {
@@ -97,7 +107,7 @@ MECHANICS (woven into the narrative, not announced)
 - Treasure is contextual — award it when it makes sense and feels earned. Not every fight ends with loot. Not every NPC carries coin. The world runs on more than gold. Items appear when the DM decides, not on a schedule.
 
 CHARACTER SPOTLIGHT
-Before crafting any scene, scan the full party sheet: spells, cantrips, inventory, race, class, background, and sex. Then design the environment so that one or two characters' specific abilities become quietly, naturally relevant — without ever announcing it.
+Before crafting any scene, scan the full party sheet: spells, cantrips, inventory, race, class, alignment, background, skill proficiencies, and sex. Use alignment to shape how a character would naturally respond to moral choices. Use background details as seeds for encounters, NPC recognition, or personal story hooks. Use skill proficiencies when calling for checks — a character proficient in Persuasion should get the prof bonus on Charisma checks to sway NPCs. Then design the environment so that one or two characters' specific abilities become quietly, naturally relevant — without ever announcing it.
 
 The world should feel like it was built for this exact party:
 - A character with Light or Dancing Lights → a passage where torches won't stay lit; a mine with no lanterns left
@@ -226,20 +236,25 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const items    = inv.items?.join(", ")   || "none";
       const ac       = c.ac ?? "?";
       const pb       = profBonus(c.level);
-      const statuses = c.status_effects?.length ? ` [${c.status_effects.join(", ")}]` : "";
-      const itemFx   = c.active_item_effects?.length ? `\n  Item effects: ${c.active_item_effects.join("; ")}` : "";
-      const sexStr   = c.sex ? `${c.sex} ` : "";
-      const bgStr    = c.background ? `\n  Alignment: ${c.background}` : "";
-      const cantStr  = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
-      const spellStr = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
-      const spellLine = (cantStr || spellStr)
+      const statuses   = c.status_effects?.length ? ` [${c.status_effects.join(", ")}]` : "";
+      const itemFx     = c.active_item_effects?.length ? `\n  Item effects: ${c.active_item_effects.join("; ")}` : "";
+      const sexStr     = c.sex ? `${c.sex} ` : "";
+      const titleStr   = c.title ? ` "${c.title}"` : "";
+      const alignStr   = c.alignment ? `\n  Alignment: ${c.alignment}` : "";
+      const bgStr      = c.background ? `\n  Background: ${c.background}` : "";
+      const saves      = CLASS_SAVES[c.class] ? `Save proficiencies: ${CLASS_SAVES[c.class].join(", ")}` : "";
+      const skillProfs = c.skill_proficiencies?.length ? `Skilled: ${c.skill_proficiencies.join(", ")}` : "";
+      const profLine   = [saves, skillProfs].filter(Boolean).join(" | ");
+      const cantStr    = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
+      const spellStr   = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
+      const spellLine  = (cantStr || spellStr)
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
         : "";
       const hpPct = c.max_hp > 0 ? Math.round((c.hp / c.max_hp) * 100) : 0;
-      return `${c.name} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${bgStr}
+      return `${c.name}${titleStr} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${alignStr}${bgStr}
   HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
-  Weapons: ${weapons}  |  Items: ${items}${spellLine}${itemFx}`;
+  Weapons: ${weapons}  |  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
@@ -275,17 +290,23 @@ ${partyScaleHint(partySize, avgLevel)}`;
     ? `\nMagic item effects: ${char.active_item_effects.join("; ")}`
     : "";
 
+  const titleStr   = char.title ? ` "${char.title}"` : "";
+  const solSaves   = CLASS_SAVES[char.class] ? `\nSaving throw proficiencies: ${CLASS_SAVES[char.class].join(", ")}` : "";
+  const solSkills  = char.skill_proficiencies?.length ? `\nSkill proficiencies: ${char.skill_proficiencies.join(", ")}` : "";
+  const solAlign   = char.alignment ? `\nAlignment: ${char.alignment}` : "";
+  const solBg      = char.background ? `\nBackground: ${char.background}` : "";
+
   return `${VOICE_AND_RULES}${openingBlock}
 ${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${partyLeaderBlock}${targetBlock}
 ACTIVE CHARACTER
-${char.name} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
+${char.name}${titleStr} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 Weapons: ${weapons}
-Items: ${items}${char.background ? `\nAlignment: ${char.background}` : ""}
+Items: ${items}${solAlign}${solBg}${solSaves}${solSkills}
 Status: ${statuses}${spellInfo}${itemFx}
 
-Reference these stats for all checks and combat. Roll attacks against the character's AC (${ac}). Enforce spell slot limits. Stats shown are effective values including magic item bonuses.`;
+Reference these stats for all checks and combat. Apply proficiency bonus (${pb}) to saving throws in ${CLASS_SAVES[char.class]?.join("/") ?? "class"} saves and to proficient skill checks. Roll attacks against the character's AC (${ac}). Enforce spell slot limits.`;
 }
 
 export async function POST(req: NextRequest) {

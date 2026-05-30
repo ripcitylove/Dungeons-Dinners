@@ -9,17 +9,21 @@ import {
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
 } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
+import {
+  CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
+} from "../../lib/proficiencyData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type AbilityScores = {
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
 };
+type StatMethod = "roll" | "array" | "pointbuy";
 type CharDraft = {
-  name: string; race: string; sex: string; class: string;
-  weapon: string; trinket: string; shield: boolean;
+  name: string; title: string; race: string; sex: string; class: string; alignment: string;
+  weapon: string; trinket: string; shield: boolean; charBackground: string;
   scores: AbilityScores;
-  cantrips: string[]; spells: string[];
+  cantrips: string[]; spells: string[]; skillProficiencies: string[];
   rosterId?: string;
   rosterLevel?: number;
   rosterMaxHp?: number;
@@ -43,6 +47,16 @@ const CLASS_HIT_DIE: Record<string, number> = {
   Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8,
   Sorcerer: 6, Wizard: 6,
 };
+const ALIGNMENTS = [
+  { key: "Lawful Good", short: "LG" }, { key: "Neutral Good", short: "NG" }, { key: "Chaotic Good", short: "CG" },
+  { key: "Lawful Neutral", short: "LN" }, { key: "True Neutral", short: "TN" }, { key: "Chaotic Neutral", short: "CN" },
+  { key: "Lawful Evil", short: "LE" }, { key: "Neutral Evil", short: "NE" }, { key: "Chaotic Evil", short: "CE" },
+] as const;
+
+const POINTBUY_DEFAULT: AbilityScores = {
+  strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8,
+};
+
 const WEAPONS = ["Longsword", "Shortbow", "Staff", "Daggers (x2)", "Warhammer", "Crossbow"];
 const DEFAULT_SCORES: AbilityScores = {
   strength: 15, dexterity: 14, constitution: 13,
@@ -68,7 +82,11 @@ function startingHP(cls: string, con: number): number {
 const SHIELD_CLASSES = new Set(["Fighter", "Paladin", "Ranger", "Cleric", "Druid", "Barbarian"]);
 
 function emptyDraft(): CharDraft {
-  return { name: "", race: "", sex: "male", class: "", weapon: "", trinket: "", shield: false, scores: DEFAULT_SCORES, cantrips: [], spells: [] };
+  return {
+    name: "", title: "", race: "", sex: "male", class: "", alignment: "",
+    weapon: "", trinket: "", shield: false, charBackground: "",
+    scores: DEFAULT_SCORES, cantrips: [], spells: [], skillProficiencies: [],
+  };
 }
 
 // ── SpellCard ──────────────────────────────────────────────────────────────────
@@ -114,12 +132,19 @@ export default function CreateCampaignWizard() {
   const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
   const [charNameErr, setCharNameErr] = useState("");
   const [hoveredStat, setHoveredStat] = useState<string | null>(null);
+
+  // Stat method state (resets per character)
+  const [statMethod, setStatMethod] = useState<StatMethod>("roll");
+  const [arrayAssignments, setArrayAssignments] = useState<Record<string, number | null>>({
+    strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null,
+  });
+  const [selectedArrayVal, setSelectedArrayVal] = useState<number | null>(null);
   const [completedChars, setCompletedChars] = useState<CharDraft[]>([]);
   const [rosterChars, setRosterChars] = useState<RosterChar[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
 
   const isSpellcaster     = SPELLCASTING_CLASSES.has(draft.class);
-  const totalCharSteps    = isSpellcaster ? 5 : 4;
+  const totalCharSteps    = isSpellcaster ? 6 : 5;
   const spellCounts       = getSpellCounts(draft.class, scores);
   const availableCantrips = CANTRIPS[draft.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[draft.class] ?? [];
@@ -134,12 +159,15 @@ export default function CreateCampaignWizard() {
     setScores(DEFAULT_SCORES);
     setSelectedCantrips([]);
     setSelectedSpells([]);
+    setStatMethod("roll");
+    setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+    setSelectedArrayVal(null);
     setCharStep(1);
     setCharNameErr("");
   };
 
   const handleClassChange = (cls: string) => {
-    setDraft(d => ({ ...d, class: cls }));
+    setDraft(d => ({ ...d, class: cls, skillProficiencies: [] }));
     setSelectedCantrips([]);
     setSelectedSpells([]);
   };
@@ -161,9 +189,71 @@ export default function CreateCampaignWizard() {
     }
   };
 
+  // ── Stat helpers ──
+  const effectiveScores = (): AbilityScores => {
+    if (statMethod === "array") {
+      return {
+        strength: arrayAssignments.strength ?? 8, dexterity: arrayAssignments.dexterity ?? 8,
+        constitution: arrayAssignments.constitution ?? 8, intelligence: arrayAssignments.intelligence ?? 8,
+        wisdom: arrayAssignments.wisdom ?? 8, charisma: arrayAssignments.charisma ?? 8,
+      };
+    }
+    return scores;
+  };
+  const arrayComplete   = Object.values(arrayAssignments).every(v => v !== null);
+  const pointsSpent     = statMethod === "pointbuy" ? calcPointBuyCost(scores) : 0;
+  const pointsLeft      = POINT_BUY_BUDGET - pointsSpent;
+  const profData        = draft.class ? CLASS_PROFICIENCIES[draft.class] : null;
+  const profRequired    = profData?.skillChoices.count ?? 0;
+
+  const handleStatMethodChange = (method: StatMethod) => {
+    setStatMethod(method);
+    if (method === "pointbuy") setScores(POINTBUY_DEFAULT);
+    if (method === "array") {
+      setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+      setSelectedArrayVal(null);
+    }
+  };
+
+  const handleArrayChipClick = (val: number) => {
+    const isUsed = Object.values(arrayAssignments).includes(val);
+    if (isUsed) return;
+    setSelectedArrayVal(prev => prev === val ? null : val);
+  };
+
+  const handleArrayStatClick = (statKey: string) => {
+    if (selectedArrayVal !== null) {
+      const displaced = arrayAssignments[statKey];
+      setArrayAssignments(a => ({ ...a, [statKey]: selectedArrayVal }));
+      setSelectedArrayVal(displaced);
+    } else if (arrayAssignments[statKey] !== null) {
+      setSelectedArrayVal(arrayAssignments[statKey]);
+      setArrayAssignments(a => ({ ...a, [statKey]: null }));
+    }
+  };
+
+  const adjustPBStat = (statKey: string, delta: number) => {
+    const current = scores[statKey as keyof AbilityScores];
+    const newVal = current + delta;
+    if (newVal < 8 || newVal > 15) return;
+    const newScores = { ...scores, [statKey as keyof AbilityScores]: newVal };
+    if (calcPointBuyCost(newScores) > POINT_BUY_BUDGET) return;
+    setScores(newScores);
+  };
+
+  const toggleSkillProf = (skill: string) => {
+    setDraft(d => {
+      const prev = d.skillProficiencies;
+      if (prev.includes(skill)) return { ...d, skillProficiencies: prev.filter(s => s !== skill) };
+      if (prev.length >= profRequired) return d;
+      return { ...d, skillProficiencies: [...prev, skill] };
+    });
+  };
+
   // ── Finalize new character and advance ──
   const finalizeAndAdvance = () => {
-    const finalized: CharDraft = { ...draft, scores, cantrips: selectedCantrips, spells: selectedSpells };
+    const eff = effectiveScores();
+    const finalized: CharDraft = { ...draft, scores: eff, cantrips: selectedCantrips, spells: selectedSpells };
     const next = [...completedChars, finalized];
     setCompletedChars(next);
     if (next.length < playerCount) {
@@ -178,6 +268,7 @@ export default function CreateCampaignWizard() {
   const selectRosterChar = (char: RosterChar) => {
     const rosterDraft: CharDraft = {
       name: char.name, race: char.race, sex: char.sex, class: char.class,
+      title: "", alignment: "", charBackground: "", skillProficiencies: [],
       weapon: char.inventory?.weapons?.[0] ?? "",
       trinket: "",
       shield: char.inventory?.items?.includes("Shield") ?? false,
@@ -245,7 +336,9 @@ export default function CreateCampaignWizard() {
         setScores(prevDraft.scores);
         setSelectedCantrips(prevDraft.cantrips);
         setSelectedSpells(prevDraft.spells);
-        setCharStep(SPELLCASTING_CLASSES.has(prevDraft.class) ? 5 : 4);
+        setStatMethod("roll"); // restored characters always show roll tab
+        setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+        setCharStep(SPELLCASTING_CLASSES.has(prevDraft.class) ? 6 : 5);
       }
       return;
     }
@@ -263,7 +356,9 @@ export default function CreateCampaignWizard() {
         setScores(lastDraft.scores);
         setSelectedCantrips(lastDraft.cantrips);
         setSelectedSpells(lastDraft.spells);
-        setCharStep(SPELLCASTING_CLASSES.has(lastDraft.class) ? 5 : 4);
+        setStatMethod("roll");
+        setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+        setCharStep(SPELLCASTING_CLASSES.has(lastDraft.class) ? 6 : 5);
       }
     }
   };
@@ -304,27 +399,31 @@ export default function CreateCampaignWizard() {
           const ib          = computeInventoryBonuses(items, weapons);
           const effectiveHp = baseMaxHp + ib.hpMaxAdd;
           return {
-            user_id:      user.id,
-            campaign_id:  campData.id,
-            name:         c.name.trim(),
-            race:         c.race,
-            class:        c.class,
-            sex:          c.sex,
-            level:        1,
-            xp:           0,
-            max_hp:       baseMaxHp,
-            hp:           effectiveHp,
-            strength:     c.scores.strength,
-            dexterity:    c.scores.dexterity,
-            constitution: c.scores.constitution,
-            intelligence: c.scores.intelligence,
-            wisdom:       c.scores.wisdom,
-            charisma:     c.scores.charisma,
-            inventory:    { gold: 50, weapons, items },
-            cantrips_known:   c.cantrips,
-            spells_prepared:  c.spells,
-            spell_slots_used: {},
-            status_effects:   [],
+            user_id:             user.id,
+            campaign_id:         campData.id,
+            name:                c.name.trim(),
+            race:                c.race,
+            class:               c.class,
+            sex:                 c.sex,
+            title:               c.title?.trim() || null,
+            alignment:           c.alignment || null,
+            background:          c.charBackground?.trim() || null,
+            skill_proficiencies: c.skillProficiencies,
+            level:               1,
+            xp:                  0,
+            max_hp:              baseMaxHp,
+            hp:                  effectiveHp,
+            strength:            c.scores.strength,
+            dexterity:           c.scores.dexterity,
+            constitution:        c.scores.constitution,
+            intelligence:        c.scores.intelligence,
+            wisdom:              c.scores.wisdom,
+            charisma:            c.scores.charisma,
+            inventory:           { gold: 50, weapons, items },
+            cantrips_known:      c.cantrips,
+            spells_prepared:     c.spells,
+            spell_slots_used:    {},
+            status_effects:      [],
           };
         });
         const { data, error: charErr } = await supabase.from("characters").insert(rows).select();
@@ -380,7 +479,7 @@ export default function CreateCampaignWizard() {
           fetch("/api/generate-portrait", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-            body: JSON.stringify({ race: c.race, cls: c.class, sex: c.sex, charId: char.id }),
+            body: JSON.stringify({ race: c.race, cls: c.class, sex: c.sex, charId: char.id, title: c.title?.trim() || null, alignment: c.alignment || null, background: c.charBackground?.trim() || null }),
           }).catch(console.error);
         });
         // Generate portraits for roster characters that don't have one yet
@@ -424,12 +523,13 @@ export default function CreateCampaignWizard() {
     "Next →";
 
   const nextDisabled =
-    (phase === "characters" && charStep === 2 && !draft.class) ||
+    (phase === "characters" && charStep === 2 && (!draft.class || draft.skillProficiencies.length < profRequired)) ||
+    (phase === "characters" && charStep === 3 && statMethod === "array" && !arrayComplete) ||
     (phase === "characters" && charStep === 4 && !draft.weapon);
 
   const stepTitle =
     phase === "count"      ? "How Many Adventurers?" :
-    phase === "characters" ? ["Identity & Origins", "Class & Vocation", "Ability Scores", "Starting Equipment", "Spells & Cantrips"][charStep - 1] :
+    phase === "characters" ? ["Identity & Origins", "Class & Proficiencies", "Ability Scores", "Starting Equipment", "Character Background", "Spells & Cantrips"][charStep - 1] :
     phase === "review"     ? "Ready to Begin" :
     "Forging your world…";
 
@@ -540,16 +640,26 @@ export default function CreateCampaignWizard() {
                   {/* Left: new character form */}
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 }}>
 
-                    {/* Name */}
-                    <div>
-                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Character Name</label>
-                      <input
-                        autoFocus type="text" value={draft.name}
-                        onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
-                        placeholder="e.g. Elara Moonwhisper"
-                        style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1rem" }}
-                      />
-                      {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
+                    {/* Name + Title */}
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <div style={{ flex: 2 }}>
+                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Character Name</label>
+                        <input
+                          autoFocus type="text" value={draft.name}
+                          onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
+                          placeholder="e.g. Elara Moonwhisper"
+                          style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1rem" }}
+                        />
+                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Title <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span></label>
+                        <input type="text" value={draft.title} maxLength={40}
+                          onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+                          placeholder="e.g. the Brave"
+                          style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1rem" }}
+                        />
+                      </div>
                     </div>
 
                     {/* Race */}
@@ -576,6 +686,23 @@ export default function CreateCampaignWizard() {
                             border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
                             background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
                           }}>{s}</div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Alignment */}
+                    <div>
+                      <label style={{ display: "block", marginBottom: "6px", color: "#94a3b8" }}>Alignment <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span></label>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                        {ALIGNMENTS.map(a => (
+                          <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))} style={{
+                            padding: "8px 6px", borderRadius: "8px", cursor: "pointer", textAlign: "center", transition: "all 0.2s",
+                            border: `1px solid ${draft.alignment === a.key ? "var(--primary)" : "var(--border)"}`,
+                            background: draft.alignment === a.key ? "rgba(139,92,246,0.2)" : "transparent",
+                          }}>
+                            <div style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? "#c4b5fd" : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
+                            <div style={{ fontSize: "0.72rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -628,67 +755,199 @@ export default function CreateCampaignWizard() {
                 </div>
               )}
 
-              {/* Class */}
+              {/* Class & Proficiencies */}
               {charStep === 2 && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
-                  {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
-                    <div key={cls} onClick={() => handleClassChange(cls)} style={{
-                      padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", fontSize: "0.9rem",
-                      border: `1px solid ${draft.class === cls ? "var(--primary)" : "var(--border)"}`,
-                      background: draft.class === cls ? "rgba(139,92,246,0.2)" : "transparent",
-                    }}>
-                      {cls}
-                      {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.6rem", color: "#8b5cf6", marginTop: "3px" }}>✦ Spellcaster</div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
+                    {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
+                      <div key={cls} onClick={() => handleClassChange(cls)} style={{
+                        padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", fontSize: "0.9rem",
+                        border: `1px solid ${draft.class === cls ? "var(--primary)" : "var(--border)"}`,
+                        background: draft.class === cls ? "rgba(139,92,246,0.2)" : "transparent",
+                      }}>
+                        {cls}
+                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.6rem", color: "#8b5cf6", marginTop: "3px" }}>✦ Spellcaster</div>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {profData && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                      <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.7, display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                        <span><strong style={{ color: "#c4b5fd" }}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
+                        <span style={{ color: "#374151" }}>|</span>
+                        <span><strong style={{ color: "#c4b5fd" }}>Armor:</strong> {profData.armorProficiencies}</span>
+                        <span style={{ color: "#374151" }}>|</span>
+                        <span><strong style={{ color: "#c4b5fd" }}>Weapons:</strong> {profData.weaponProficiencies}</span>
+                      </div>
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                          <label style={{ color: "#94a3b8", fontSize: "0.88rem" }}>
+                            Choose <strong style={{ color: "white" }}>{profData.skillChoices.count}</strong> Skill Proficiencies
+                          </label>
+                          <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: draft.skillProficiencies.length === profRequired ? "#22c55e" : "#8b5cf6" }}>
+                            {draft.skillProficiencies.length} / {profRequired}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                          {profData.skillChoices.skills.map(skill => {
+                            const selected = draft.skillProficiencies.includes(skill);
+                            const disabled = !selected && draft.skillProficiencies.length >= profRequired;
+                            return (
+                              <div key={skill} onClick={() => toggleSkillProf(skill)} style={{
+                                padding: "5px 12px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer",
+                                border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
+                                background: selected ? "rgba(139,92,246,0.25)" : "transparent",
+                                color: selected ? "white" : disabled ? "#374151" : "#94a3b8",
+                                fontSize: "0.8rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
+                              }}>
+                                {selected && <span style={{ marginRight: "3px", fontSize: "0.62rem" }}>✓</span>}
+                                {skill}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
-              {/* Ability scores */}
+              {/* Ability Scores */}
               {charStep === 3 && (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "24px" }}>
-                  <div style={{ fontSize: "3.5rem", animation: rolling ? "float 0.5s infinite" : "none" }}>🎲</div>
-                  <button className="btn-primary" disabled={rolling} onClick={() => {
-                    setRolling(true);
-                    setTimeout(() => { setScores(rollAll()); setRolling(false); }, 900);
-                  }}>
-                    {rolling ? "Rolling…" : "Roll Ability Scores (4d6 drop lowest)"}
-                  </button>
-                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
-                    {([["STR", scores.strength], ["DEX", scores.dexterity], ["CON", scores.constitution], ["INT", scores.intelligence], ["WIS", scores.wisdom], ["CHA", scores.charisma]] as [string, number][]).map(([label, val]) => {
-                      const m = Math.floor((val - 10) / 2);
-                      const guide = CLASS_STAT_GUIDES[draft.class]?.[label];
-                      const tierStyle = guide ? getTierStyle(guide.tier) : null;
-                      return (
-                        <div
-                          key={label}
-                          style={{ position: "relative", padding: "14px 16px", background: "var(--card-bg)", borderRadius: "8px", textAlign: "center", minWidth: "70px", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, cursor: "default", transition: "border-color 0.2s" }}
-                          onMouseEnter={() => setHoveredStat(label)}
-                          onMouseLeave={() => setHoveredStat(null)}
-                        >
-                          <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginBottom: "4px" }}>{label}</div>
-                          <div style={{ fontWeight: "bold", fontSize: "1.3rem" }}>{val}</div>
-                          <div style={{ fontSize: "0.75rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
-                          {tierStyle && (
-                            <div style={{ fontSize: "0.52rem", color: tierStyle.color, marginTop: "4px", fontWeight: "bold", letterSpacing: "0.06em" }}>
-                              {tierStyle.label.toUpperCase()}
-                            </div>
-                          )}
-                          {hoveredStat === label && guide && tierStyle && (
-                            <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 300, width: "170px", pointerEvents: "none", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
-                              <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.74rem" }}>{tierStyle.label} Stat</div>
-                              {guide.reason}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  {/* Method tabs */}
+                  <div style={{ display: "flex", gap: "8px", paddingBottom: "14px", borderBottom: "1px solid var(--border)" }}>
+                    {(["roll", "array", "pointbuy"] as const).map(method => (
+                      <button key={method} onClick={() => handleStatMethodChange(method)} style={{
+                        padding: "7px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "0.82rem", transition: "all 0.15s",
+                        border: `1px solid ${statMethod === method ? "var(--primary)" : "var(--border)"}`,
+                        background: statMethod === method ? "rgba(139,92,246,0.2)" : "transparent",
+                        color: statMethod === method ? "white" : "#94a3b8",
+                        fontWeight: statMethod === method ? "bold" : "normal",
+                      }}>
+                        {method === "roll" ? "🎲 Roll" : method === "array" ? "📊 Standard Array" : "🔢 Point Buy"}
+                      </button>
+                    ))}
                   </div>
-                  <p style={{ color: "#475569", fontSize: "0.8rem" }}>
-                    Level 1 HP: <strong style={{ color: "white" }}>{startingHP(draft.class, scores.constitution)}</strong>
-                    {" "}(d{CLASS_HIT_DIE[draft.class] ?? 8} + CON mod)
-                  </p>
-                  <p style={{ color: "#475569", fontSize: "0.75rem" }}>Re-roll as many times as you like.</p>
+
+                  {/* Roll */}
+                  {statMethod === "roll" && (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+                      <div style={{ fontSize: "3.5rem", animation: rolling ? "float 0.5s infinite" : "none" }}>🎲</div>
+                      <button className="btn-primary" disabled={rolling} onClick={() => {
+                        setRolling(true);
+                        setTimeout(() => { setScores(rollAll()); setRolling(false); }, 900);
+                      }}>
+                        {rolling ? "Rolling…" : "Roll Ability Scores (4d6 drop lowest)"}
+                      </button>
+                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
+                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
+                          const val = scores[sk]; const m = Math.floor((val-10)/2);
+                          const guide = CLASS_STAT_GUIDES[draft.class]?.[label];
+                          const ts = guide ? getTierStyle(guide.tier) : null;
+                          return (
+                            <div key={label} style={{ position:"relative", padding:"14px 16px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"70px", border:`1px solid ${ts ? ts.color+"55":"var(--border)"}` }}
+                              onMouseEnter={() => setHoveredStat(label)} onMouseLeave={() => setHoveredStat(null)}>
+                              <div style={{ fontSize:"0.7rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
+                              <div style={{ fontWeight:"bold", fontSize:"1.3rem" }}>{val}</div>
+                              <div style={{ fontSize:"0.75rem", color:m>=0?"#22c55e":"#ef4444" }}>{m>=0?`+${m}`:m}</div>
+                              {ts && <div style={{ fontSize:"0.52rem", color:ts.color, marginTop:"4px", fontWeight:"bold" }}>{ts.label.toUpperCase()}</div>}
+                              {hoveredStat===label && guide && ts && (
+                                <div style={{ position:"absolute", bottom:"calc(100% + 8px)", left:"50%", transform:"translateX(-50%)", background:"#1a1730", border:`1px solid ${ts.color}66`, borderRadius:"7px", padding:"9px 11px", zIndex:300, width:"170px", pointerEvents:"none", fontSize:"0.72rem", color:"#e2e8f0", lineHeight:1.45, textAlign:"left" }}>
+                                  <div style={{ fontWeight:"bold", color:ts.color, marginBottom:"4px" }}>{ts.label} Stat</div>{guide.reason}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p style={{ color:"#475569", fontSize:"0.75rem" }}>Re-roll as many times as you like.</p>
+                    </div>
+                  )}
+
+                  {/* Standard Array */}
+                  {statMethod === "array" && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+                      <p style={{ color:"#94a3b8", fontSize:"0.8rem", textAlign:"center" }}>Click a value, then click a stat to assign it.</p>
+                      <div style={{ display:"flex", gap:"10px", justifyContent:"center", flexWrap:"wrap" }}>
+                        {STANDARD_ARRAY.map(v => {
+                          const isUsed = Object.values(arrayAssignments).includes(v);
+                          const isSelected = selectedArrayVal === v;
+                          return (
+                            <div key={v} onClick={() => handleArrayChipClick(v)} style={{
+                              width:"50px", height:"50px", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center",
+                              fontWeight:"bold", fontSize:"1.05rem", cursor:isUsed?"default":"pointer", transition:"all 0.15s",
+                              border:`2px solid ${isSelected?"var(--primary)":isUsed?"#1e293b":"var(--border)"}`,
+                              background:isSelected?"rgba(139,92,246,0.3)":isUsed?"rgba(0,0,0,0.1)":"rgba(0,0,0,0.2)",
+                              color:isUsed?"#374151":"white", textDecoration:isUsed?"line-through":"none",
+                            }}>{v}</div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", justifyContent:"center" }}>
+                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
+                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
+                          const assigned = arrayAssignments[sk]; const m = assigned !== null ? Math.floor((assigned-10)/2) : null;
+                          return (
+                            <div key={label} onClick={() => handleArrayStatClick(sk)} style={{
+                              padding:"12px 14px", borderRadius:"8px", textAlign:"center", minWidth:"72px", cursor:"pointer", transition:"all 0.15s",
+                              background:assigned!==null?"rgba(139,92,246,0.15)":selectedArrayVal!==null?"rgba(139,92,246,0.05)":"var(--card-bg)",
+                              border:`1px solid ${assigned!==null?"var(--primary)":selectedArrayVal!==null?"rgba(139,92,246,0.4)":"var(--border)"}`,
+                            }}>
+                              <div style={{ fontSize:"0.68rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
+                              <div style={{ fontWeight:"bold", fontSize:"1.2rem", color:assigned!==null?"white":"#374151" }}>{assigned??'--'}</div>
+                              <div style={{ fontSize:"0.72rem", color:assigned!==null?(m!>=0?"#22c55e":"#ef4444"):"#374151" }}>
+                                {assigned!==null?(m!>=0?`+${m}`:m):'··'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p style={{ color:"#64748b", fontSize:"0.78rem", textAlign:"center" }}>
+                        {!arrayComplete ? (selectedArrayVal!==null ? `Click a stat to assign ${selectedArrayVal}` : "Click a value to select it") : "✓ All stats assigned"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Point Buy */}
+                  {statMethod === "pointbuy" && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+                      <div style={{ textAlign:"center" }}>
+                        <span style={{ fontSize:"1.1rem", fontWeight:"bold", color:pointsLeft===0?"#22c55e":"#c4b5fd" }}>{pointsLeft}</span>
+                        <span style={{ color:"#64748b", fontSize:"0.82rem" }}> / {POINT_BUY_BUDGET} points remaining</span>
+                      </div>
+                      <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", justifyContent:"center" }}>
+                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
+                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
+                          const val = scores[sk]; const m = Math.floor((val-10)/2);
+                          const incCost = (POINT_BUY_COST[val+1]??99)-(POINT_BUY_COST[val]??0);
+                          const canInc = val < 15 && pointsLeft >= incCost;
+                          const canDec = val > 8;
+                          return (
+                            <div key={label} style={{ padding:"12px 10px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"82px", border:"1px solid var(--border)" }}>
+                              <div style={{ fontSize:"0.68rem", color:"#94a3b8", marginBottom:"8px" }}>{label}</div>
+                              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"8px" }}>
+                                <button onClick={() => adjustPBStat(sk,-1)} disabled={!canDec} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canDec?"rgba(139,92,246,0.15)":"transparent", color:canDec?"white":"#374151", cursor:canDec?"pointer":"not-allowed", fontWeight:"bold", fontSize:"0.9rem" }}>−</button>
+                                <span style={{ fontWeight:"bold", fontSize:"1.2rem", minWidth:"22px" }}>{val}</span>
+                                <button onClick={() => adjustPBStat(sk,1)} disabled={!canInc} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canInc?"rgba(139,92,246,0.15)":"transparent", color:canInc?"white":"#374151", cursor:canInc?"pointer":"not-allowed", fontWeight:"bold", fontSize:"0.9rem" }}>+</button>
+                              </div>
+                              <div style={{ fontSize:"0.72rem", color:m>=0?"#22c55e":"#ef4444", marginTop:"6px" }}>{m>=0?`+${m}`:m}</div>
+                              <div style={{ fontSize:"0.6rem", color:"#475569", marginTop:"2px" }}>{POINT_BUY_COST[val]}pt{POINT_BUY_COST[val]!==1?"s":""}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {draft.class && (
+                    <p style={{ color:"#475569", fontSize:"0.78rem", textAlign:"center" }}>
+                      Level 1 HP: <strong style={{ color:"white" }}>{startingHP(draft.class, effectiveScores().constitution)}</strong>
+                      {" "}(d{CLASS_HIT_DIE[draft.class]??8} + CON mod)
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -746,8 +1005,30 @@ export default function CreateCampaignWizard() {
                 </div>
               )}
 
+              {/* Character Background */}
+              {charStep === 5 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.65 }}>
+                    <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "4px" }}>Optional — skip to continue.</strong>
+                    The DM and portrait artist will use this backstory to shape your character&apos;s story and portrait.
+                  </div>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
+                      Character Background <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span>
+                    </label>
+                    <textarea
+                      value={draft.charBackground} rows={6} maxLength={500}
+                      onChange={e => setDraft(d => ({ ...d, charBackground: e.target.value }))}
+                      placeholder="e.g. A wandering mercenary haunted by a betrayal. They carry a broken medallion — once a symbol of their old order, now a reminder of who they used to be..."
+                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "0.9rem", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
+                    />
+                    <p style={{ color: "#374151", fontSize: "0.7rem", textAlign: "right", marginTop: "4px" }}>{draft.charBackground.length} / 500</p>
+                  </div>
+                </div>
+              )}
+
               {/* Spells */}
-              {charStep === 5 && isSpellcaster && (
+              {charStep === 6 && isSpellcaster && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px" }}>
                   <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.82rem", color: "#c4b5fd", lineHeight: 1.5, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
                     <span>As a Level 1 <strong>{draft.class}</strong>, choose your spells.

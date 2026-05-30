@@ -9,11 +9,16 @@ import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
 } from '../../lib/spellData';
+import {
+  CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
+} from '../../lib/proficiencyData';
 
 type AbilityScores = {
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
 };
+
+type StatMethod = 'roll' | 'array' | 'pointbuy';
 
 function roll4d6DropLowest(): number {
   const rolls = Array.from({ length: 4 }, () => Math.floor(Math.random() * 6) + 1);
@@ -23,12 +28,9 @@ function roll4d6DropLowest(): number {
 
 function rollAbilityScores(): AbilityScores {
   return {
-    strength:     roll4d6DropLowest(),
-    dexterity:    roll4d6DropLowest(),
-    constitution: roll4d6DropLowest(),
-    intelligence: roll4d6DropLowest(),
-    wisdom:       roll4d6DropLowest(),
-    charisma:     roll4d6DropLowest(),
+    strength: roll4d6DropLowest(), dexterity: roll4d6DropLowest(),
+    constitution: roll4d6DropLowest(), intelligence: roll4d6DropLowest(),
+    wisdom: roll4d6DropLowest(), charisma: roll4d6DropLowest(),
   };
 }
 
@@ -59,14 +61,17 @@ const CLASS_HIT_DIE: Record<string, number> = {
 };
 
 function startingHP(cls: string, con: number): number {
-  const hitDie = CLASS_HIT_DIE[cls] ?? 8;
-  const conMod = Math.floor((con - 10) / 2);
-  return Math.max(1, hitDie + conMod);
+  return Math.max(1, (CLASS_HIT_DIE[cls] ?? 8) + Math.floor((con - 10) / 2));
 }
 
 const DEFAULT_SCORES: AbilityScores = {
   strength: 15, dexterity: 14, constitution: 13,
   intelligence: 12, wisdom: 10, charisma: 8,
+};
+
+const POINTBUY_DEFAULT: AbilityScores = {
+  strength: 8, dexterity: 8, constitution: 8,
+  intelligence: 8, wisdom: 8, charisma: 8,
 };
 
 const ALIGNMENTS = [
@@ -111,7 +116,6 @@ const CLASS_TOOLTIPS: Record<string, string> = {
 const STAT_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'] as const;
 const STAT_LABELS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
 
-// ── Spell card component ──────────────────────────────────────────────────────
 function SpellCard({
   spell, selected, disabled, onToggle,
 }: {
@@ -123,43 +127,40 @@ function SpellCard({
     Transmutation: "#f97316", Divination: "#e879f9",
   };
   const color = schoolColors[spell.school] ?? "#94a3b8";
-
   return (
-    <div
-      onClick={() => !disabled && onToggle()}
-      style={{
-        padding: "10px 12px",
-        borderRadius: "8px",
-        border: `1px solid ${selected ? color : "var(--border)"}`,
-        background: selected ? `${color}18` : "rgba(0,0,0,0.2)",
-        cursor: disabled && !selected ? "not-allowed" : "pointer",
-        opacity: disabled && !selected ? 0.45 : 1,
-        transition: "all 0.15s",
-      }}
-    >
+    <div onClick={() => !disabled && onToggle()} style={{
+      padding: "10px 12px", borderRadius: "8px",
+      border: `1px solid ${selected ? color : "var(--border)"}`,
+      background: selected ? `${color}18` : "rgba(0,0,0,0.2)",
+      cursor: disabled && !selected ? "not-allowed" : "pointer",
+      opacity: disabled && !selected ? 0.45 : 1, transition: "all 0.15s",
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "6px" }}>
-        <span style={{ fontSize: "0.82rem", fontWeight: "bold", color: selected ? color : "white" }}>
-          {spell.name}
-        </span>
+        <span style={{ fontSize: "0.82rem", fontWeight: "bold", color: selected ? color : "white" }}>{spell.name}</span>
         {selected && <span style={{ fontSize: "0.65rem", color, flexShrink: 0 }}>✓</span>}
       </div>
-      <div style={{ fontSize: "0.62rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        {spell.school}
-      </div>
-      <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>
-        {spell.desc}
-      </div>
+      <div style={{ fontSize: "0.62rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{spell.school}</div>
+      <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{spell.desc}</div>
     </div>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function CreateCharacter() {
   const router = useRouter();
 
   const [character, setCharacter] = useState({
-    name: '', race: '', class: '', alignment: '', weapon: '', trinket: '', sex: 'male', shield: false,
+    name: '', title: '', race: '', class: '', alignment: '', weapon: '', trinket: '', sex: 'male', shield: false,
   });
+  const [charBackground, setCharBackground] = useState('');
+  const [skillProficiencies, setSkillProficiencies] = useState<string[]>([]);
+
+  // Stat method
+  const [statMethod, setStatMethod] = useState<StatMethod>('roll');
+  const [arrayAssignments, setArrayAssignments] = useState<Record<string, number | null>>({
+    strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null,
+  });
+  const [selectedArrayVal, setSelectedArrayVal] = useState<number | null>(null);
+
   const [rollingStats,  setRollingStats]  = useState(false);
   const [revealCount,   setRevealCount]   = useState(6);
   const [scores,        setScores]        = useState<AbilityScores>(DEFAULT_SCORES);
@@ -174,22 +175,81 @@ export default function CreateCharacter() {
   const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
   const [selectedSpells,   setSelectedSpells]   = useState<string[]>([]);
 
-  const isSpellcaster = SPELLCASTING_CLASSES.has(character.class);
-  const totalSteps    = isSpellcaster ? 5 : 4;
-
   const [step, setStep] = useState(1);
 
-  const spellCounts       = getSpellCounts(character.class, scores);
+  const isSpellcaster = SPELLCASTING_CLASSES.has(character.class);
+  const totalSteps    = isSpellcaster ? 6 : 5;
+
+  const spellCounts       = getSpellCounts(character.class, effectiveScores());
   const availableCantrips = CANTRIPS[character.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[character.class] ?? [];
 
-  // ── Stat roll with animation ────────────────────────────────────────────────
+  // Derived stat data
+  function effectiveScores(): AbilityScores {
+    if (statMethod === 'array') {
+      return {
+        strength:     arrayAssignments.strength     ?? 8,
+        dexterity:    arrayAssignments.dexterity    ?? 8,
+        constitution: arrayAssignments.constitution ?? 8,
+        intelligence: arrayAssignments.intelligence ?? 8,
+        wisdom:       arrayAssignments.wisdom       ?? 8,
+        charisma:     arrayAssignments.charisma     ?? 8,
+      };
+    }
+    return scores;
+  }
+
+  const arrayComplete = STAT_KEYS.every(k => arrayAssignments[k] !== null);
+  const pointsSpent   = statMethod === 'pointbuy' ? calcPointBuyCost(scores) : 0;
+  const pointsLeft    = POINT_BUY_BUDGET - pointsSpent;
+
+  const profRequired = character.class ? (CLASS_PROFICIENCIES[character.class]?.skillChoices.count ?? 0) : 0;
+  const profData     = character.class ? CLASS_PROFICIENCIES[character.class] : null;
+
+  // ── Stat methods ────────────────────────────────────────────────────────────
+  const handleStatMethodChange = (method: StatMethod) => {
+    setStatMethod(method);
+    if (method === 'pointbuy') {
+      setScores(POINTBUY_DEFAULT);
+    }
+    if (method === 'array') {
+      setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+      setSelectedArrayVal(null);
+    }
+  };
+
+  const handleArrayChipClick = (val: number) => {
+    const isUsed = Object.values(arrayAssignments).includes(val);
+    if (isUsed) return;
+    setSelectedArrayVal(prev => prev === val ? null : val);
+  };
+
+  const handleArrayStatClick = (statKey: string) => {
+    if (selectedArrayVal !== null) {
+      const displaced = arrayAssignments[statKey];
+      setArrayAssignments(a => ({ ...a, [statKey]: selectedArrayVal }));
+      setSelectedArrayVal(displaced);
+    } else if (arrayAssignments[statKey] !== null) {
+      setSelectedArrayVal(arrayAssignments[statKey]);
+      setArrayAssignments(a => ({ ...a, [statKey]: null }));
+    }
+  };
+
+  const adjustPBStat = (statKey: string, delta: number) => {
+    const current = scores[statKey as keyof AbilityScores];
+    const newVal = current + delta;
+    if (newVal < 8 || newVal > 15) return;
+    const newScores = { ...scores, [statKey as keyof AbilityScores]: newVal };
+    if (calcPointBuyCost(newScores) > POINT_BUY_BUDGET) return;
+    setScores(newScores);
+  };
+
+  // ── Stat roll ────────────────────────────────────────────────────────────────
   const handleRollStats = () => {
     if (rollingStats) return;
     setRollingStats(true);
     setRevealCount(0);
     playDiceRollSound();
-
     setTimeout(() => {
       const newScores = rollAbilityScores();
       setScores(newScores);
@@ -200,39 +260,50 @@ export default function CreateCharacter() {
     }, 1100);
   };
 
+  // ── Proficiency toggle ───────────────────────────────────────────────────────
+  const toggleSkillProf = (skill: string) => {
+    setSkillProficiencies(prev => {
+      if (prev.includes(skill)) return prev.filter(s => s !== skill);
+      if (prev.length >= profRequired) return prev;
+      return [...prev, skill];
+    });
+  };
+
   // ── Navigation ──────────────────────────────────────────────────────────────
   const nextStep = () => {
     if (step === 1) {
       if (!character.name.trim()) { setNameError('Your character needs a name.'); return; }
       if (!character.race) return;
     }
-    if (step === 2 && !character.class) return;
+    if (step === 2) {
+      if (!character.class) return;
+      if (skillProficiencies.length < profRequired) return;
+    }
     setStep(s => Math.min(s + 1, totalSteps));
   };
 
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
-  // ── Spell toggles ───────────────────────────────────────────────────────────
+  // ── Spell toggles ────────────────────────────────────────────────────────────
   const toggleCantrip = (name: string) => {
-    if (selectedCantrips.includes(name)) {
-      setSelectedCantrips(prev => prev.filter(n => n !== name));
-    } else if (selectedCantrips.length < spellCounts.cantrips) {
-      setSelectedCantrips(prev => [...prev, name]);
-    }
+    setSelectedCantrips(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) :
+      prev.length < spellCounts.cantrips ? [...prev, name] : prev
+    );
   };
 
   const toggleSpell = (name: string) => {
-    if (selectedSpells.includes(name)) {
-      setSelectedSpells(prev => prev.filter(n => n !== name));
-    } else if (selectedSpells.length < spellCounts.spells) {
-      setSelectedSpells(prev => [...prev, name]);
-    }
+    setSelectedSpells(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) :
+      prev.length < spellCounts.spells ? [...prev, name] : prev
+    );
   };
 
   const handleClassSelect = (cls: string) => {
     setCharacter(c => ({ ...c, class: cls }));
     setSelectedCantrips([]);
     setSelectedSpells([]);
+    setSkillProficiencies([]);
   };
 
   // ── Finish ───────────────────────────────────────────────────────────────────
@@ -257,7 +328,8 @@ export default function CreateCharacter() {
       }
 
       const charClass   = character.class || 'Fighter';
-      const maxHp       = startingHP(charClass, scores.constitution);
+      const finalScores = effectiveScores();
+      const maxHp       = startingHP(charClass, finalScores.constitution);
       const startingInv = {
         gold: 50,
         weapons: character.weapon ? [character.weapon] : ['Iron Dagger'],
@@ -265,27 +337,30 @@ export default function CreateCharacter() {
       };
 
       const { data: newChar, error: insertError } = await supabase.from('characters').insert([{
-        user_id:          user.id,
-        name:             trimmedName,
-        race:             character.race || 'Human',
-        class:            charClass,
-        sex:              character.sex,
-        background:       character.alignment || null,
-        level:            1,
-        xp:               0,
-        max_hp:           maxHp,
-        hp:               maxHp,
-        strength:         scores.strength,
-        dexterity:        scores.dexterity,
-        constitution:     scores.constitution,
-        intelligence:     scores.intelligence,
-        wisdom:           scores.wisdom,
-        charisma:         scores.charisma,
-        inventory:        startingInv,
-        cantrips_known:   selectedCantrips,
-        spells_prepared:  selectedSpells,
-        spell_slots_used: {},
-        status_effects:   [],
+        user_id:              user.id,
+        name:                 trimmedName,
+        race:                 character.race || 'Human',
+        class:                charClass,
+        sex:                  character.sex,
+        title:                character.title.trim() || null,
+        alignment:            character.alignment || null,
+        background:           charBackground.trim() || null,
+        skill_proficiencies:  skillProficiencies,
+        level:                1,
+        xp:                   0,
+        max_hp:               maxHp,
+        hp:                   maxHp,
+        strength:             finalScores.strength,
+        dexterity:            finalScores.dexterity,
+        constitution:         finalScores.constitution,
+        intelligence:         finalScores.intelligence,
+        wisdom:               finalScores.wisdom,
+        charisma:             finalScores.charisma,
+        inventory:            startingInv,
+        cantrips_known:       selectedCantrips,
+        spells_prepared:      selectedSpells,
+        spell_slots_used:     {},
+        status_effects:       [],
       }]).select().single();
 
       if (insertError || !newChar) throw insertError ?? new Error("Insert failed");
@@ -295,18 +370,16 @@ export default function CreateCharacter() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        const res = await fetch('/api/generate-portrait', {
+        await fetch('/api/generate-portrait', {
           method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id }),
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            race: character.race || 'Human', cls: charClass, sex: character.sex, charId: newChar.id,
+            title: character.title.trim() || null,
+            alignment: character.alignment || null,
+            background: charBackground.trim() || null,
+          }),
         });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          console.error('[create-character] portrait generation failed:', res.status, body);
-        }
       } catch (portraitErr) {
         console.error('[create-character] portrait fetch error:', portraitErr);
       }
@@ -319,25 +392,77 @@ export default function CreateCharacter() {
     }
   };
 
-  // ── Render helpers ───────────────────────────────────────────────────────────
-  const stepTitle = [
-    "Identity & Origins",
-    "Class & Vocation",
-    "Roll for Stats",
-    "Starting Equipment",
-    "Spells & Cantrips",
-  ][step - 1];
-
-  const canProceed =
-    (step === 1 && !!character.race) ||
-    (step === 2 && !!character.class) ||
-    (step === 3) ||
-    (step === 4 && !!character.weapon) ||
-    (step === 5);
+  // ── Render helpers ────────────────────────────────────────────────────────────
+  const STEP_TITLES = ["Identity & Origins", "Class & Proficiencies", "Ability Scores", "Starting Equipment", "Character Background", "Spells & Cantrips"];
+  const stepTitle = STEP_TITLES[step - 1];
 
   const spellsReady =
     (spellCounts.cantrips === 0 || selectedCantrips.length === spellCounts.cantrips) &&
     (spellCounts.spells   === 0 || selectedSpells.length   === spellCounts.spells);
+
+  const canProceed =
+    (step === 1 && !!character.race) ||
+    (step === 2 && !!character.class && skillProficiencies.length === profRequired) ||
+    (step === 3 && (statMethod !== 'array' || arrayComplete)) ||
+    (step === 4 && !!character.weapon) ||
+    (step === 5) ||
+    (step === 6);
+
+  const eff = effectiveScores();
+
+  // Shared stat card renderer
+  const renderStatCards = (displayScores: AbilityScores, isInteractive = false) => (
+    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      {STAT_LABELS.map((label, statIdx) => {
+        const valKey    = STAT_KEYS[statIdx];
+        const val       = displayScores[valKey];
+        const isRevealed = statMethod !== 'roll' || revealCount > statIdx;
+        const m         = Math.floor((val - 10) / 2);
+        const guide     = CLASS_STAT_GUIDES[character.class]?.[label];
+        const tierStyle = guide ? getTierStyle(guide.tier) : null;
+        return (
+          <div
+            key={label}
+            onClick={() => isInteractive && handleArrayStatClick(valKey)}
+            style={{
+              position: 'relative', padding: '14px 16px', background:
+                isInteractive && arrayAssignments[valKey] !== null ? 'rgba(139,92,246,0.15)' :
+                isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.05)' : 'var(--card-bg)',
+              borderRadius: '8px', textAlign: 'center', minWidth: '70px',
+              border: `1px solid ${
+                isInteractive && arrayAssignments[valKey] !== null ? 'var(--primary)' :
+                isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.4)' :
+                tierStyle && isRevealed ? tierStyle.color + "55" : "var(--border)"
+              }`,
+              cursor: isInteractive ? 'pointer' : 'default',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={() => setHoveredStat(label)}
+            onMouseLeave={() => setHoveredStat(null)}
+          >
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
+            <div style={{ fontWeight: 'bold', fontSize: '1.3rem', color: isRevealed ? 'white' : '#475569', transition: 'color 0.2s' }}>
+              {isRevealed ? val : '??'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
+              {isRevealed ? (m >= 0 ? `+${m}` : m) : '--'}
+            </div>
+            {isRevealed && tierStyle && (
+              <div style={{ fontSize: '0.52rem', color: tierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
+                {tierStyle.label.toUpperCase()}
+              </div>
+            )}
+            {hoveredStat === label && isRevealed && guide && tierStyle && (
+              <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: `1px solid ${tierStyle.color}66`, borderRadius: '7px', padding: '9px 11px', zIndex: 300, width: '170px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
+                <div style={{ fontWeight: 'bold', color: tierStyle.color, marginBottom: '4px', fontSize: '0.74rem' }}>{tierStyle.label} Stat</div>
+                {guide.reason}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
@@ -382,16 +507,30 @@ export default function CreateCharacter() {
           {/* ── Step 1: Identity ── */}
           {step === 1 && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Character Name</label>
-                <input
-                  type="text"
-                  value={character.name}
-                  onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
-                  placeholder="e.g. Elara Moonwhisper"
-                />
-                {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
+
+              {/* Name + Title row */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 2 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Character Name</label>
+                  <input
+                    type="text" value={character.name}
+                    onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
+                    placeholder="e.g. Elara Moonwhisper"
+                  />
+                  {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>
+                    Title <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span>
+                  </label>
+                  <input
+                    type="text" value={character.title} maxLength={40}
+                    onChange={e => setCharacter(c => ({ ...c, title: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
+                    placeholder="e.g. the Brave"
+                  />
+                </div>
               </div>
 
               <div>
@@ -437,14 +576,8 @@ export default function CreateCharacter() {
                       onMouseEnter={() => setHoveredAlign(a.key)}
                       onMouseLeave={() => setHoveredAlign(null)}
                     >
-                      <div
-                        onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
-                        style={{
-                          padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                          border: `1px solid ${character.alignment === a.key ? 'var(--primary)' : 'var(--border)'}`,
-                          background: character.alignment === a.key ? 'rgba(139,92,246,0.2)' : 'transparent',
-                        }}
-                      >
+                      <div onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
+                        style={{ padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', border: `1px solid ${character.alignment === a.key ? 'var(--primary)' : 'var(--border)'}`, background: character.alignment === a.key ? 'rgba(139,92,246,0.2)' : 'transparent' }}>
                         <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', color: character.alignment === a.key ? '#c4b5fd' : '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>{a.short}</div>
                         <div style={{ fontSize: '0.78rem', color: character.alignment === a.key ? 'white' : '#94a3b8', lineHeight: 1.2 }}>{a.key}</div>
                       </div>
@@ -461,9 +594,9 @@ export default function CreateCharacter() {
             </div>
           )}
 
-          {/* ── Step 2: Class ── */}
+          {/* ── Step 2: Class & Proficiencies ── */}
           {step === 2 && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Class</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
@@ -487,71 +620,176 @@ export default function CreateCharacter() {
                   ))}
                 </div>
               </div>
+
+              {profData && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Proficiency summary */}
+                  <div style={{ padding: '12px 16px', borderRadius: '10px', background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)', fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.7, display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    <span><strong style={{ color: '#c4b5fd' }}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
+                    <span style={{ color: '#374151' }}>|</span>
+                    <span><strong style={{ color: '#c4b5fd' }}>Armor:</strong> {profData.armorProficiencies}</span>
+                    <span style={{ color: '#374151' }}>|</span>
+                    <span><strong style={{ color: '#c4b5fd' }}>Weapons:</strong> {profData.weaponProficiencies}</span>
+                  </div>
+
+                  {/* Skill proficiency selection */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <label style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                        Choose <strong style={{ color: 'white' }}>{profData.skillChoices.count}</strong> Skill Proficiencies
+                      </label>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 'bold', color: skillProficiencies.length === profRequired ? '#22c55e' : '#8b5cf6' }}>
+                        {skillProficiencies.length} / {profRequired}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {profData.skillChoices.skills.map(skill => {
+                        const selected = skillProficiencies.includes(skill);
+                        const disabled = !selected && skillProficiencies.length >= profRequired;
+                        return (
+                          <div key={skill} onClick={() => toggleSkillProf(skill)} style={{
+                            padding: '6px 14px', borderRadius: '20px', cursor: disabled ? 'not-allowed' : 'pointer',
+                            border: `1px solid ${selected ? 'var(--primary)' : 'var(--border)'}`,
+                            background: selected ? 'rgba(139,92,246,0.25)' : 'transparent',
+                            color: selected ? 'white' : disabled ? '#374151' : '#94a3b8',
+                            fontSize: '0.82rem', opacity: disabled ? 0.5 : 1, transition: 'all 0.15s',
+                          }}>
+                            {selected && <span style={{ marginRight: '4px', fontSize: '0.65rem' }}>✓</span>}
+                            {skill}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* ── Step 3: Roll Stats ── */}
+          {/* ── Step 3: Ability Scores ── */}
           {step === 3 && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <div style={{
-                fontSize: '4rem', marginBottom: '24px',
-                animation: rollingStats ? 'diceRoll 0.35s linear infinite' : 'none',
-                filter: rollingStats ? 'drop-shadow(0 0 18px rgba(139,92,246,0.8))' : 'none',
-                transition: 'filter 0.3s',
-              }}>🎲</div>
-              <button className="btn-primary" onClick={handleRollStats} disabled={rollingStats} style={{ marginBottom: '24px' }}>
-                {rollingStats ? 'Rolling…' : 'Roll Ability Scores (4d6 drop lowest)'}
-              </button>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                {STAT_LABELS.map((label, statIdx) => {
-                  const valKey   = STAT_KEYS[statIdx];
-                  const val      = scores[valKey];
-                  const isRevealed = revealCount > statIdx;
-                  const m        = Math.floor((val - 10) / 2);
-                  const guide    = CLASS_STAT_GUIDES[character.class]?.[label];
-                  const tierStyle = guide ? getTierStyle(guide.tier) : null;
-                  return (
-                    <div
-                      key={label}
-                      style={{
-                        position: 'relative', padding: '14px 16px', background: 'var(--card-bg)', borderRadius: '8px',
-                        textAlign: 'center', minWidth: '70px',
-                        border: `1px solid ${tierStyle && isRevealed ? tierStyle.color + "55" : "var(--border)"}`,
-                        cursor: 'default', transition: 'all 0.2s',
-                        animation: isRevealed && rollingStats === false && revealCount <= STAT_KEYS.length && revealCount === statIdx + 1
-                          ? 'statReveal 0.3s ease-out'
-                          : 'none',
-                      }}
-                      onMouseEnter={() => setHoveredStat(label)}
-                      onMouseLeave={() => setHoveredStat(null)}
-                    >
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
-                      <div style={{
-                        fontWeight: 'bold', fontSize: '1.3rem',
-                        color: isRevealed ? 'white' : '#475569',
-                        transition: 'color 0.2s',
-                      }}>
-                        {isRevealed ? val : '??'}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
-                        {isRevealed ? (m >= 0 ? `+${m}` : m) : '--'}
-                      </div>
-                      {isRevealed && tierStyle && (
-                        <div style={{ fontSize: '0.52rem', color: tierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
-                          {tierStyle.label.toUpperCase()}
-                        </div>
-                      )}
-                      {hoveredStat === label && isRevealed && guide && tierStyle && (
-                        <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1730', border: `1px solid ${tierStyle.color}66`, borderRadius: '7px', padding: '9px 11px', zIndex: 300, width: '170px', pointerEvents: 'none', fontSize: '0.72rem', color: '#e2e8f0', lineHeight: 1.45, textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
-                          <div style={{ fontWeight: 'bold', color: tierStyle.color, marginBottom: '4px', fontSize: '0.74rem' }}>{tierStyle.label} Stat</div>
-                          {guide.reason}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+              {/* Method tabs */}
+              <div style={{ display: 'flex', gap: '8px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                {(['roll', 'array', 'pointbuy'] as const).map(method => (
+                  <button key={method} onClick={() => handleStatMethodChange(method)} style={{
+                    padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.15s',
+                    border: `1px solid ${statMethod === method ? 'var(--primary)' : 'var(--border)'}`,
+                    background: statMethod === method ? 'rgba(139,92,246,0.2)' : 'transparent',
+                    color: statMethod === method ? 'white' : '#94a3b8',
+                    fontWeight: statMethod === method ? 'bold' : 'normal',
+                  }}>
+                    {method === 'roll' ? '🎲 Roll' : method === 'array' ? '📊 Standard Array' : '🔢 Point Buy'}
+                  </button>
+                ))}
               </div>
-              <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '16px' }}>Re-roll as many times as you like before continuing.</p>
+
+              {/* Roll */}
+              {statMethod === 'roll' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <div style={{
+                    fontSize: '4rem',
+                    animation: rollingStats ? 'diceRoll 0.35s linear infinite' : 'none',
+                    filter: rollingStats ? 'drop-shadow(0 0 18px rgba(139,92,246,0.8))' : 'none',
+                    transition: 'filter 0.3s',
+                  }}>🎲</div>
+                  <button className="btn-primary" onClick={handleRollStats} disabled={rollingStats}>
+                    {rollingStats ? 'Rolling…' : 'Roll Ability Scores (4d6 drop lowest)'}
+                  </button>
+                  {renderStatCards(scores)}
+                  <p style={{ color: '#64748b', fontSize: '0.8rem' }}>Re-roll as many times as you like before continuing.</p>
+                </div>
+              )}
+
+              {/* Standard Array */}
+              {statMethod === 'array' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <p style={{ color: '#94a3b8', fontSize: '0.82rem', textAlign: 'center' }}>
+                    Click a value from the pool below, then click a stat to assign it. Click an assigned stat to pick it back up.
+                  </p>
+                  {/* Value pool */}
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {STANDARD_ARRAY.map(v => {
+                      const isUsed = Object.values(arrayAssignments).includes(v);
+                      const isSelected = selectedArrayVal === v;
+                      return (
+                        <div key={v} onClick={() => handleArrayChipClick(v)} style={{
+                          width: '52px', height: '52px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: 'bold', fontSize: '1.1rem', cursor: isUsed ? 'default' : 'pointer', transition: 'all 0.15s',
+                          border: `2px solid ${isSelected ? 'var(--primary)' : isUsed ? '#1e293b' : 'var(--border)'}`,
+                          background: isSelected ? 'rgba(139,92,246,0.3)' : isUsed ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+                          color: isUsed ? '#374151' : 'white',
+                          textDecoration: isUsed ? 'line-through' : 'none',
+                          boxShadow: isSelected ? '0 0 12px rgba(139,92,246,0.5)' : 'none',
+                        }}>{v}</div>
+                      );
+                    })}
+                  </div>
+                  {/* Stat assignment */}
+                  {renderStatCards(effectiveScores(), true)}
+                  <p style={{ color: '#64748b', fontSize: '0.78rem', textAlign: 'center' }}>
+                    {!arrayComplete
+                      ? selectedArrayVal !== null
+                        ? `Click a stat to assign ${selectedArrayVal}`
+                        : 'Click a value from the pool to select it'
+                      : '✓ All stats assigned'}
+                  </p>
+                </div>
+              )}
+
+              {/* Point Buy */}
+              {statMethod === 'pointbuy' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: pointsLeft === 0 ? '#22c55e' : '#c4b5fd' }}>
+                      {pointsLeft}
+                    </span>
+                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}> / {POINT_BUY_BUDGET} points remaining</span>
+                    <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '2px' }}>Stats range 8–15. Cost increases at 14 (+2) and 15 (+2).</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    {STAT_KEYS.map((statKey, i) => {
+                      const val = scores[statKey];
+                      const m = Math.floor((val - 10) / 2);
+                      const incCost = (POINT_BUY_COST[val + 1] ?? 99) - (POINT_BUY_COST[val] ?? 0);
+                      const canInc = val < 15 && pointsLeft >= incCost;
+                      const canDec = val > 8;
+                      return (
+                        <div key={statKey} style={{ padding: '14px 12px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '88px', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '10px' }}>{STAT_LABELS[i]}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                            <button onClick={() => adjustPBStat(statKey, -1)} disabled={!canDec} style={{
+                              width: '24px', height: '24px', borderRadius: '6px', border: '1px solid var(--border)', background: canDec ? 'rgba(139,92,246,0.15)' : 'transparent',
+                              color: canDec ? 'white' : '#374151', cursor: canDec ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>−</button>
+                            <span style={{ fontWeight: 'bold', fontSize: '1.25rem', minWidth: '24px' }}>{val}</span>
+                            <button onClick={() => adjustPBStat(statKey, 1)} disabled={!canInc} style={{
+                              width: '24px', height: '24px', borderRadius: '6px', border: '1px solid var(--border)', background: canInc ? 'rgba(139,92,246,0.15)' : 'transparent',
+                              color: canInc ? 'white' : '#374151', cursor: canInc ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>+</button>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: m >= 0 ? '#22c55e' : '#ef4444', marginTop: '6px' }}>
+                            {m >= 0 ? `+${m}` : m}
+                          </div>
+                          <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: '3px' }}>
+                            {POINT_BUY_COST[val]}pt{POINT_BUY_COST[val] !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* HP preview — shown for all methods */}
+              {character.class && (
+                <p style={{ color: '#64748b', fontSize: '0.8rem', textAlign: 'center' }}>
+                  Level 1 HP: <strong style={{ color: 'white' }}>{startingHP(character.class, eff.constitution)}</strong>
+                  {' '}(d{CLASS_HIT_DIE[character.class] ?? 8} + CON mod)
+                </p>
+              )}
+
               <style>{`
                 @keyframes diceRoll {
                   0%   { transform: rotate(0deg)   scale(1);    }
@@ -584,18 +822,11 @@ export default function CreateCharacter() {
                 </div>
               </div>
 
-              {/* Shield — only for proficient classes */}
               {['Fighter', 'Paladin', 'Ranger', 'Cleric', 'Druid', 'Barbarian'].includes(character.class) && (
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Shield</label>
-                  <div
-                    onClick={() => setCharacter(c => ({ ...c, shield: !c.shield }))}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s',
-                      border: `1px solid ${character.shield ? 'var(--primary)' : 'var(--border)'}`,
-                      background: character.shield ? 'rgba(139,92,246,0.2)' : 'transparent',
-                    }}
-                  >
+                  <div onClick={() => setCharacter(c => ({ ...c, shield: !c.shield }))}
+                    style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', border: `1px solid ${character.shield ? 'var(--primary)' : 'var(--border)'}`, background: character.shield ? 'rgba(139,92,246,0.2)' : 'transparent' }}>
                     <span style={{ fontSize: '1.5rem' }}>🛡</span>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Shield <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>+2 AC</span></div>
@@ -609,7 +840,7 @@ export default function CreateCharacter() {
               )}
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Starting Trinket (Flavor)</label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Starting Trinket <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span></label>
                 <input type="text" value={character.trinket}
                   onChange={e => setCharacter(c => ({ ...c, trinket: e.target.value }))}
                   style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
@@ -618,8 +849,35 @@ export default function CreateCharacter() {
             </div>
           )}
 
-          {/* ── Step 5: Spells (spellcasters only) ── */}
-          {step === 5 && isSpellcaster && (
+          {/* ── Step 5: Character Background ── */}
+          {step === 5 && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ padding: '14px 18px', borderRadius: '10px', background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)', fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.7 }}>
+                <strong style={{ color: '#c4b5fd', display: 'block', marginBottom: '6px' }}>Optional — skip if you prefer to discover your character in play.</strong>
+                Your background gives the DM and portrait artist context. It can be one sentence or a full paragraph — the AI weaves it into your story, encounters, and portrait.
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>
+                  Character Background <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional, up to 500 characters)</span>
+                </label>
+                <textarea
+                  value={charBackground}
+                  onChange={e => setCharBackground(e.target.value)}
+                  rows={7}
+                  maxLength={500}
+                  placeholder="e.g. A former soldier who abandoned their post after witnessing a massacre. Haunted by guilt, they now wander seeking redemption through service to the weak. They carry a broken sword hilt as a reminder of their failure — and their vow to do better."
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '0.9rem', lineHeight: 1.65, resize: 'vertical', fontFamily: 'inherit' }}
+                />
+                <p style={{ color: '#374151', fontSize: '0.72rem', textAlign: 'right', marginTop: '4px' }}>
+                  {charBackground.length} / 500
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 6: Spells (spellcasters only) ── */}
+          {step === 6 && isSpellcaster && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', fontSize: '0.82rem', color: '#c4b5fd', lineHeight: 1.5 }}>
                 As a Level 1 <strong>{character.class}</strong>, you start with no spells readied.
@@ -632,21 +890,17 @@ export default function CreateCharacter() {
               {spellCounts.cantrips > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                      Cantrips (at-will)
-                    </h3>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cantrips (at-will)</h3>
                     <span style={{ fontSize: '0.78rem', color: selectedCantrips.length === spellCounts.cantrips ? '#22c55e' : '#8b5cf6', fontWeight: 'bold' }}>
                       {selectedCantrips.length} / {spellCounts.cantrips} selected
                     </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                     {availableCantrips.map(spell => (
-                      <SpellCard
-                        key={spell.name} spell={spell}
+                      <SpellCard key={spell.name} spell={spell}
                         selected={selectedCantrips.includes(spell.name)}
                         disabled={selectedCantrips.length >= spellCounts.cantrips && !selectedCantrips.includes(spell.name)}
-                        onToggle={() => toggleCantrip(spell.name)}
-                      />
+                        onToggle={() => toggleCantrip(spell.name)} />
                     ))}
                   </div>
                 </div>
@@ -655,21 +909,17 @@ export default function CreateCharacter() {
               {spellCounts.spells > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                      1st-Level Spells
-                    </h3>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>1st-Level Spells</h3>
                     <span style={{ fontSize: '0.78rem', color: selectedSpells.length === spellCounts.spells ? '#22c55e' : '#8b5cf6', fontWeight: 'bold' }}>
                       {selectedSpells.length} / {spellCounts.spells} {SPELL_LIMITS[character.class]?.spellFormula ? 'prepared' : 'known'}
                     </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                     {availableSpells.map(spell => (
-                      <SpellCard
-                        key={spell.name} spell={spell}
+                      <SpellCard key={spell.name} spell={spell}
                         selected={selectedSpells.includes(spell.name)}
                         disabled={selectedSpells.length >= spellCounts.spells && !selectedSpells.includes(spell.name)}
-                        onToggle={() => toggleSpell(spell.name)}
-                      />
+                        onToggle={() => toggleSpell(spell.name)} />
                     ))}
                   </div>
                 </div>
@@ -693,7 +943,7 @@ export default function CreateCharacter() {
             <button
               className="btn-primary"
               onClick={handleFinish}
-              disabled={saving || portraitGenerating || (step === 4 && !character.weapon) || (step === 5 && !spellsReady)}
+              disabled={saving || portraitGenerating || (isSpellcaster && !spellsReady)}
               style={{ background: 'var(--accent)' }}
             >
               {saving ? 'Creating…' : 'Complete Character'}
