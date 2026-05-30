@@ -1043,7 +1043,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!audio) { audioPlayingRef.current = false; return; }
 
     const cleanup = () => {
-      URL.revokeObjectURL(entry);
+      // Only blob: URLs need revocation — data: URLs do not
+      if (entry.startsWith("blob:")) URL.revokeObjectURL(entry);
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
@@ -1077,9 +1078,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
         narSlotsRef.current[slot] = "SKIP"; playNextInQueue(); return;
       }
-      const buf  = await res.arrayBuffer();
-      const blob = new Blob([buf], { type: "audio/mpeg" });
-      narSlotsRef.current[slot] = URL.createObjectURL(blob);
+      const buf   = await res.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // Convert to base64 data URL — more widely supported than blob URLs on
+      // constrained browsers (Xbox Edge, some mobile WebViews).
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      narSlotsRef.current[slot] = `data:audio/mpeg;base64,${btoa(binary)}`;
       playNextInQueue();
     } catch (err) {
       console.error("[narration] fetch error:", err);
@@ -2070,7 +2075,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
-      <audio ref={narrateAudioRef} />
+      <audio ref={narrateAudioRef} preload="none" />
       {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
