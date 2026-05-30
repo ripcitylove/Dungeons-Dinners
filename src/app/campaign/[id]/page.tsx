@@ -175,6 +175,31 @@ const CAMPAIGN_TUTORIAL_STEPS = [
 const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightning|thunder|poison|acid|necrotic|radiant|psychic|force)\s+)?damage\b/gi;
 const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
 
+// Fades in each chunk of text as it arrives during streaming
+function StreamingText({ text }: { text: string }) {
+  const [chunks, setChunks] = React.useState<Array<{ id: number; content: string }>>([]);
+  const processedRef = React.useRef(0);
+  const idRef        = React.useRef(0);
+
+  React.useEffect(() => {
+    if (text.length > processedRef.current) {
+      const newContent = text.slice(processedRef.current);
+      processedRef.current = text.length;
+      setChunks(prev => [...prev, { id: idRef.current++, content: newContent }]);
+    }
+  }, [text]);
+
+  return (
+    <>
+      {chunks.map(({ id, content }) => (
+        <span key={id} style={{ animation: "streamFadeIn 0.45s ease forwards", opacity: 0, display: "inline" }}>
+          {content}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function ColorizedText({ text, playerColors = {} }: { text: string; playerColors?: Record<string, string> }) {
   type Seg = { start: number; end: number; color: string };
   const segs: Seg[] = [];
@@ -968,11 +993,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => {
     // Scroll the container directly — more reliable than scrollIntoView when
     // the container's own height changes (e.g. suggestions box appearing/disappearing).
-    const t = setTimeout(() => {
-      const el = msgContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 60);
-    return () => clearTimeout(t);
+    const el = msgContainerRef.current;
+    if (!el) return;
+    if (streamingContent) {
+      // Smooth-follow during streaming so text reveals feel natural
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      const t = setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
+      return () => clearTimeout(t);
+    }
   }, [messages, streamingContent, suggestions]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
@@ -2723,8 +2752,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
-                {streamingContent || <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>}
-                {streamingContent && <span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />}
+                {streamingContent
+                  ? <><StreamingText text={streamingContent} /><span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
+                  : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
+                }
               </div>
             </div>
           )}
@@ -3942,6 +3973,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
         @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes streamFadeIn { from { opacity: 0; filter: blur(3px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
       `}</style>
     </main>
   );
