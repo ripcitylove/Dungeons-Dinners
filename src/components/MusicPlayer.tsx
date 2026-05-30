@@ -207,13 +207,13 @@ export function MusicPlayer() {
 
   const [playing,       setPlaying]       = useState(false);
   const [loadError,     setLoadError]     = useState(false);
-  const [volume,        setVolume]        = useState(0.05);
-  const [ambianceVol,   setAmbianceVol]   = useState(0.10);
+  const [volume,        setVolume]        = useState(0.10);
+  const [ambianceVol,   setAmbianceVol]   = useState(0.60);
   const [ambianceReady, setAmbianceReady] = useState(false);
   const [poolLabel,     setPoolLabel]     = useState("Tavern");
 
-  const targetVolume    = useRef(0.05);
-  const targetAmbianceV = useRef(0.10);
+  const targetVolume    = useRef(0.10);
+  const targetAmbianceV = useRef(0.60);
   const activePoolKey   = useRef<string>("tavern");
   const fadeTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
   const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);

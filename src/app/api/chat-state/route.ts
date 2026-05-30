@@ -41,8 +41,14 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
 
 HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
 - HP/loot only count when the DM narrates the resolved result.
+- CRITICAL — hp_delta rules: ONLY set hp_delta != 0 when ALL of the following are true:
+  1. A named player character (not a monster, NPC, or unnamed "enemy") explicitly takes damage or receives healing.
+  2. The DM states the actual amount (e.g. "takes 7 damage", "heals 4 HP").
+  3. You set target_name to that character's exact name.
+  If any condition is not met, set hp_delta to 0 and target_name to null.
+  Enemy attacks that miss, flavor descriptions of violence, or narration about monsters do NOT count.
 - A creature falling to 0 HP = Unconscious (if not dead).
-- Status effects: only add when DM explicitly applies the condition.
+- Status effects: only add when DM explicitly applies the condition to a player character.
 - Spell slots: only count when a leveled spell is explicitly cast.
 - Currency: "a pouch of coins", "a purse of gold", "handful of silver" — estimate the gold value. NPC gifts count.
 - Items received from NPCs as rewards, gifts, or trades count as items_gained or weapons_gained.

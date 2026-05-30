@@ -84,8 +84,9 @@ WORLD VARIETY & CAMPAIGN OPENINGS
 MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Player messages are prefixed with [CharacterName]: to identify the speaker.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
-- When it is a player's turn (CURRENT TURN tells you who), address them by name. Describe what they specifically face RIGHT NOW and ask what they do.
-- Resolve each player's action COMPLETELY — including any dice rolls — before moving to the next player. If a roll is required, say "[Name], roll a [type], DC [X]." Do NOT end your response by addressing the next player until the current player's action and all requested rolls are fully resolved.
+- CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then ask the CURRENT TURN player what they do.
+- ROLL REQUESTS: You may ONLY ask the CURRENT TURN player to roll dice. NEVER ask a different player to roll during someone else's turn — not even to "resolve" a prior action. If a roll for a non-active character would make sense, note it silently in the narrative (e.g. "Chonk's sharp eyes catch something…") and defer any mechanical roll until it is that character's turn.
+- Do NOT include "[Name], roll a [type]" for any character other than the CURRENT TURN player.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 
@@ -179,7 +180,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     ? `${prevActingPlayerName} has just finished their turn — it is OVER. Do NOT ask ${prevActingPlayerName} what they do next. Do NOT end your response with a question directed at ${prevActingPlayerName}. `
     : "";
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\nROLL RESTRICTION: In this response you may only ask ${currentTurnPlayerName} to roll dice. Do not ask any other character to roll.\n`
     : "";
 
   const reconcileBlock = roundSummary?.length

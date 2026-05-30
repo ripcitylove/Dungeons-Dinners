@@ -222,7 +222,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const previewAudioRef  = useRef<HTMLAudioElement | null>(null);
 
   // ── Round tracking ────────────────────────────────────────────────────────────
-  type RoundAction = { userId: string; name: string; action: string };
+  type RoundAction = { characterId: string; name: string; action: string };
   const [roundActions, setRoundActions] = useState<RoundAction[]>([]);
   const roundActionsRef           = useRef<RoundAction[]>([]);
   const pendingReconciliationRef  = useRef<{ messages: Message[]; summary: { name: string; action: string }[] } | null>(null);
@@ -409,6 +409,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { playersRef.current            = players;             }, [players]);
   useEffect(() => { rollRequestedUserIdRef.current = rollRequestedUserId; }, [rollRequestedUserId]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
+
+  // Build turn order from campaign party (character IDs sorted by name) — works with any number of accounts
+  useEffect(() => {
+    if (!campaignParty.length) return;
+    const order = [...campaignParty]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(c => c.id);
+    turnOrderRef.current = order;
+    setTurnOrder(order);
+  }, [campaignParty.length]);
 
   // When the active character index changes, sync the character sheet
   useEffect(() => {
@@ -611,13 +621,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     channel
       .on("presence", { event: "sync" }, () => {
-        const all      = Object.values(channel.presenceState<PresencePlayer>()).flat();
-        const newOrder = [...all]
-          .sort((a, b) => a.characterName.localeCompare(b.characterName))
-          .map(p => p.userId);
+        const all = Object.values(channel.presenceState<PresencePlayer>()).flat();
         setPlayers(all);
-        turnOrderRef.current = newOrder;
-        setTurnOrder(newOrder);
         // Sync live HP from presence into campaignParty so cards update in real-time
         setCampaignParty(prev => prev.map(char => {
           const online = all.find(p => p.userId === char.user_id);
@@ -647,8 +652,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setMessages(prev => [...prev, { role: "player", content: payload.content, sender: payload.characterName }]);
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "player", sender: payload.characterName, content: payload.content }]);
         // Track this player's action for round reconciliation
-        if (!roundActionsRef.current.some(a => a.userId === payload.senderId)) {
-          const updated: RoundAction[] = [...roundActionsRef.current, { userId: payload.senderId as string, name: (payload.characterName as string) ?? "Unknown", action: payload.content as string }];
+        if (payload.characterId && !roundActionsRef.current.some(a => a.characterId === payload.characterId)) {
+          const updated: RoundAction[] = [...roundActionsRef.current, { characterId: payload.characterId as string, name: (payload.characterName as string) ?? "Unknown", action: payload.content as string }];
           roundActionsRef.current = updated;
           setRoundActions(updated);
         }
@@ -666,7 +671,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
         // Generate suggestions for this player if it's now their turn
         const order = turnOrderRef.current;
-        const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === userIdRef.current;
+        const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === characterRef.current?.id;
         if (isMyTurnNow && characterRef.current) {
           fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: payload.content, character: characterRef.current }) })
             .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
@@ -683,7 +688,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         currentTurnIndexRef.current = payload.newIndex;
         // Generate suggestions if the turn just landed on this player
         const order = turnOrderRef.current;
-        const isNowMyTurn = order.length <= 1 || order[payload.newIndex] === userIdRef.current;
+        const isNowMyTurn = order.length <= 1 || order[payload.newIndex] === characterRef.current?.id;
         if (isNowMyTurn && characterRef.current) {
           const lastDmMsg = [...messagesRef.current].reverse().find(m => m.role === "dm");
           if (lastDmMsg) {
@@ -912,7 +917,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const applyStateChange = useCallback(async (change: StateChange) => {
     const char = characterRef.current;
     if (!char) return;
-    // In multiplayer, only apply to the character targeted by the DM
+    // HP changes require an explicit name match — never apply damage/healing when the target is ambiguous
+    if (change.hp_delta !== 0) {
+      const nameMatch = change.target_name &&
+        change.target_name.toLowerCase() === char.name.toLowerCase();
+      if (!nameMatch) change = { ...change, hp_delta: 0 };
+    }
+    // Non-HP changes (XP, gold, items) skip this character if the DM named someone else
     if (change.target_name && change.target_name.toLowerCase() !== char.name.toLowerCase()) return;
     const hasChange =
       change.hp_delta !== 0 || change.gold_delta !== 0 ||
@@ -1107,7 +1118,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
         .then(({ error }) => { if (error) console.error("[party event]", error); });
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full } });
-      const isPartyEventMyTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userIdRef.current;
+      const isPartyEventMyTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === characterRef.current?.id;
       if (isPartyEventMyTurn && characterRef.current) {
         fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
@@ -1479,16 +1490,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           abilities: e.abilities, loot: e.loot, xp_value: e.xp_value,
         }));
 
-      const currentTurnUid  = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-      const rollRequestUid  = rollRequestedUserIdRef.current ?? null;
-      // Resolve names from presence first (always fresh), fall back to DB characters
-      const nameFromPresence = (uid: string | null) =>
-        uid ? (playersRef.current.find(p => p.userId === uid)?.characterName
-               ?? onlineParty.find(c => c.user_id === uid)?.name
-               ?? null)
-            : null;
-      const rollRequestName  = nameFromPresence(rollRequestUid);
-      const currentTurnName  = nameFromPresence(currentTurnUid);
+      const currentTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const rollRequestUid    = rollRequestedUserIdRef.current ?? null;
+      const rollRequestName   = rollRequestUid
+        ? (playersRef.current.find(p => p.userId === rollRequestUid)?.characterName
+           ?? onlineParty.find(c => c.user_id === rollRequestUid)?.name
+           ?? null)
+        : null;
+      const currentTurnName   = currentTurnCharId
+        ? (campaignPartyRef.current.find(c => c.id === currentTurnCharId)?.name ?? null)
+        : null;
 
       // Party leader for group roll routing
       const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
@@ -1505,7 +1516,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             ?? character?.name);
       const prevActorName  = opts?.prevPlayerName ?? null;
       const targetedEnemy  = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1548,16 +1558,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
       // Detect which character the DM is asking to roll, and what die type
-      const rollTarget = detectDiceRollTarget(full);
-      setDiceRollTarget(rollTarget);
+      // Safety guard: only honour a roll request for the character whose turn it currently is.
+      // If the DM asks a non-active player to roll, discard the request — it should not happen.
+      const rollTarget   = detectDiceRollTarget(full);
+      const currentTurnCharIdForRoll = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const targetChar   = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
+      const isCurrentTurnPlayer = !targetChar || turnOrderRef.current.length <= 1
+        || targetChar.id === currentTurnCharIdForRoll;
+      const validRollTarget  = isCurrentTurnPlayer ? rollTarget  : null;
+      const targetUserId     = isCurrentTurnPlayer ? (targetChar?.user_id ?? null) : null;
+      setDiceRollTarget(validRollTarget);
       setRequiredDiceType(detectRequiredDiceType(full));
-      {
-        const targetChar   = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
-        const targetUserId = targetChar?.user_id ?? null;
-        setRollRequestedUserId(targetUserId);
-        rollRequestedUserIdRef.current = targetUserId;
-        channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
-      }
+      setRollRequestedUserId(targetUserId);
+      rollRequestedUserIdRef.current = targetUserId;
+      channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
       // Enemy combat: spawn enemies when combat starts, or update existing enemy states
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
@@ -1581,10 +1595,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
       }
 
-      // Suggested actions — suppress when turn handed off, round complete, or reconciliation pending
-      const isLocalTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === userId;
-      if (isLocalTurn && !opts?.nextPlayerName && !opts?.allActed && characterRef.current) {
-        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
+      // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
+      const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const nextTurnChar   = (nextTurnCharId && campaignPartyRef.current.find(c => c.id === nextTurnCharId))
+        || characterRef.current;
+      // Local = solo play, OR the character whose turn it is belongs to this user
+      const isLocalTurn = turnOrderRef.current.length <= 1
+        || !nextTurnCharId
+        || nextTurnChar?.user_id === userId;
+      if (isLocalTurn && !opts?.allActed && nextTurnChar) {
+        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: nextTurnChar }) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
 
@@ -1592,7 +1612,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (opts?.trackRound && !rollTarget) {
         const order = turnOrderRef.current;
         if (order.length > 1) {
-          const allActed = order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+          const allActed = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
           if (allActed) {
             const summary    = roundActionsRef.current.map(a => ({ name: a.name, action: a.action }));
             const msgsWithDm: Message[] = [...allMessages, { role: "dm", content: full }];
@@ -1659,13 +1679,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Player send ───────────────────────────────────────────────────────────────
   const handleSend = async (actionText?: string, bypassTurn = false) => {
     const text = (actionText ?? input).trim();
-    if (!text || isTyping) return;
+    if (!text || isTyping || narrating) return;
     const order       = turnOrderRef.current;
     const rollReq     = rollRequestedUserIdRef.current;
     const isRollSubmit = rollReq === userId; // capture before clearing
     const isMyTurn    = rollReq
       ? rollReq === userId
-      : (order.length <= 1 || order[currentTurnIndexRef.current] === userId);
+      : (order.length <= 1 || order[currentTurnIndexRef.current] === character?.id);
     if (!isMyTurn && !bypassTurn) return;
     if (!actionText) setInput("");
     setSuggestions([]);
@@ -1678,11 +1698,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const updatedMessages    = [...messages, playerMsg];
     setMessages(updatedMessages);
     setLogEntries(prev => [...prev, { id: `player-${Date.now()}`, timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
-    channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name } });
+    channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name, characterId: character?.id } });
 
     // Record this player's action for round tracking (not for roll submissions)
-    if (!isRollSubmit && order.length > 1 && character && userId) {
-      const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.userId !== userId), { userId: userId as string, name: character.name, action: text }];
+    if (!isRollSubmit && order.length > 1 && character) {
+      const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.characterId !== character.id), { characterId: character.id, name: character.name, action: text }];
       roundActionsRef.current = updated;
       setRoundActions(updated);
     }
@@ -1690,14 +1710,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
     let nextPlayerName: string | null = null;
     if (!isRollSubmit && order.length > 1) {
-      const allActedNow = order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+      const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
         const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
-        const nextUid = order[nextIdx];
-        // Use presence (playersRef) as primary source — always fresh, no user_id DB dependency
-        nextPlayerName = playersRef.current.find(p => p.userId === nextUid)?.characterName
-          ?? campaignPartyRef.current.find(c => c.user_id === nextUid)?.name
-          ?? null;
+        const nextCid = order[nextIdx];
+        nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
         setCurrentTurnIndex(nextIdx);
         currentTurnIndexRef.current = nextIdx;
         channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
@@ -1706,7 +1723,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
 
     const allActedForDM = !isRollSubmit && order.length > 1
-      && order.every(uid => roundActionsRef.current.some(a => a.userId === uid));
+      && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
     pendingReconciliationRef.current = null;
     await sendToAI(updatedMessages, false, {
@@ -2027,7 +2044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const leaderChar          = campaignParty.find(c => c.id === partyLeaderId) ?? null;
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
-    : (turnOrder.length <= 1 || currentTurnPlayerId === userId);
+    : (turnOrder.length <= 1 || currentTurnPlayerId === character?.id);
   const allPartyCards       = players.slice().sort((a, b) => a.characterName.localeCompare(b.characterName));
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
@@ -2292,7 +2309,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <>
                 <span style={{ color: "#475569" }}>Turn {currentTurnIndex + 1} of {turnOrder.length}:</span>
                 <span style={{ color: isMyTurn ? "#c4b5fd" : "white", fontWeight: "bold" }}>
-                  {isMyTurn ? "Your turn" : `${players.find(p => p.userId === currentTurnPlayerId)?.characterName ?? "Waiting"}…`}
+                  {isMyTurn ? "Your turn" : `${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "Waiting"}…`}
                 </span>
               </>
             )}
@@ -2414,10 +2431,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <p style={{ fontSize: "0.65rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {suggestions.map((s, i) => (
-                <button key={i} onClick={() => handleSend(s)}
-                  style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: "pointer", transition: "all 0.15s", lineHeight: 1.4 }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; }}>
+                <button key={i} onClick={() => handleSend(s)} disabled={narrating}
+                  style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
+                  onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; } }}
+                  onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; } }}>
                   {s}
                 </button>
               ))}
@@ -2444,22 +2461,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)" }}>
           <div style={{ display: "flex", gap: "10px" }}>
-            <button className="btn-secondary" onClick={() => setShowDice(true)} disabled={isTyping || !isMyTurn} style={{ padding: "0 14px", fontSize: "1.2rem", flexShrink: 0 }} title="Roll Dice">🎲</button>
+            <button className="btn-secondary" onClick={() => setShowDice(true)} disabled={isTyping || narrating || !isMyTurn} style={{ padding: "0 14px", fontSize: "1.2rem", flexShrink: 0 }} title="Roll Dice">🎲</button>
             <input
               type="text" value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-              disabled={isTyping || !isMyTurn}
+              disabled={isTyping || narrating || !isMyTurn}
               placeholder={
                 isTyping      ? "The DM is responding…"
+                : narrating   ? "Narrating…"
                 : !isMyTurn && rollRequestedUserId ? `Waiting for ${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "a player"} to roll…`
-                : !isMyTurn   ? `Waiting for ${players.find(p => p.userId === currentTurnPlayerId)?.characterName ?? "other players"}…`
+                : !isMyTurn   ? `Waiting for ${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "other players"}…`
                 : rollRequestedUserId ? "Describe your roll result…"
                 : "Describe your action…"
               }
-              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || !isMyTurn) ? 0.6 : 1 }}
+              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || narrating || !isMyTurn) ? 0.6 : 1 }}
             />
-            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || !isMyTurn || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
+            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
           </div>
         </div>
       </div>
@@ -2531,7 +2549,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const isActive     = idx === activeCharIdx;
                 const isOnline     = players.some(p => p.userId === char.user_id);
                 const isDiceTarget  = diceRollTarget === char.name;
-                const isCurrentTurn = turnOrder.length > 1 && char.user_id === currentTurnPlayerId;
+                const isCurrentTurn = turnOrder.length > 1 && char.id === currentTurnPlayerId;
                 const isMyChar     = char.user_id === userId;
                 const cardInv      = char.inventory ?? { gold: 0, items: [], weapons: [] };
                 const cardIb       = computeInventoryBonuses(cardInv.items, cardInv.weapons);
@@ -2691,7 +2709,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 );
               }) : allPartyCards.map(p => {
-                const isCurrentTurn = turnOrder.length > 1 && p.userId === currentTurnPlayerId;
+                const isCurrentTurn = turnOrder.length > 1 && campaignParty.find(c => c.name === p.characterName)?.id === currentTurnPlayerId;
                 const isDiceTarget  = diceRollTarget === p.characterName;
                 const isMe          = p.userId === userId;
                 const pct           = Math.max(0, (p.hp / p.maxHp) * 100);
