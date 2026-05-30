@@ -2147,9 +2147,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onClick={() => {
                 setSessionStarted(true);
 
-                // Activate the narration audio element inside the user gesture so Xbox
-                // Edge grants it permission to play later without requiring another click.
-                try { narAudioRef.current?.play().catch(() => {}); } catch { /* no src yet — expected */ }
+                // Activate the narration audio element with a real src inside the user
+                // gesture. Playing with no src fails silently and does NOT grant
+                // permission; playing a real URL does.
+                const narEl = narAudioRef.current;
+                if (narEl) {
+                  narEl.src = "/api/silence";
+                  narEl.onended = () => { narEl.src = ""; narEl.onended = null; };
+                  narEl.play().catch(() => {});
+                }
 
                 // Start background music — must be synchronous for user-gesture gate.
                 window.__dndMusicPlay?.();

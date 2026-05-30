@@ -61,7 +61,7 @@ async function synthesize(text: string, voice: string): Promise<Response> {
 
   const { voiceId, stability, similarity, style } = VOICE_CONFIG[safeVoice];
 
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
     method:  "POST",
     headers: {
       "xi-api-key":   apiKey,
@@ -92,8 +92,9 @@ async function synthesize(text: string, voice: string): Promise<Response> {
     return new Response("TTS unavailable", { status: 500 });
   }
 
-  const buffer = Buffer.from(await res.arrayBuffer());
-  return new Response(buffer, {
+  // Pipe the stream directly — browser starts receiving audio within ~300 ms
+  // instead of waiting 3–5 s for the full ElevenLabs response to buffer.
+  return new Response(res.body, {
     headers: {
       "Content-Type":  "audio/mpeg",
       "Cache-Control": "no-cache",
