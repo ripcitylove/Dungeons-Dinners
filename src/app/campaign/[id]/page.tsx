@@ -202,6 +202,39 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
+function RevealText({ text, onComplete }: { text: string; onComplete?: () => void }) {
+  const [groups, setGroups] = React.useState<Array<{ id: number; chars: string }>>([]);
+  const onCompleteRef = React.useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  React.useEffect(() => {
+    setGroups([]);
+    if (!text) return;
+    let pos = 0;
+    let gid = 0;
+    const interval = setInterval(() => {
+      if (pos >= text.length) { clearInterval(interval); onCompleteRef.current?.(); return; }
+      // Grab one char plus any trailing whitespace so spaces don't each get their own span
+      let chunk = text[pos++];
+      while (pos < text.length && /\s/.test(text[pos]) && chunk.length < 4) chunk += text[pos++];
+      setGroups(prev => [...prev, { id: gid++, chars: chunk }]);
+    }, 42);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  const revealed = groups.reduce((s, g) => s + g.chars.length, 0);
+  return (
+    <span style={{ whiteSpace: "pre-wrap" }}>
+      {groups.map(({ id, chars }) => (
+        <span key={id} style={{ animation: "revealCharFade 0.38s ease forwards", opacity: 0 }}>{chars}</span>
+      ))}
+      {revealed < text.length && (
+        <span style={{ display: "inline-block", width: "2px", height: "0.9em", background: "rgba(139,92,246,0.8)", marginLeft: "1px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
+      )}
+    </span>
+  );
+}
+
 function ColorizedText({ text, playerColors = {} }: { text: string; playerColors?: Record<string, string> }) {
   type Seg = { start: number; end: number; color: string };
   const segs: Seg[] = [];
@@ -356,6 +389,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Session / turns
   const [sessionStarted,   setSessionStarted]    = useState(false);
+  const [campaignLoading,  setCampaignLoading]   = useState(false);
+  const [loadDmDone,       setLoadDmDone]        = useState(false);
+  const [loadSceneDone,    setLoadSceneDone]     = useState(false);
+  const [loadAmbianceDone, setLoadAmbianceDone]  = useState(false);
+  const [loadFadingOut,    setLoadFadingOut]     = useState(false);
+  const [openingRevealText,setOpeningRevealText] = useState<string | null>(null);
   const [turnOrder,        setTurnOrder]         = useState<string[]>([]);
   const [currentTurnIndex, setCurrentTurnIndex]  = useState(0);
 
@@ -455,6 +494,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const usesCCTableRef       = useRef(false);
   const charWriteRef         = useRef<((charId: string, fields: Record<string, unknown>) => Promise<void>) | null>(null);
   const skipTurnTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const campaignLoadingRef   = useRef(false);
+  const loadingTimeoutRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Campaign loading gate — waits for DM text, scene image, and ambiance ────
+  useEffect(() => {
+    if (!campaignLoading || loadFadingOut) return;
+    if (!loadDmDone || !loadSceneDone || !loadAmbianceDone) return;
+    if (loadingTimeoutRef.current) { clearTimeout(loadingTimeoutRef.current); loadingTimeoutRef.current = null; }
+    setLoadFadingOut(true);
+    const firstDm = messagesRef.current.find(m => m.role === "dm");
+    setTimeout(() => {
+      campaignLoadingRef.current = false;
+      setCampaignLoading(false);
+      setLoadFadingOut(false);
+      setSessionStarted(true);
+      if (firstDm) {
+        setMessages(prev => { const i = prev.findIndex(m => m.role === "dm"); return i < 0 ? prev : [...prev.slice(0, i), ...prev.slice(i + 1)]; });
+        setOpeningRevealText(firstDm.content);
+      }
+    }, 950);
+  }, [campaignLoading, loadFadingOut, loadDmDone, loadSceneDone, loadAmbianceDone]);
 
   // ── Ref sync effects ─────────────────────────────────────────────────────────
   useEffect(() => { characterRef.current        = character;        }, [character]);
@@ -1600,8 +1660,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         full   += chunk;
         narBuf += chunk;
         setStreamingContent(full);
-        // Sentence-level streaming narration — fires TTS as each sentence completes
-        if (narrationEnabledRef.current) {
+        // Sentence-level streaming narration — suppressed during opening loading screen
+        if (narrationEnabledRef.current && !campaignLoadingRef.current) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) {
             const narSentence = stripSystemLeaks(m[1]);
@@ -1610,9 +1670,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           }
         }
       }
-      if (narrationEnabledRef.current && narBuf.trim().length > 10) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 10) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
       setMessages(prev => [...prev, { role: "dm", content: full }]);
+      if (isOpeningScene && campaignLoadingRef.current) setLoadDmDone(true);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
       // Detect which character the DM is asking to roll, and what die type.
@@ -1738,6 +1799,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             if (imageUrl) {
               currentSceneRef.current = sceneName;
               setCurrentSceneUrl(imageUrl);
+              if (campaignLoadingRef.current) setLoadSceneDone(true);
               channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
               // Ambiance is tied to scene changes — only update when the image changed
@@ -1752,12 +1814,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       (window as Window).__dndSetAmbiance?.(audioUrl);
                       channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl } });
                     }
+                    if (campaignLoadingRef.current) setLoadAmbianceDone(true);
                   })
-                  .catch(() => {});
+                  .catch(() => { if (campaignLoadingRef.current) setLoadAmbianceDone(true); });
+              } else {
+                if (campaignLoadingRef.current) setLoadAmbianceDone(true);
               }
+            } else {
+              // No scene change — unblock loading if waiting
+              if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); }
             }
           })
-          .catch(() => {})
+          .catch(() => { if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); } })
           .finally(() => { if (sceneRequestIdRef.current === sceneReqId) setSceneLoading(false); });
       }
 
@@ -2265,70 +2333,94 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
       )}
 
-      {/* Session start overlay */}
-      {!sessionStarted && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" }}>
-          <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
-            {(() => {
-              const leaderChar = campaignParty.find(c => c.id === partyLeaderId) ?? character;
-              const leaderColor = CLASS_COLORS[leaderChar?.class ?? ""] ?? "#f59e0b";
-              return leaderChar ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "28px", gap: "10px" }}>
-                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.15em" }}>Party Leader</span>
-                  {leaderChar.portrait_url ? (
-                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55, 0 0 60px ${leaderColor}20` }}>
-                      <img src={leaderChar.portrait_url} alt={leaderChar.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-                    </div>
-                  ) : (
-                    <div style={{ width: "96px", height: "96px", borderRadius: "50%", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", background: "rgba(0,0,0,0.4)" }}>
-                      {leaderChar.class === "Wizard" ? "🧙" : leaderChar.class === "Rogue" ? "🗡️" : leaderChar.class === "Cleric" ? "✝" : leaderChar.class === "Ranger" ? "🏹" : leaderChar.class === "Druid" ? "🌿" : leaderChar.class === "Bard" ? "🎵" : "⚔️"}
-                    </div>
-                  )}
-                  <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
-                </div>
-              ) : null;
-            })()}
-            <h1 style={{ fontSize: "2.2rem", fontWeight: "bold", marginBottom: "10px" }}>Your adventure awaits</h1>
-            <p style={{ color: "#64748b", marginBottom: "40px", lineHeight: 1.6 }}>The torchlight flickers as your party gathers in the shadows…</p>
-            <button className="btn-primary"
-              style={{ padding: "16px 48px", fontSize: "1.1rem", borderRadius: "12px", letterSpacing: "0.04em" }}
-              onClick={() => {
-                setSessionStarted(true);
+      {/* Session start overlay — pre-start screen OR loading screen */}
+      {(!sessionStarted || loadFadingOut) && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(5,3,15,0.97)", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)", opacity: loadFadingOut ? 0 : 1, transition: "opacity 0.95s ease", pointerEvents: loadFadingOut ? "none" : "auto" }}>
 
-                // Activate both audio elements with a real src inside the user gesture.
-                // Playing with no src fails and does NOT grant permission; a real URL does.
-                for (const el of [narAudioRef.current, previewAudioRef.current]) {
-                  if (el) {
-                    // Static CDN file — not a serverless function. Xbox Edge won't play
-                    // audio served from a Vercel function response even as an activation call.
-                    el.src = "/silence.wav";
-                    el.load();
-                    el.play().catch(() => {});
+          {/* ── Loading screen (after Begin is clicked on a new campaign) ── */}
+          {campaignLoading ? (
+            <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "420px", padding: "40px" }}>
+              <div style={{ width: "88px", height: "88px", borderRadius: "50%", border: "1px solid rgba(139,92,246,0.35)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 36px", animation: "dmOrbPulse 2.8s ease-in-out infinite" }}>
+                <span style={{ fontSize: "2.8rem", display: "inline-block", animation: "dmOrbSpin 10s linear infinite" }}>⬡</span>
+              </div>
+              <h1 style={{ fontSize: "1.55rem", fontWeight: "bold", marginBottom: "10px", color: "#e2e8f0", letterSpacing: "0.02em" }}>DM is creating your world…</h1>
+              <p style={{ color: "#3f4f62", fontSize: "0.82rem", marginBottom: "44px", lineHeight: 1.6 }}>Weaving the threads of fate</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "center" }}>
+                {([
+                  { done: loadSceneDone,    label: "Painting the scene"  },
+                  { done: loadAmbianceDone, label: "Setting the mood"    },
+                  { done: loadDmDone,       label: "Preparing the story" },
+                ] as const).map(({ done, label }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: "14px", width: "230px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: "bold", background: done ? "rgba(34,197,94,0.15)" : "transparent", border: done ? "1px solid rgba(34,197,94,0.45)" : "1px solid rgba(139,92,246,0.25)", color: done ? "#4ade80" : "#8b5cf6", transition: "all 0.4s ease", animation: done ? "none" : "blink 1.8s step-end infinite" }}>
+                      {done ? "✓" : "◦"}
+                    </span>
+                    <span style={{ fontSize: "0.83rem", color: done ? "#64748b" : "#475569", transition: "color 0.4s ease" }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* ── Pre-start screen ── */
+            <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "480px", padding: "40px" }}>
+              {(() => {
+                const leaderChar = campaignParty.find(c => c.id === partyLeaderId) ?? character;
+                const leaderColor = CLASS_COLORS[leaderChar?.class ?? ""] ?? "#f59e0b";
+                return leaderChar ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "28px", gap: "10px" }}>
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.15em" }}>Party Leader</span>
+                    {leaderChar.portrait_url ? (
+                      <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55, 0 0 60px ${leaderColor}20` }}>
+                        <img src={leaderChar.portrait_url} alt={leaderChar.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                      </div>
+                    ) : (
+                      <div style={{ width: "96px", height: "96px", borderRadius: "50%", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", background: "rgba(0,0,0,0.4)" }}>
+                        {leaderChar.class === "Wizard" ? "🧙" : leaderChar.class === "Rogue" ? "🗡️" : leaderChar.class === "Cleric" ? "✝" : leaderChar.class === "Ranger" ? "🏹" : leaderChar.class === "Druid" ? "🌿" : leaderChar.class === "Bard" ? "🎵" : "⚔️"}
+                      </div>
+                    )}
+                    <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
+                  </div>
+                ) : null;
+              })()}
+              <h1 style={{ fontSize: "2.2rem", fontWeight: "bold", marginBottom: "10px" }}>Your adventure awaits</h1>
+              <p style={{ color: "#64748b", marginBottom: "40px", lineHeight: 1.6 }}>The torchlight flickers as your party gathers in the shadows…</p>
+              <button className="btn-primary"
+                style={{ padding: "16px 48px", fontSize: "1.1rem", borderRadius: "12px", letterSpacing: "0.04em" }}
+                onClick={() => {
+                  // Activate audio inside the user gesture
+                  for (const el of [narAudioRef.current, previewAudioRef.current]) {
+                    if (el) { el.src = "/silence.wav"; el.load(); el.play().catch(() => {}); }
                   }
-                }
+                  window.__dndMusicPlay?.();
 
-                // Start background music — must be synchronous for user-gesture gate.
-                window.__dndMusicPlay?.();
-
-                // Resumed campaign: narrate the last DM line.
-                if (resumeNarrationRef.current) {
-                  enqueueNarration(resumeNarrationRef.current);
-                }
-
-                // New campaign: auto-trigger DM opening scene.
-                const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
-                if (isNewCampaign && !autoOpenedRef.current) {
-                  autoOpenedRef.current = true;
-                  setTimeout(() => {
-                    if (isTypingRef.current) return;
-                    const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
-                    sendToAI([...messagesRef.current, trigger], true);
-                  }, 400);
-                }
-              }}>
-              Begin Adventure
-            </button>
-          </div>
+                  const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
+                  if (isNewCampaign) {
+                    // New campaign: show loading screen, kick off all background work
+                    setCampaignLoading(true);
+                    campaignLoadingRef.current = true;
+                    // Safety fallback — never get stuck loading
+                    loadingTimeoutRef.current = setTimeout(() => {
+                      if (!campaignLoadingRef.current) return;
+                      setLoadDmDone(true); setLoadSceneDone(true); setLoadAmbianceDone(true);
+                    }, 28000);
+                    if (!autoOpenedRef.current) {
+                      autoOpenedRef.current = true;
+                      setTimeout(() => {
+                        if (isTypingRef.current) return;
+                        const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
+                        sendToAI([...messagesRef.current, trigger], true);
+                      }, 400);
+                    }
+                  } else {
+                    // Resumed campaign: go straight in
+                    setSessionStarted(true);
+                    if (resumeNarrationRef.current) enqueueNarration(resumeNarrationRef.current);
+                  }
+                }}>
+                Begin Adventure
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -2570,6 +2662,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 ))}
               </div>
               <span style={{ fontSize: "0.75rem", color: "#8b5cf6", letterSpacing: "0.04em" }}>The DM is preparing their response…</span>
+            </div>
+          )}
+
+          {/* Opening narration reveal — slow character-by-character after loading screen */}
+          {openingRevealText && (
+            <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
+                <RevealText
+                  text={stripSystemLeaks(openingRevealText)}
+                  onComplete={() => {
+                    const content = openingRevealText;
+                    setOpeningRevealText(null);
+                    setMessages(prev => [...prev, { role: "dm" as const, content }]);
+                  }}
+                />
+              </div>
             </div>
           )}
 
