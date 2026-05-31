@@ -119,6 +119,28 @@ WHAT TO AVOID
 - Never break the fourth wall or reference game mechanics in a clinical way.
 - Don't pad responses. Every sentence should earn its place.
 
+ROLL DISCIPLINE — NON-NEGOTIABLE
+When you request a dice roll, your response ENDS with that request. One sentence. Stop writing immediately.
+- NEVER narrate the outcome of a roll you haven't received. NEVER assume. NEVER fabricate a result.
+- The result arrives as the player's very next message — resolve it then and only then.
+- Do not write "Roll a d20… and the blade bites deep." Stop at "Roll a d20."
+- Skipping or faking a player's roll destroys their agency. It must never happen.
+- HARD STOP: "Roll a d[N]." is always the LAST sentence in your entire response. Zero words follow it. Any content after the period is a critical error that breaks the game.
+
+CHARACTER VOICES — GIVE PCs PERSONALITY
+You voice the entire world — including the player characters. Narrate how they react, move, and speak using their class, race, alignment, and background as a blueprint.
+- Barbarian: blunt and physical — charges before thinking, growls, slams things.
+- Rogue: quiet and watchful — says little, misses nothing, always knows the exits.
+- Wizard: precise and deliberate — pauses to observe, mutters calculations.
+- Paladin: principled and formal — every word chosen, treats oaths as sacred.
+- Bard: expressive and performative — turns danger into theatre.
+- Cleric: calm and quietly fierce in defence of their faith.
+- Ranger: patient and attuned — reads terrain before speaking, trusts instincts.
+- Warlock: wry and slightly apart — their patron touches everything.
+- Sorcerer: aware of their power in a way that is either thrilling or unsettling.
+Use alignment as action: Chaotic bends rules; Lawful follows them even at cost; Good protects the weak.
+Show personality through action and reaction — never announce "as a rogue you…"
+
 COMBAT (follow D&D 5e rules exactly)
 - Attack rolls: say "Roll a d20." When the player reports the number, add their ATK bonus (from ATTACK BONUSES in their stat block) and compare to the target AC. Announce: "11 + 5 = 16 — hits AC 14!"
 - Enemy attacks: you roll d20 + enemy ATK bonus vs. character AC yourself. State hit/miss and exact damage taken by the character.
@@ -165,10 +187,11 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Always address characters by their FIRST NAME ONLY (e.g. say "Aria" not "Aria Moonwhisper"). Never use a character's full name in narration or dialogue.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
 - CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then ask the CURRENT TURN player what they do.
-- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." (Never mention modifiers — you will add them when the player reports the result.) After their roll resolves, address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
+- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — do not narrate what happens, do not continue the story. The result arrives as the player's next message. After their roll resolves, THEN address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
 - Do NOT include "[Name], roll a [type]" for any character other than the one described above.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
+- PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted. If a player has not acted this turn, they have not acted — full stop.
 
 MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll a d20." (You then add their tool/skill bonus and compare to DC 13.)
@@ -240,7 +263,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[]): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -264,33 +287,48 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
 Use enemy AC values when players attack them. Use enemy ATK bonus and damage dice when enemies attack players.
 When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and loot naturally through the narrative once combat ends.\n`
     : "";
-  const prevActedLine = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
+  // Suppress prevActedLine during reconciliation — the round summary supersedes individual turn transitions
+  const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
-      ? `${prevActingPlayerName} just submitted their dice roll result above. Resolve the outcome of this roll in the narrative, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they want to do. `
-      : `${prevActingPlayerName} has just finished their turn — it is OVER. Do NOT ask ${prevActingPlayerName} what they do next. Do NOT end your response with a question directed at ${prevActingPlayerName}. `
+      ? `${prevActingPlayerName} just submitted their dice roll result. Resolve this roll's outcome in the narrative, then address ${currentTurnPlayerName ?? prevActingPlayerName}. `
+      : `${prevActingPlayerName}'s turn is OVER — done, finished. Do NOT address ${prevActingPlayerName}, ask them a question, or continue their narrative thread. Do not end your response with ${prevActingPlayerName}'s name. `
     : "";
+
+  // Who comes after the current player in explicit turn order
+  const nextInOrder = turnOrder && turnOrder.length > 1 && currentTurnPlayerName
+    ? (() => { const i = turnOrder.indexOf(currentTurnPlayerName); return i >= 0 ? turnOrder[(i + 1) % turnOrder.length] : null; })()
+    : null;
+
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}It is now ${currentTurnPlayerName}'s turn and they have not yet acted. Resolve any consequences of the previous action, then end your response by addressing ${currentTurnPlayerName} directly by name and asking what they want to do — even if just "What do you do, ${currentTurnPlayerName}?" Make it feel natural in the narrative.\nROLL RESTRICTION: In this response you may only ask ${currentTurnPlayerName} to roll dice. Do not ask any other character to roll.\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${nextInOrder ? `UP NEXT after ${currentTurnPlayerName}: ${nextInOrder}\n` : ""}It is ${currentTurnPlayerName}'s turn. Resolve the previous action's consequences. If that resolution requires a roll from ${currentTurnPlayerName}, your ENTIRE response is that roll request — one sentence, then stop completely. Otherwise, end your response by asking ${currentTurnPlayerName} what they want to do.\nROLL RESTRICTION: Only ${currentTurnPlayerName} may be asked to roll in this response. Do not ask any other character to roll.\n`
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\n${prevActedLine}Every player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve all player actions with complete dice outcomes.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state the roll, hit/miss, and exact damage.\n3. Apply all ongoing effects, concentration checks, and end-of-round conditions.\n4. Narrate the full round outcome vividly.\n5. End by addressing ${currentTurnPlayerName ?? "the first player"} by name, asking what they want to do — even if just "What do you do, ${currentTurnPlayerName ?? "adventurer"}?" Make this the final sentence of your response.\n`
+    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve ALL player actions above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. FINAL SENTENCE — the very last words of your response must be: "${currentTurnPlayerName ?? "the first player"}, what do you do?" Address ONLY ${currentTurnPlayerName ?? "the first player"} here. Do not address anyone else in the final sentence.\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation
-    ? `\nALL PLAYERS HAVE ACTED — DO NOT CALL NEXT TURN\nAll players have now taken their action this round. Briefly narrate the immediate outcome of this last action. Do NOT address any player, ask what they do next, or call for any dice rolls. The complete round summary arrives in the very next message.\n`
+    ? `\n[ROUND ENDING — ${prevActingPlayerName ?? "the last player"} just acted]\nNarrate ${prevActingPlayerName ? `${prevActingPlayerName}'s` : "their"} action outcome in 1–2 sentences. Stop there. Do NOT ask any player what they want to do next. Do NOT resolve other players' actions. Do NOT call for dice rolls. The full round summary is arriving in the next message.\n`
     : "";
 
   const targetBlock = targetedEnemyName
     ? `\nPLAYER'S TARGET: The active player is focusing their attack on ${targetedEnemyName}. Resolve their action against ${targetedEnemyName} unless they explicitly say otherwise.\n`
     : "";
 
-  const partyLeaderBlock = partyLeaderName && party && party.length > 1
-    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address ONLY ${partyLeaderName} and explicitly say it is a group/party check. Example: "${partyLeaderName}, roll a d20 for the group." Never ask each party member individually for the same roll.\n`
+  const partyLeaderBlock = party && party.length > 1
+    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address the CURRENT TURN player by name and say it is a group/party check. Example: "${currentTurnPlayerName ?? "the active player"}, roll a d20 for the party." This roll does NOT consume that player's individual turn — after the result resolves it is STILL their turn to act. Never ask each party member individually for the same group roll.\n`
+    : "";
+
+  const groupCheckBlock = isGroupCheckResult && currentTurnPlayerName
+    ? `\n[GROUP CHECK RESOLVED] The group check roll was just submitted. Resolve the result. IMPORTANT: this was NOT ${currentTurnPlayerName}'s individual turn action — they still have their full turn. After resolving the group check, ask ${currentTurnPlayerName} what they want to do.\n`
+    : "";
+
+  const turnOrderBlock = turnOrder && turnOrder.length > 1
+    ? `\nTURN ORDER THIS ROUND: ${turnOrder.join(" → ")} (then repeats). Follow this sequence strictly.\n`
     : "";
 
   const turnSkipBlock = isTurnSkip && skippedPlayerName && currentTurnPlayerName
-    ? `\n[TURN PASSED — ${skippedPlayerName} passes to ${currentTurnPlayerName}]\nBriefly acknowledge ${skippedPlayerName} stepping back (one short phrase). Then re-orient ${currentTurnPlayerName}: in 1–2 sentences describe what they currently see, hear, or face — the immediate situation from their perspective right now. End by asking ${currentTurnPlayerName} directly what they want to do. 3–4 sentences total. No dice rolls, no combat resolution.\n`
+    ? `\n[TURN PASSED — ${skippedPlayerName} → ${currentTurnPlayerName}]\n${skippedPlayerName} has stepped aside. Their turn is DONE. Do NOT address ${skippedPlayerName}, ask them anything, or continue any action they started.\nYour entire response: one sentence placing ${currentTurnPlayerName} in the current moment (what they see or face right now), then ask ${currentTurnPlayerName} what they do. Two sentences maximum. No dice. No combat resolution.\n`
     : "";
 
   const isMulti = party && party.length > 1;
@@ -330,7 +368,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${partyLeaderBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -370,7 +408,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solAtk     = buildAttackLine(char);
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${partyLeaderBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
@@ -385,7 +423,7 @@ Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${p
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -401,6 +439,8 @@ export async function POST(req: NextRequest) {
       isRollResult?: boolean;
       isTurnSkip?: boolean;
       skippedPlayerName?: string;
+      isGroupCheckResult?: boolean;
+      turnOrder?: string[];
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -426,7 +466,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder),
       messages:   claudeMessages,
       stream:     true,
     });

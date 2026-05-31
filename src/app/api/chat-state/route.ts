@@ -41,9 +41,14 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
 
 HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
 - HP/loot only count when the DM narrates the resolved result.
+- CRITICAL — DAMAGE DIRECTION: hp_delta only applies when a player character RECEIVES damage or healing. Players frequently DEAL damage to enemies — this does NOT affect the player's hp_delta.
+  PLAYER TAKES DAMAGE (set hp_delta negative): "Aria takes 9 slashing", "you suffer 12 fire damage", "the orc hits you for 8", "Thorin is struck for 6", "you lose 5 HP"
+  PLAYER DEALS DAMAGE (hp_delta = 0, enemy receives it): "Aria deals 9 to the orc", "the spell hits for 12", "Thorin strikes the goblin for 6", "Aria's blade bites for 9 slashing", "9 damage to the skeleton", "hits the guard for 7"
+  KEY TEST: Is the player the RECIPIENT? Yes → hp_delta. Is the enemy the recipient? → hp_delta = 0.
+  When a player attacks or casts a spell and the DM describes the hit damage, hp_delta = 0. The enemy absorbs it.
 - CRITICAL — hp_delta rules: Set hp_delta when ALL of the following are true:
-  1. A player character — either named OR addressed as "you" / "your character" — explicitly takes damage or receives healing.
-  2. The DM states the exact numeric amount (e.g. "takes 7 damage", "heals 4 HP", "7 slashing damage").
+  1. A player character — either named OR addressed as "you" / "your character" — explicitly RECEIVES (takes, suffers, loses) damage or healing. Not deals, strikes, or hits an enemy.
+  2. The DM states the exact numeric amount (e.g. "takes 7 damage", "heals 4 HP").
   3. If the DM named the character, set target_name to that exact name. If the DM used "you" (no name given), set target_name to null but STILL set hp_delta to the stated amount.
   If the amount is not stated as a number, set hp_delta to 0.
   Enemy attacks that miss, flavor descriptions of violence, or narration about monsters do NOT count.

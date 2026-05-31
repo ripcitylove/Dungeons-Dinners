@@ -312,6 +312,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [isTyping,         setIsTyping]          = useState(false);
   const [showDice,         setShowDice]          = useState(false);
   const [pendingDiceShow,  setPendingDiceShow]   = useState(false);
+  const [isGroupCheckRoll, setIsGroupCheckRoll]  = useState(false);
   const [showChatHint,     setShowChatHint]      = useState(false);
   const [tutorialStep,     setTutorialStep]       = useState<number | null>(null);
   const [character,        setCharacter]         = useState<Character | null>(null);
@@ -482,6 +483,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const currentSceneRef        = useRef<string>("");
   const enemiesRef             = useRef<CampaignEnemy[]>([]);
   const rollRequestedUserIdRef = useRef<string | null>(null);
+  const isGroupCheckRollRef    = useRef(false);
   const resumeNarrationRef   = useRef<string>("");
   const autoOpenedRef        = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
@@ -498,6 +500,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const campaignLoadingRef      = useRef(false);
   const loadingTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enqueueNarrationRef     = useRef<((text: string) => void) | null>(null);
+  const preloadResultRef        = useRef<{ dmText: string; sceneUrl: string | null; sceneName: string; sceneType?: string; modifiers?: string[]; audioUrl: string | null } | null>(null);
+  const preloadPromiseRef       = useRef<Promise<void> | null>(null);
+  const preloadAbortRef         = useRef<AbortController | null>(null);
 
   // ── Campaign loading gate — waits for DM text, scene image, and ambiance ────
   useEffect(() => {
@@ -519,6 +524,118 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }, 950);
   }, [campaignLoading, loadFadingOut, loadDmDone, loadSceneDone, loadAmbianceDone]);
 
+  // ── Pre-load opening scene while "Your adventure awaits" is displayed ────────
+  // Kicks off /api/chat + /api/detect-scene + /api/generate-scene-audio before the
+  // player clicks "Begin Adventure" so the loading screen clears much faster.
+  useEffect(() => {
+    if (sessionStarted || campaignLoading) return;
+    if (!userId || !character || !campaignParty.length) return;
+    const isNew = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
+    if (!isNew) return;
+    if (preloadPromiseRef.current || preloadResultRef.current) return;
+
+    const ctrl = new AbortController();
+    preloadAbortRef.current = ctrl;
+
+    preloadPromiseRef.current = (async () => {
+      try {
+        // Build same context sendToAI would use
+        const char = characterRef.current;
+        const party = campaignPartyRef.current;
+        const inv = char?.inventory ?? { gold: 0, items: [], weapons: [] };
+        const ib  = char ? computeInventoryBonuses(inv.items, inv.weapons) : null;
+        const baseAC = char ? computeAC(char.class, char.dexterity, char.constitution, char.wisdom, inv.items, inv.weapons) : 0;
+        const charForDM = char && ib ? {
+          ...char,
+          strength:     getEffectiveStat(char.strength,     "strength",     ib),
+          dexterity:    getEffectiveStat(char.dexterity,    "dexterity",    ib),
+          constitution: getEffectiveStat(char.constitution, "constitution", ib),
+          intelligence: getEffectiveStat(char.intelligence, "intelligence", ib),
+          wisdom:       getEffectiveStat(char.wisdom,       "wisdom",       ib),
+          charisma:     getEffectiveStat(char.charisma,     "charisma",     ib),
+          ac: baseAC + ib.acAdd,
+          active_item_effects: ib.activeEffects.map(e => `${e.itemName}: ${e.text}`),
+        } : null;
+        const partyForDM = party.length > 1 ? party.map(c => {
+          const ci = c.inventory ?? { gold: 0, items: [], weapons: [] };
+          const cib = computeInventoryBonuses(ci.items, ci.weapons);
+          const cAC = computeAC(c.class, c.dexterity, c.constitution, c.wisdom, ci.items, ci.weapons);
+          return { ...c, ac: cAC + cib.acAdd, active_item_effects: cib.activeEffects.map(e => `${e.itemName}: ${e.text}`) };
+        }) : undefined;
+        const campaignCtx = campaignDescriptionRef.current
+          ? { title: campaignTitle, description: campaignDescriptionRef.current } : undefined;
+        const firstTurnName = [...party].sort((a, b) => a.name.localeCompare(b.name))[0]?.name ?? char?.name ?? null;
+        const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
+
+        // ── 1. DM opening narrative ──────────────────────────────────────────
+        const chatRes = await fetch("/api/chat", {
+          method: "POST", signal: ctrl.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [...messagesRef.current, trigger],
+            character: charForDM, party: partyForDM,
+            campaignContext: campaignCtx,
+            openingScene: true,
+            ...(firstTurnName && { currentTurnPlayerName: firstTurnName }),
+          }),
+        });
+        if (!chatRes.ok || !chatRes.body) return;
+        const reader = chatRes.body.getReader();
+        const dec = new TextDecoder();
+        let dmText = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          dmText += dec.decode(value, { stream: true });
+        }
+        if (!dmText || ctrl.signal.aborted) return;
+
+        // ── 2. Scene image ───────────────────────────────────────────────────
+        const partySnap = party.map(c => ({ name: c.name, race: c.race, class: c.class }));
+        const sceneRes = await fetch("/api/detect-scene", {
+          method: "POST", signal: ctrl.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ narrative: dmText, party: partySnap, campaignDescription: campaignDescriptionRef.current }),
+        });
+        if (ctrl.signal.aborted) return;
+        let sceneUrl: string | null = null;
+        let sceneName = "";
+        let sceneType: string | undefined;
+        let sceneModifiers: string[] | undefined;
+        let sceneDesc: string | undefined;
+        if (sceneRes.ok) {
+          const sd = await sceneRes.json() as { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string };
+          sceneUrl = sd.imageUrl;
+          sceneName = sd.sceneName ?? "";
+          sceneType = sd.sceneType;
+          sceneModifiers = sd.modifiers;
+          sceneDesc = sd.description;
+        }
+
+        // ── 3. Ambiance audio ────────────────────────────────────────────────
+        let audioUrl: string | null = null;
+        if (sceneUrl && sceneType) {
+          const audRes = await fetch("/api/generate-scene-audio", {
+            method: "POST", signal: ctrl.signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: sceneModifiers ?? [], description: sceneDesc ?? "", isCombat: false }),
+          });
+          if (!ctrl.signal.aborted && audRes.ok) {
+            const { audioUrl: au } = await audRes.json() as { audioUrl: string | null };
+            audioUrl = au;
+          }
+        }
+
+        if (!ctrl.signal.aborted) {
+          preloadResultRef.current = { dmText, sceneUrl, sceneName, sceneType, modifiers: sceneModifiers, audioUrl };
+        }
+      } catch {
+        // Pre-load failed silently — Begin Adventure will fall back to normal flow
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStarted, campaignLoading, userId, character?.id, campaignParty.length]);
+
   // ── Ref sync effects ─────────────────────────────────────────────────────────
   useEffect(() => { characterRef.current        = character;        }, [character]);
   useEffect(() => { campaignPartyRef.current    = campaignParty;    }, [campaignParty]);
@@ -537,6 +654,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { campaignDescriptionRef.current = campaignDescription; }, [campaignDescription]);
   useEffect(() => { enemiesRef.current             = enemies;             }, [enemies]);
   useEffect(() => { rollRequestedUserIdRef.current = rollRequestedUserId; }, [rollRequestedUserId]);
+  useEffect(() => { isGroupCheckRollRef.current = isGroupCheckRoll; }, [isGroupCheckRoll]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
 
   // ── Per-campaign state write helper ──────────────────────────────────────────
@@ -1041,15 +1159,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     // Spell slots and status effects: apply when named explicitly OR this is the acting character.
     const shouldApplySlots = isExplicitTarget || isActingChar;
+    // Check pending UI spell cast BEFORE hasChange so we don't early-return when shouldApplySlots is false
+    const hadPendingCast = pendingSpellCastRef.current > 0;
 
     const hasChange =
       change.hp_delta !== 0 ||
-      (change.spell_slots_used > 0 && shouldApplySlots) ||
+      (change.spell_slots_used > 0 && (shouldApplySlots || hadPendingCast)) ||
       (isExplicitTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
         change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
         change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
       change.xp_award > 0;
-    console.log("[applyStateChange] hasChange", hasChange, { hp_delta: change.hp_delta, spell_slots_used: change.spell_slots_used, xp_award: change.xp_award, shouldApplySlots });
+    console.log("[applyStateChange] hasChange", hasChange, { hp_delta: change.hp_delta, spell_slots_used: change.spell_slots_used, xp_award: change.xp_award, shouldApplySlots, hadPendingCast });
     if (!hasChange) return;
 
     const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
@@ -1075,8 +1195,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // If the player clicked a spell in the UI, pendingSpellCastRef > 0 (slot already consumed) — just clear the pending count.
     // Otherwise find the lowest available slot level so we never hardcode level 1.
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
-    const hadPendingCast = pendingSpellCastRef.current > 0;
-    if (shouldApplySlots && change.spell_slots_used > 0) {
+    if ((shouldApplySlots || hadPendingCast) && change.spell_slots_used > 0) {
       if (hadPendingCast) {
         pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - change.spell_slots_used);
       } else {
@@ -1535,7 +1654,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[] }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1614,6 +1733,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const currentTurnName   = currentTurnCharId
         ? (campaignPartyRef.current.find(c => c.id === currentTurnCharId)?.name ?? null)
         : null;
+      // Explicit turn order for the DM — resolves ambiguity about who goes when
+      const turnOrderNames = turnOrderRef.current.length > 1
+        ? turnOrderRef.current
+            .map(id => campaignPartyRef.current.find(c => c.id === id)?.name ?? null)
+            .filter((n): n is string => n !== null)
+        : [];
 
       // Party leader for group roll routing
       const partyLeaderChar = onlineParty.find(c => c.id === partyLeaderId);
@@ -1646,6 +1771,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.isRollResult && { isRollResult: true }),
           ...(opts?.isTurnSkip && { isTurnSkip: true }),
           ...(opts?.skippedPlayerName && { skippedPlayerName: opts.skippedPlayerName }),
+          ...(opts?.isGroupCheckResult && { isGroupCheckResult: true }),
+          ...(turnOrderNames.length > 1 && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
         signal: controller.signal,
@@ -1674,6 +1801,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           }
         }
       }
+      // Client-side safeguard: truncate anything the DM wrote after a roll request.
+      // The model is instructed to stop at "Roll a dN." but sometimes ignores it.
+      {
+        const rollSentRe = /\broll\s+a\s+d\d+[^.!?\n]*[.!?]/gi;
+        let lastRollEnd = -1;
+        let rm: RegExpExecArray | null;
+        while ((rm = rollSentRe.exec(full)) !== null) lastRollEnd = rm.index + rm[0].length;
+        if (lastRollEnd > 0 && lastRollEnd < full.length - 1) {
+          full = full.slice(0, lastRollEnd).trim();
+          narBuf = "";
+        }
+      }
+
       if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 10) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
       setMessages(prev => [...prev, { role: "dm", content: full }]);
@@ -1723,6 +1863,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
+      // Detect group/party check — this roll does NOT consume the current player's individual turn
+      const isGroupCheck = /\b(for the (?:party|group)|(?:group|party) (?:check|roll|save|saving throw))\b/i.test(full);
+      if (isGroupCheck) {
+        setIsGroupCheckRoll(true);
+        isGroupCheckRollRef.current = true;
+      }
+
       // Enemy combat: spawn enemies when combat starts, or update existing enemy states
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
       if (activeEnemies.length > 0) {
@@ -1731,11 +1878,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         spawnEnemies(full);
       }
 
-      const lastPlayerMsg = allMessages[allMessages.length - 1];
-      supabase.from("campaign_messages").insert([
-        { campaign_id: params.id, role: lastPlayerMsg.role, content: lastPlayerMsg.content, sender: lastPlayerMsg.sender ?? null },
-        { campaign_id: params.id, role: "dm",               content: full,                  sender: null },
-      ]).then(({ error }) => { if (error) console.error("[campaign] save:", error); });
+      // Only persist the triggering player message when it's new — not when the last message is already a DM
+      // response (e.g. triggerReconciliation or handleTurnSkip pass messages ending with a DM msg).
+      const lastMsg = allMessages[allMessages.length - 1];
+      const toInsert = lastMsg.role === "player"
+        ? [
+            { campaign_id: params.id, role: lastMsg.role, content: lastMsg.content, sender: lastMsg.sender ?? null },
+            { campaign_id: params.id, role: "dm",         content: full,            sender: null },
+          ]
+        : [{ campaign_id: params.id, role: "dm", content: full, sender: null }];
+      supabase.from("campaign_messages").insert(toInsert).then(({ error }) => { if (error) console.error("[campaign] save:", error); });
 
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userId, content: full, actingCharId: characterRef.current?.id ?? null } });
 
@@ -1882,12 +2034,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setRoundActions([...roundActionsRef.current]);
     }
 
-    // Show banner and queue DM acknowledgement after 3 seconds
+    // Show banner and queue DM acknowledgement after 4 seconds
     setTurnSkipBanner(`${fromChar.name} passes the turn to ${toChar.name}…`);
     if (skipTurnTimeoutRef.current) clearTimeout(skipTurnTimeoutRef.current);
     skipTurnTimeoutRef.current = setTimeout(async () => {
       setTurnSkipBanner(null);
       skipTurnTimeoutRef.current = null;
+      // Don't call the DM if a roll result is still pending — the roller must go first
+      if (rollRequestedUserIdRef.current) return;
+      pendingReconciliationRef.current = null;
       await sendToAI(messagesRef.current, false, {
         trackRound:        turnOrderRef.current.length > 1,
         nextPlayerName:    toChar.name,
@@ -1895,6 +2050,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         isTurnSkip:        true,
         skippedPlayerName: fromChar.name,
       });
+      const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
+      if (pending) {
+        pendingReconciliationRef.current = null;
+        await triggerReconciliation(pending.messages, pending.summary);
+      }
     }, 4000);
   };
 
@@ -1914,6 +2074,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setDiceRollTarget(null);
     setRollRequestedUserId(null);
     rollRequestedUserIdRef.current = null;
+    const wasGroupCheckRoll = isGroupCheckRollRef.current;
+    if (wasGroupCheckRoll) { setIsGroupCheckRoll(false); isGroupCheckRollRef.current = false; }
     channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: null } });
 
     const playerMsg: Message = { role: "player", content: text, sender: character?.name ?? "You" };
@@ -1934,7 +2096,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
     let nextPlayerName: string | null = null;
-    if (isRollSubmit && order.length > 1) {
+    if (isRollSubmit && !wasGroupCheckRoll && order.length > 1) {
       // Roll submitted: DM resolves the roll, then advance to the next player's turn.
       const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
       const nextCid = order[nextIdx];
@@ -1943,6 +2105,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       currentTurnIndexRef.current = nextIdx;
       channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
       if (campaignPartyRef.current.length > 1) setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
+    } else if (isRollSubmit && wasGroupCheckRoll && order.length > 1) {
+      // Group check roll — keep the same player's turn; DM resolves the check and returns to them
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === order[currentTurnIndexRef.current])?.name ?? null;
     } else if (!isRollSubmit && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
@@ -1966,6 +2131,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       prevPlayerName: character?.name ?? null,
       allActed:       allActedForDM,
       ...(isRollSubmit && { isRollResult: true }),
+      ...(wasGroupCheckRoll && { isGroupCheckResult: true }),
     });
 
     // If sendToAI detected all players have acted, trigger round reconciliation
@@ -2434,21 +2600,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                   const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
                   if (isNewCampaign) {
-                    // New campaign: show loading screen, kick off all background work
-                    setCampaignLoading(true);
-                    campaignLoadingRef.current = true;
-                    // Safety fallback — never get stuck loading
-                    loadingTimeoutRef.current = setTimeout(() => {
-                      if (!campaignLoadingRef.current) return;
-                      setLoadDmDone(true); setLoadSceneDone(true); setLoadAmbianceDone(true);
-                    }, 28000);
-                    if (!autoOpenedRef.current) {
+                    preloadAbortRef.current?.abort();
+                    const cached = preloadResultRef.current;
+                    if (cached) {
+                      // ── Pre-load complete: skip loading screen, fade directly to session ──
+                      preloadResultRef.current = null;
                       autoOpenedRef.current = true;
+                      const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
+                      setMessages(prev => [...prev, trigger]);
+                      if (cached.sceneUrl) {
+                        currentSceneRef.current = cached.sceneName;
+                        setCurrentSceneUrl(cached.sceneUrl);
+                        channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName: cached.sceneName, imageUrl: cached.sceneUrl } });
+                        if (cached.sceneType) (window as Window).__dndSetMusicScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
+                        if (cached.audioUrl) {
+                          (window as Window).__dndSetAmbiance?.(cached.audioUrl);
+                          channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl: cached.audioUrl } });
+                        }
+                      }
+                      setOpeningRevealText(cached.dmText);
+                      setLoadFadingOut(true);
                       setTimeout(() => {
-                        if (isTypingRef.current) return;
-                        const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
-                        sendToAI([...messagesRef.current, trigger], true);
-                      }, 400);
+                        setLoadFadingOut(false);
+                        setSessionStarted(true);
+                        enqueueNarrationRef.current?.(cached.dmText);
+                      }, 950);
+                    } else {
+                      // ── No pre-load or still in flight: normal loading screen flow ────────
+                      setCampaignLoading(true);
+                      campaignLoadingRef.current = true;
+                      loadingTimeoutRef.current = setTimeout(() => {
+                        if (!campaignLoadingRef.current) return;
+                        setLoadDmDone(true); setLoadSceneDone(true); setLoadAmbianceDone(true);
+                      }, 28000);
+                      if (!autoOpenedRef.current) {
+                        autoOpenedRef.current = true;
+                        setTimeout(() => {
+                          if (isTypingRef.current) return;
+                          const trigger: Message = { role: "player", content: "Begin our adventure.", sender: "" };
+                          sendToAI([...messagesRef.current, trigger], true);
+                        }, 400);
+                      }
                     }
                   } else {
                     // Resumed campaign: go straight in
@@ -2736,8 +2928,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggested actions */}
-        {suggestions.length > 0 && !isTyping && isMyTurn && (
+        {/* Suggested actions — hidden while a dice roll is pending or active */}
+        {suggestions.length > 0 && !isTyping && isMyTurn && !showDice && !pendingDiceShow && (
           <div style={{ padding: "10px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.04)" }}>
             <p style={{ fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -2777,18 +2969,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               type="text" value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-              disabled={isTyping || narrating || !isMyTurn}
+              disabled={isTyping || narrating || !isMyTurn || showDice || pendingDiceShow}
               placeholder={
-                isTyping      ? "The DM is responding…"
-                : narrating   ? "Narrating…"
+                isTyping        ? "The DM is responding…"
+                : narrating     ? "Narrating…"
+                : showDice || pendingDiceShow ? "Roll the dice above…"
                 : !isMyTurn && rollRequestedUserId ? `Waiting for ${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "a player"} to roll…`
-                : !isMyTurn   ? `Waiting for ${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "other players"}…`
-                : rollRequestedUserId ? "Describe your roll result…"
+                : !isMyTurn     ? `Waiting for ${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "other players"}…`
                 : "Describe your action…"
               }
-              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || narrating || !isMyTurn) ? 0.6 : 1 }}
+              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1 }}
             />
-            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
+            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0 }}>Send</button>
           </div>
         </div>
       </div>
@@ -3334,7 +3526,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     const newSlots = { ...usedSlots, [availLvl]: (usedSlots[availLvl] ?? 0) + 1 };
                                     setCharacter(prev => prev ? { ...prev, spell_slots_used: newSlots } : null);
                                     setCampaignParty(prev => prev.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c));
-                                    await supabase.from("characters").update({ spell_slots_used: newSlots }).eq("id", character.id);
+                                    await charWrite(character.id, { spell_slots_used: newSlots });
                                     pendingSpellCastRef.current += 1;
                                     handleSend(`I cast ${s}.`);
                                   }}
