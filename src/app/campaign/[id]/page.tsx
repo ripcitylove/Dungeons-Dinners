@@ -419,6 +419,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Inventory exchange
   const [droppedItems,     setDroppedItems]       = useState<DroppedItem[]>([]);
+  const [tradingItem,      setTradingItem]        = useState<{ name: string; slot: "item" | "weapon" } | null>(null);
 
   // Chat font size — persisted across sessions
   const [chatFontSize, setChatFontSize] = useState<number>(() => {
@@ -937,10 +938,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current = channel;
     return () => {
       supabase.removeChannel(channel); channelRef.current = null;
-      if (skipTurnTimeoutRef.current) { clearTimeout(skipTurnTimeoutRef.current); skipTurnTimeoutRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, character?.id, params.id]);
+  }, [userId, params.id]);
 
   useEffect(() => {
     // Scroll the container directly — more reliable than scrollIntoView when
@@ -1996,6 +1996,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     await charWrite(char.id, { inventory: newInv });
     setDroppedItems(prev => [...prev, dropped]);
     channelRef.current?.send({ type: "broadcast", event: "item_dropped", payload: dropped });
+  }, [charWrite]);
+
+  const tradeItem = useCallback(async (itemName: string, itemType: "item" | "weapon", targetCharId: string) => {
+    const from = characterRef.current;
+    const to   = campaignPartyRef.current.find(c => c.id === targetCharId);
+    if (!from || !to || from.id === to.id) return;
+    const fromNewInv = {
+      ...from.inventory,
+      items:   itemType === "item"   ? from.inventory.items.filter(i => i !== itemName)   : from.inventory.items,
+      weapons: itemType === "weapon" ? from.inventory.weapons.filter(w => w !== itemName) : from.inventory.weapons,
+    };
+    const toNewInv = {
+      ...to.inventory,
+      items:   itemType === "item"   ? [...(to.inventory?.items   ?? []), itemName] : (to.inventory?.items   ?? []),
+      weapons: itemType === "weapon" ? [...(to.inventory?.weapons ?? []), itemName] : (to.inventory?.weapons ?? []),
+    };
+    setCharacter(prev => prev?.id === from.id ? { ...prev, inventory: fromNewInv } : prev);
+    setCampaignParty(prev => prev.map(c =>
+      c.id === from.id ? { ...c, inventory: fromNewInv }
+      : c.id === to.id ? { ...c, inventory: toNewInv }
+      : c
+    ));
+    setTradingItem(null);
+    await Promise.all([
+      charWrite(from.id, { inventory: fromNewInv }),
+      charWrite(to.id,   { inventory: toNewInv   }),
+    ]);
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: from.id, inventory: fromNewInv } });
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: to.id,   inventory: toNewInv   } });
   }, [charWrite]);
 
   const takeItem = useCallback(async (dropped: DroppedItem) => {
@@ -3370,7 +3399,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div key={itemKey} style={{ marginBottom: "4px" }}>
                         <div style={{ position: "relative" }}>
                           <div
-                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", fontSize: fs(0.82), border: `1px solid ${catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: tradingItem?.name === name && tradingItem?.slot === slot ? "6px 6px 0 0" : "6px", fontSize: fs(0.82), border: `1px solid ${tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.45)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
                             onMouseEnter={e => { setHoveredItem(itemKey); if (catalogItem) showTooltip(
                               <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
@@ -3409,6 +3438,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                   onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
                                 >Use</button>
                               )}
+                              {campaignParty.length > 1 && (
+                                <button
+                                  onClick={e => { e.stopPropagation(); setTradingItem(prev => prev?.name === name && prev?.slot === slot ? null : { name, slot }); }}
+                                  title="Trade to another character"
+                                  style={{ fontSize: fs(0.58), color: "#a78bfa", background: tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.25)" : "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.25)"; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.25)" : "rgba(139,92,246,0.08)"; }}
+                                >Trade</button>
+                              )}
                               <button
                                 onClick={() => dropItem(name, slot)}
                                 title="Drop to party pool"
@@ -3418,6 +3456,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               >drop</button>
                             </div>
                           </div>
+                          {/* Trade picker — character selector */}
+                          {tradingItem?.name === name && tradingItem?.slot === slot && (
+                            <div style={{ background: "rgba(20,14,40,0.97)", border: "1px solid rgba(139,92,246,0.45)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "4px 0", zIndex: 10 }}>
+                              <div style={{ padding: "4px 10px 4px", fontSize: fs(0.62), color: "#6d5a9c", letterSpacing: "0.06em", textTransform: "uppercase" }}>Send to</div>
+                              {campaignParty.filter(c => c.id !== character?.id).map(c => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => tradeItem(name, slot, c.id)}
+                                  style={{ width: "100%", textAlign: "left", padding: "5px 10px", background: "none", border: "none", color: "#c4b5fd", fontSize: fs(0.78), cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
+                                >
+                                  <span style={{ fontSize: fs(0.7) }}>{c.class === "Wizard" ? "🧙" : c.class === "Rogue" ? "🗡️" : c.class === "Cleric" ? "✝" : "⚔"}</span>
+                                  <span style={{ fontWeight: 600 }}>{c.name}</span>
+                                  <span style={{ color: "#475569", fontSize: fs(0.65) }}>{c.class}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
