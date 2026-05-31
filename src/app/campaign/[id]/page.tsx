@@ -406,6 +406,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
     return 0.9;
   });
+  const fs = (base: number) => `${(base * chatFontSize / 0.9).toFixed(2)}rem`;
 
   // Portrait lightbox
   const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
@@ -3098,7 +3099,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   {linkCopied ? "✓ Copied!" : "🔗 Invite"}
                 </button>
                 {!linkCopied && campaignParty.length < 2 && (
-                  <span style={{ fontSize: "0.58rem", color: "#3f3f46" }}>Share to add players</span>
+                  <span style={{ fontSize: fs(0.58), color: "#3f3f46" }}>Share to add players</span>
                 )}
               </div>
             </div>
@@ -3132,7 +3133,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           {char.portrait_url ? (
                             <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>{classEmoji}</div>
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(1.1) }}>{classEmoji}</div>
                           )}
                         </div>
                         {/* Online indicator dot */}
@@ -3140,15 +3141,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
+                          <span style={{ fontSize: fs(0.88), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
                           {char.id === partyLeaderId && (
-                            <span title="Party Leader" style={{ fontSize: "1.05rem", flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block" }}>👑</span>
+                            <span title="Party Leader" style={{ fontSize: fs(1.05), flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block" }}>👑</span>
                           )}
                           {isActive && campaignParty.length > 1 && (
-                            <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
+                            <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
                         </div>
-                        <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{char.race} {char.class} · Lvl {char.level}</div>
+                        <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>{char.race} {char.class} · Lvl {char.level}</div>
                       </div>
                     </div>
                     <div style={{ width: "100%", height: "4px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginBottom: "6px" }}>
@@ -3156,17 +3157,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                        <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
+                        <span style={{ fontSize: fs(0.72), color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
                           {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
                         </span>
-                        <span style={{ fontSize: "0.65rem", color: "#f59e0b", fontWeight: 600 }} title="Gold">💰 {char.inventory?.gold ?? 0}</span>
+                        <span style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: 600 }} title="Gold">💰 {char.inventory?.gold ?? 0}</span>
                       </div>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
-                          <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
+                          <span style={{ fontSize: fs(0.62), color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
                         )}
                         {campaignParty.length > 1 && !isDiceTarget && (
-                          <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
+                          <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
                         )}
@@ -3174,7 +3175,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <button
                             onClick={e => { e.stopPropagation(); leaveParty(char.id); }}
                             title="Leave party"
-                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: "0.75rem", padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
+                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: fs(0.75), padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                             onMouseLeave={e => { e.currentTarget.style.color = "#3f3f46"; }}
                           >✕</button>
@@ -3183,7 +3184,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <button
                             onClick={e => { e.stopPropagation(); setTradeTarget(char); setTradeItems([]); setTradeGold(0); }}
                             title={`Trade with ${char.name}`}
-                            style={{ background: "none", border: "1px solid rgba(139,92,246,0.25)", color: "#8b5cf6", cursor: "pointer", fontSize: "0.58rem", padding: "2px 5px", borderRadius: "4px", lineHeight: 1, transition: "all 0.15s" }}
+                            style={{ background: "none", border: "1px solid rgba(139,92,246,0.25)", color: "#8b5cf6", cursor: "pointer", fontSize: fs(0.58), padding: "2px 5px", borderRadius: "4px", lineHeight: 1, transition: "all 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.15)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; }}
                           >⇄</button>
@@ -3192,7 +3193,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <button
                             onClick={e => { e.stopPropagation(); kickCharacter(char); }}
                             title={`Kick ${char.name}`}
-                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: "0.75rem", padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
+                            style={{ background: "none", border: "none", color: "#3f3f46", cursor: "pointer", fontSize: fs(0.75), padding: "1px 3px", lineHeight: 1, transition: "color 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                             onMouseLeave={e => { e.currentTarget.style.color = "#3f3f46"; }}
                           >✕</button>
@@ -3209,7 +3210,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden" }}>
                             <div style={{ width: `${xpPct}%`, height: "100%", background: char.level >= 10 ? "#f59e0b" : "linear-gradient(90deg,#6d28d9,#8b5cf6)", transition: "width 0.6s ease" }} />
                           </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.58rem", marginTop: "2px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: fs(0.58), marginTop: "2px" }}>
                             <span style={{ color: "#7c3aed", fontWeight: 600 }}>XP</span>
                             <span style={{ color: "#64748b" }}>{char.level >= 10 ? "MAX LEVEL" : `${curXp} / ${xpMax}`}</span>
                           </div>
@@ -3230,7 +3231,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             const avail = Math.max(0, max - used);
                             return (
                               <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                                <span style={{ fontSize: "0.52rem", color: "#64748b", marginRight: "1px" }}>L{lvl}</span>
+                                <span style={{ fontSize: fs(0.52), color: "#64748b", marginRight: "1px" }}>L{lvl}</span>
                                 {Array.from({ length: max }, (_, i) => (
                                   <div key={i} style={{
                                     width: "7px", height: "7px", borderRadius: "50%",
@@ -3254,13 +3255,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           return (
                             <span key={s}
                               onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
-                                <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", width: "190px", fontSize: "0.68rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                                <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", width: "190px", fontSize: fs(0.68), color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
                                   <span style={{ fontWeight: "bold", color: st.color, marginBottom: "3px", display: "block" }}>{s}</span>
                                   {STATUS_DESCRIPTIONS[s]}
                                 </div>, e)}
                               onMouseLeave={hideTooltip}
                             >
-                              <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
+                              <span style={{ fontSize: fs(0.6), padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
                             </span>
                           );
                         })}
@@ -3286,26 +3287,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         {p.portraitUrl ? (
                           <img src={p.portraitUrl} alt={p.characterName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
-                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(1.1) }}>
                             {p.characterClass === "Wizard" ? "🧙" : p.characterClass === "Rogue" ? "🗡️" : p.characterClass === "Cleric" ? "✝" : "⚔"}
                           </div>
                         )}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                          <span style={{ fontSize: "0.88rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[p.characterClass] ?? "white" }}>{p.characterName}</span>
+                          <span style={{ fontSize: fs(0.88), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[p.characterClass] ?? "white" }}>{p.characterName}</span>
                           {p.userId === leaderChar?.user_id && (
-                            <span title="Party Leader" style={{ fontSize: "0.72rem", flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
+                            <span title="Party Leader" style={{ fontSize: fs(0.72), flexShrink: 0, filter: "drop-shadow(0 0 4px rgba(251,191,36,0.7))" }}>👑</span>
                           )}
-                          {isMe && <span style={{ fontSize: "0.58rem", background: "rgba(139,92,246,0.3)", color: "#c4b5fd", borderRadius: "3px", padding: "1px 4px", flexShrink: 0 }}>You</span>}
+                          {isMe && <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.3)", color: "#c4b5fd", borderRadius: "3px", padding: "1px 4px", flexShrink: 0 }}>You</span>}
                         </div>
-                        <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{p.characterClass}</div>
+                        <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>{p.characterClass}</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                         <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 5px #22c55e" }} />
                         {!isMe && isPartyLeader && (
                           <button onClick={() => kickPlayer(p)} title={`Remove ${p.characterName}`}
-                            style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "0.85rem", padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
+                            style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: fs(0.85), padding: "2px 4px", lineHeight: 1, transition: "color 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
                             onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}>✕</button>
                         )}
@@ -3315,13 +3316,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "0.72rem", color, fontWeight: "bold" }}>{p.hp}/{p.maxHp} HP</span>
+                      <span style={{ fontSize: fs(0.72), color, fontWeight: "bold" }}>{p.hp}/{p.maxHp} HP</span>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
-                          <span style={{ fontSize: "0.62rem", color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
+                          <span style={{ fontSize: fs(0.62), color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
                         )}
                         {turnOrder.length > 1 && !isDiceTarget && (
-                          <span style={{ fontSize: "0.65rem", fontWeight: "bold", color: isCurrentTurn ? "#c4b5fd" : "#475569", background: isCurrentTurn ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isCurrentTurn ? "2px 7px" : "0" }}>
+                          <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isCurrentTurn ? "#c4b5fd" : "#475569", background: isCurrentTurn ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isCurrentTurn ? "2px 7px" : "0" }}>
                             {isCurrentTurn ? (isMe ? "⚡ Your turn" : "⚡ Acting…") : "Waiting"}
                           </span>
                         )}
@@ -3331,7 +3332,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 );
               })}
               {campaignParty.length === 0 && allPartyCards.length === 0 && (
-                <p style={{ fontSize: "0.78rem", color: "#475569", fontStyle: "italic" }}>No adventurers connected. Share the invite link!</p>
+                <p style={{ fontSize: fs(0.78), color: "#475569", fontStyle: "italic" }}>No adventurers connected. Share the invite link!</p>
               )}
             </div>
 
@@ -3340,18 +3341,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
               <button
                 onClick={() => setManagePartyOpen(o => !o)}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "1px solid var(--border)", borderRadius: "7px", padding: "7px 10px", cursor: "pointer", fontSize: "0.75rem", color: "#94a3b8", transition: "all 0.15s" }}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "1px solid var(--border)", borderRadius: "7px", padding: "7px 10px", cursor: "pointer", fontSize: fs(0.75), color: "#94a3b8", transition: "all 0.15s" }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "white"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#94a3b8"; }}
               >
                 <span>⊕ Manage Party</span>
-                <span style={{ fontSize: "0.65rem" }}>{managePartyOpen ? "▲" : "▼"}</span>
+                <span style={{ fontSize: fs(0.65) }}>{managePartyOpen ? "▲" : "▼"}</span>
               </button>
 
               {managePartyOpen && (
                 <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
                   {userRoster.length === 0 ? (
-                    <p style={{ fontSize: "0.75rem", color: "#475569", fontStyle: "italic", padding: "6px 0" }}>
+                    <p style={{ fontSize: fs(0.75), color: "#475569", fontStyle: "italic", padding: "6px 0" }}>
                       No characters yet. <Link href="/create-character" style={{ color: "var(--primary)" }}>Create one →</Link>
                     </p>
                   ) : userRoster.map(char => {
@@ -3361,24 +3362,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ width: "28px", height: "28px", borderRadius: "50%", overflow: "hidden", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                           {char.portrait_url
                             ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : <span style={{ fontSize: "0.9rem" }}>🧙</span>
+                            : <span style={{ fontSize: fs(0.9) }}>🧙</span>
                           }
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: "0.8rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name}</div>
-                          <div style={{ fontSize: "0.65rem", color: "#64748b" }}>{char.race} {char.class} · Lvl {char.level} · {char.hp}/{char.max_hp} HP</div>
+                          <div style={{ fontSize: fs(0.8), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name}</div>
+                          <div style={{ fontSize: fs(0.65), color: "#64748b" }}>{char.race} {char.class} · Lvl {char.level} · {char.hp}/{char.max_hp} HP</div>
                         </div>
                         {inParty ? (
                           <button
                             onClick={() => leaveParty(char.id)}
-                            style={{ fontSize: "0.68rem", padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
+                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
                           >Leave</button>
                         ) : (
                           <button
                             onClick={() => addToParty(char)}
-                            style={{ fontSize: "0.68rem", padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.1)", color: "#4ade80", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
+                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.1)", color: "#4ade80", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.2)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.1)"; }}
                           >Join</button>
@@ -3391,7 +3392,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
               {/* Party-wide rests — always visible to party leader */}
               <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
-                <p style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Party Rest</p>
+                <p style={{ fontSize: fs(0.68), color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Party Rest</p>
                 <div style={{ display: "flex", gap: "7px" }}>
                   <button onClick={handlePartyShortRest}
                     style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
@@ -3441,7 +3442,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {sidebarTab === "sheet" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
             {stateNotice && (
-              <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", fontSize: "0.8rem", color: "#34d399", textAlign: "center" }}>
+              <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", fontSize: fs(0.8), color: "#34d399", textAlign: "center" }}>
                 ⚡ {stateNotice}
               </div>
             )}
@@ -3459,12 +3460,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     {character.portrait_url ? (
                       <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                     ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>🧙</div>
                     )}
                   </div>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: CLASS_COLORS[character.class] ?? "white" }}>{character.name}</div>
-                    <div style={{ color: "#94a3b8", fontSize: "0.75rem" }}>{character.race} {character.class} · Lvl {character.level}</div>
+                    <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: CLASS_COLORS[character.class] ?? "white" }}>{character.name}</div>
+                    <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{character.race} {character.class} · Lvl {character.level}</div>
                   </div>
                 </div>
 
@@ -3476,13 +3477,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       return (
                         <span key={s}
                           onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
-                            <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", width: "210px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                            <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", width: "210px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
                               <span style={{ fontWeight: "bold", color: st.color, marginBottom: "4px", display: "block" }}>{s}</span>
                               {STATUS_DESCRIPTIONS[s]}
                             </div>, e)}
                           onMouseLeave={hideTooltip}
                         >
-                          <span style={{ fontSize: "0.72rem", padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
+                          <span style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
                         </span>
                       );
                     })}
@@ -3491,14 +3492,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                 {/* HP */}
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: fs(0.85) }}>
                     <span style={{ color: "#94a3b8" }}>Hit Points</span>
                     <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                       <span style={{ fontWeight: "bold", color: hpColor }}>{Math.min(character.hp, effectiveMaxHp)} / {effectiveMaxHp}</span>
                       {(itemBonuses?.hpMaxAdd ?? 0) > 0 && (
                         <span
                           title={`Base max HP: ${character.max_hp} · Item bonus: +${itemBonuses!.hpMaxAdd} · Effective max: ${effectiveMaxHp}`}
-                          style={{ fontSize: "0.65rem", color: "#f59e0b", fontWeight: "bold", cursor: "help", background: "rgba(245,158,11,0.15)", borderRadius: "4px", padding: "1px 5px" }}
+                          style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: "bold", cursor: "help", background: "rgba(245,158,11,0.15)", borderRadius: "4px", padding: "1px 5px" }}
                         >✦+{itemBonuses!.hpMaxAdd}</span>
                       )}
                     </div>
@@ -3510,7 +3511,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                 {/* XP */}
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: fs(0.85) }}>
                     <span style={{ color: "#94a3b8" }}>Experience</span>
                     <span style={{ fontWeight: "bold", color: "#8b5cf6" }}>{character.xp ?? 0} / {xpToNext} XP</span>
                   </div>
@@ -3536,40 +3537,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         key={label}
                         style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
                         onMouseEnter={e => { setHoveredStat(label); showTooltip(
-                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", width: "190px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
-                            <div style={{ fontWeight: "bold", color: "#e2e8f0", marginBottom: "5px", fontSize: "0.75rem" }}>
+                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", width: "190px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                            <div style={{ fontWeight: "bold", color: "#e2e8f0", marginBottom: "5px", fontSize: fs(0.75) }}>
                               {STAT_FULL[label]}
-                              <span style={{ fontWeight: 400, color: "#475569", fontSize: "0.62rem", marginLeft: "5px" }}>{label}</span>
+                              <span style={{ fontWeight: 400, color: "#475569", fontSize: fs(0.62), marginLeft: "5px" }}>{label}</span>
                             </div>
-                            <div style={{ color: "#94a3b8", fontSize: "0.68rem", marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                            <div style={{ color: "#94a3b8", fontSize: fs(0.68), marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
                               {STAT_GENERAL_DESC[label]}
                             </div>
                             {hasItemBuf && (
                               <div style={{ marginBottom: guide ? "5px" : 0, paddingBottom: guide ? "5px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                                <div style={{ color: "#94a3b8", fontSize: "0.65rem", marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
+                                <div style={{ color: "#94a3b8", fontSize: fs(0.65), marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
                                 {addBonus !== 0 && <div style={{ color: netDiff > 0 ? "#f59e0b" : "#ef4444" }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
                                 {setBonus > baseScore && <div style={{ color: "#f59e0b" }}>Set to minimum: {setBonus}</div>}
                               </div>
                             )}
                             {guide && tierStyle && (
                               <>
-                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "3px", fontSize: "0.72rem" }}>{tierStyle.label} for {character.class}</div>
-                                <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{guide.reason}</div>
+                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "3px", fontSize: fs(0.72) }}>{tierStyle.label} for {character.class}</div>
+                                <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{guide.reason}</div>
                               </>
                             )}
                           </div>, e); }}
                         onMouseLeave={() => { setHoveredStat(null); hideTooltip(); }}
                       >
-                        <div style={{ fontSize: "0.6rem", color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
-                        <div style={{ fontWeight: "bold", fontSize: "1rem" }}>{effScore}</div>
-                        <div style={{ fontSize: "0.7rem", color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
+                        <div style={{ fontSize: fs(0.6), color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
+                        <div style={{ fontWeight: "bold", fontSize: fs(1) }}>{effScore}</div>
+                        <div style={{ fontSize: fs(0.7), color: m >= 0 ? "#22c55e" : "#ef4444" }}>{m >= 0 ? `+${m}` : m}</div>
                         {hasItemBuf && (
-                          <div style={{ fontSize: "0.5rem", color: netDiff > 0 ? "#f59e0b" : "#ef4444", marginTop: "1px", fontWeight: "bold" }}>
+                          <div style={{ fontSize: fs(0.5), color: netDiff > 0 ? "#f59e0b" : "#ef4444", marginTop: "1px", fontWeight: "bold" }}>
                             {netDiff > 0 ? `✦+${netDiff}` : `✦${netDiff}`}
                           </div>
                         )}
                         {tierStyle && !hasItemBuf && (
-                          <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
+                          <div style={{ fontSize: fs(0.5), color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
                             {tierStyle.label.toUpperCase()}
                           </div>
                         )}
@@ -3585,19 +3586,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   const hasSlots  = Object.keys(maxSlots).length > 0;
                   return hasSlots ? (
                     <div>
-                      <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spell Slots</h3>
+                      <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spell Slots</h3>
                       {Object.entries(maxSlots).map(([lvl, max]) => {
                         const used = usedSlots[Number(lvl)] ?? 0;
                         const remaining = Math.max(0, max - used);
                         return (
                           <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                            <span style={{ fontSize: "0.7rem", color: "#64748b", width: "42px", flexShrink: 0 }}>Lvl {lvl}</span>
+                            <span style={{ fontSize: fs(0.7), color: "#64748b", width: "42px", flexShrink: 0 }}>Lvl {lvl}</span>
                             <div style={{ display: "flex", gap: "4px" }}>
                               {Array.from({ length: max }, (_, i) => (
                                 <div key={i} style={{ width: "12px", height: "12px", borderRadius: "50%", background: i < remaining ? "#8b5cf6" : "rgba(100,116,139,0.3)", border: i < remaining ? "1px solid #7c3aed" : "1px solid #475569", transition: "background 0.2s" }} />
                               ))}
                             </div>
-                            <span style={{ fontSize: "0.68rem", color: remaining > 0 ? "#8b5cf6" : "#ef4444" }}>{remaining}/{max}</span>
+                            <span style={{ fontSize: fs(0.68), color: remaining > 0 ? "#8b5cf6" : "#ef4444" }}>{remaining}/{max}</span>
                           </div>
                         );
                       })}
@@ -3608,10 +3609,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 {/* Spellbook */}
                 {SPELLCASTING_CLASSES.has(character.class) && ((character.cantrips_known?.length ?? 0) > 0 || (character.spells_prepared?.length ?? 0) > 0) && (
                   <div>
-                    <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
+                    <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
                     {(character.cantrips_known?.length ?? 0) > 0 && (
                       <div style={{ marginBottom: "10px" }}>
-                        <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips · at-will</div>
+                        <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips · at-will</div>
                         {character.cantrips_known!.map((s, i) => {
                           const entry = CANTRIPS[character.class]?.find(e => e.name === s);
                           const active = hoveredSpell === `c-${i}`;
@@ -3620,12 +3621,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               <div
                                 role="button"
                                 onClick={() => { if (!isTyping) handleSend(`I cast ${s}.`); }}
-                                onMouseEnter={e => { setHoveredSpell(`c-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                onMouseEnter={e => { setHoveredSpell(`c-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: fs(0.6), color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
                                 onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
-                                style={{ padding: "6px 10px", background: active ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.08)", borderRadius: "5px", fontSize: "0.8rem", cursor: isTyping ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: isTyping ? 0.55 : 1 }}
+                                style={{ padding: "6px 10px", background: active ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.08)", borderRadius: "5px", fontSize: fs(0.8), cursor: isTyping ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: isTyping ? 0.55 : 1 }}
                               >
                                 <span>✦ {s}</span>
-                                <span style={{ fontSize: "0.58rem", color: "#8b5cf6", fontWeight: 600 }}>at-will</span>
+                                <span style={{ fontSize: fs(0.58), color: "#8b5cf6", fontWeight: 600 }}>at-will</span>
                               </div>
                             </div>
                           );
@@ -3641,13 +3642,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       return (
                         <div>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                            <div style={{ fontSize: "0.65rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Prepared Spells</div>
+                            <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Prepared Spells</div>
                             {slotLevels.length > 0 && (
                               <div style={{ display: "flex", gap: "5px" }}>
                                 {slotLevels.map(lvl => {
                                   const avail = Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0));
                                   return (
-                                    <span key={lvl} style={{ fontSize: "0.58rem", background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600 }}>
+                                    <span key={lvl} style={{ fontSize: fs(0.58), background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600 }}>
                                       L{lvl}: {avail}/{maxSlots[lvl]}
                                     </span>
                                   );
@@ -3672,12 +3673,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     pendingSpellCastRef.current += 1;
                                     handleSend(`I cast ${s}.`);
                                   }}
-                                  onMouseEnter={e => { setHoveredSpell(`p-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: "0.6rem", color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                  onMouseEnter={e => { setHoveredSpell(`p-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: fs(0.6), color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
                                   onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
-                                  style={{ padding: "6px 10px", background: canCast && active ? "rgba(139,92,246,0.22)" : canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: "0.8rem", cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active && canCast ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: canCast ? 1 : 0.4 }}
+                                  style={{ padding: "6px 10px", background: canCast && active ? "rgba(139,92,246,0.22)" : canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: fs(0.8), cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active && canCast ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: canCast ? 1 : 0.4 }}
                                 >
                                   <span style={{ color: canCast ? undefined : "#475569" }}>◈ {s}</span>
-                                  <span style={{ fontSize: "0.58rem", color: canCast ? "#8b5cf6" : "#3f3f46", fontWeight: 600 }}>
+                                  <span style={{ fontSize: fs(0.58), color: canCast ? "#8b5cf6" : "#3f3f46", fontWeight: 600 }}>
                                     {availLvl !== null ? `L${availLvl} slot` : "no slots"}
                                   </span>
                                 </div>
@@ -3692,19 +3693,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                 {/* Inventory with drop buttons */}
                 <div>
-                  <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Inventory</h3>
+                  <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Inventory</h3>
                   {/* Currency */}
                   <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "6px", padding: "8px 10px", marginBottom: "6px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "0.78rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }}>Currency</span>
+                      <span style={{ fontSize: fs(0.78), color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }}>Currency</span>
                       {campaignParty.filter(c => c.id !== character.id).length > 0 && (
                         <button onClick={() => { setTradingCurrency(!tradingCurrency); setCurrencyAmount(""); setCurrencyTarget(null); }}
-                          style={{ fontSize: "0.62rem", color: tradingCurrency ? "#a78bfa" : "#64748b", background: tradingCurrency ? "rgba(139,92,246,0.15)" : "none", border: tradingCurrency ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 6px" }}>
+                          style={{ fontSize: fs(0.62), color: tradingCurrency ? "#a78bfa" : "#64748b", background: tradingCurrency ? "rgba(139,92,246,0.15)" : "none", border: tradingCurrency ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 6px" }}>
                           {tradingCurrency ? "cancel" : "send"}
                         </button>
                       )}
                     </div>
-                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: "0.82rem" }}>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: fs(0.82) }}>
                       {([
                         { key: "pp" as const, color: "#e2e8f0", amount: character.inventory?.pp ?? 0 },
                         { key: "gp" as const, color: "#fbbf24", amount: character.inventory?.gold ?? 0 },
@@ -3714,14 +3715,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       ]).map(({ key, color, amount }) => (
                         <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1, cursor: "help" }}
                           onMouseEnter={e => showTooltip(
-                            <div style={{ background: "#1a1730", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "7px", padding: "8px 11px", width: "170px", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.6)", whiteSpace: "normal" }}>
-                              <div style={{ fontWeight: "bold", color, marginBottom: "2px", fontSize: "0.73rem" }}>{CURRENCY_INFO[key].name}</div>
-                              <div style={{ color: "#94a3b8", fontSize: "0.68rem" }}>{CURRENCY_INFO[key].exchange}</div>
+                            <div style={{ background: "#1a1730", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "7px", padding: "8px 11px", width: "170px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.6)", whiteSpace: "normal" }}>
+                              <div style={{ fontWeight: "bold", color, marginBottom: "2px", fontSize: fs(0.73) }}>{CURRENCY_INFO[key].name}</div>
+                              <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{CURRENCY_INFO[key].exchange}</div>
                             </div>, e)}
                           onMouseLeave={hideTooltip}
                         >
                           <span style={{ color, fontWeight: "bold" }}>{amount}</span>
-                          <span style={{ color: "#64748b", fontSize: "0.72rem" }}>{key}</span>
+                          <span style={{ color: "#64748b", fontSize: fs(0.72) }}>{key}</span>
                         </div>
                       ))}
                     </div>
@@ -3729,18 +3730,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
                         <div style={{ display: "flex", gap: "5px", alignItems: "center", marginBottom: "6px", flexWrap: "wrap" }}>
                           <input type="number" min={1} value={currencyAmount} onChange={e => setCurrencyAmount(e.target.value)} placeholder="Amt"
-                            style={{ width: "60px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: "0.78rem" }} />
+                            style={{ width: "60px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: fs(0.78) }} />
                           <select value={currencyDenom} onChange={e => setCurrencyDenom(e.target.value as "cp"|"sp"|"ep"|"gp"|"pp")}
-                            style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 5px", fontSize: "0.78rem" }}>
+                            style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 5px", fontSize: fs(0.78) }}>
                             <option value="pp">pp</option>
                             <option value="gp">gp</option>
                             <option value="ep">ep</option>
                             <option value="sp">sp</option>
                             <option value="cp">cp</option>
                           </select>
-                          <span style={{ color: "#475569", fontSize: "0.72rem" }}>to</span>
+                          <span style={{ color: "#475569", fontSize: fs(0.72) }}>to</span>
                           <select value={currencyTarget?.id ?? ""} onChange={e => setCurrencyTarget(campaignParty.find(c => c.id === e.target.value) ?? null)}
-                            style={{ flex: 1, minWidth: "80px", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: "0.78rem" }}>
+                            style={{ flex: 1, minWidth: "80px", background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "4px", color: "white", padding: "4px 6px", fontSize: fs(0.78) }}>
                             <option value="">Select…</option>
                             {campaignParty.filter(c => c.id !== character.id).map(c => (
                               <option key={c.id} value={c.id}>{c.name}</option>
@@ -3750,7 +3751,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <button
                           onClick={() => { const amt = parseInt(currencyAmount, 10); if (!isNaN(amt) && amt > 0 && currencyTarget) giftCurrency(amt, currencyDenom, currencyTarget); }}
                           disabled={!currencyAmount || !currencyTarget || parseInt(currencyAmount, 10) <= 0}
-                          style={{ width: "100%", padding: "5px", background: "rgba(139,92,246,0.2)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "4px", color: "#c4b5fd", fontSize: "0.78rem", cursor: "pointer", opacity: (!currencyAmount || !currencyTarget || parseInt(currencyAmount,10) <= 0) ? 0.4 : 1 }}>
+                          style={{ width: "100%", padding: "5px", background: "rgba(139,92,246,0.2)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "4px", color: "#c4b5fd", fontSize: fs(0.78), cursor: "pointer", opacity: (!currencyAmount || !currencyTarget || parseInt(currencyAmount,10) <= 0) ? 0.4 : 1 }}>
                           Send Currency
                         </button>
                       </div>
@@ -3771,21 +3772,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div key={itemKey} style={{ marginBottom: "4px" }}>
                         <div style={{ position: "relative" }}>
                           <div
-                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: isTrading ? "6px 6px 0 0" : "6px", fontSize: "0.82rem", border: `1px solid ${isTrading ? "rgba(139,92,246,0.5)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: isTrading ? "6px 6px 0 0" : "6px", fontSize: fs(0.82), border: `1px solid ${isTrading ? "rgba(139,92,246,0.5)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
                             onMouseEnter={e => { setHoveredItem(itemKey); if (catalogItem && !isTrading) showTooltip(
-                              <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                              <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                                  <span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{name}</span>
-                                  <span style={{ color: rarityColor, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
+                                  <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{name}</span>
+                                  <span style={{ color: rarityColor, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
                                 </div>
-                                <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{catalogItem.description}</div>
+                                <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{catalogItem.description}</div>
                                 {catalogItem.effects.map((fx, fi) => fx.description && (
-                                  <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>
+                                  <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>
                                     {fx.description}
                                   </div>
                                 ))}
                                 {catalogItem.requiresAttunement && (
-                                  <div style={{ color: "#64748b", fontSize: "0.62rem", marginTop: "5px" }}>Requires Attunement</div>
+                                  <div style={{ color: "#64748b", fontSize: fs(0.62), marginTop: "5px" }}>Requires Attunement</div>
                                 )}
                               </div>, e); }}
                             onMouseLeave={() => { setHoveredItem(null); hideTooltip(); }}
@@ -3795,7 +3796,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: catalogItem ? rarityColor : "#e2e8f0" }}>{name}</div>
                                 {catalogItem && (
-                                  <div style={{ fontSize: "0.58rem", color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
+                                  <div style={{ fontSize: fs(0.58), color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
                                     {RARITY_LABELS[catalogItem.rarity]}{catalogItem.requiresAttunement ? " · Attunement" : ""}{catalogItem.cursed ? " ⚠️" : ""}
                                   </div>
                                 )}
@@ -3805,7 +3806,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               {catalogItem?.consumable && (
                                 <button
                                   onClick={() => handleUseItem(name)}
-                                  style={{ fontSize: "0.58rem", color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
+                                  style={{ fontSize: fs(0.58), color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
                                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
                                   onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
                                 >Use</button>
@@ -3814,7 +3815,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 <button
                                   onClick={() => setTradingItemKey(isTrading ? null : itemKey)}
                                   title="Trade this item"
-                                  style={{ fontSize: "0.58rem", color: isTrading ? "#a78bfa" : "#64748b", background: isTrading ? "rgba(139,92,246,0.15)" : "none", border: isTrading ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 5px" }}
+                                  style={{ fontSize: fs(0.58), color: isTrading ? "#a78bfa" : "#64748b", background: isTrading ? "rgba(139,92,246,0.15)" : "none", border: isTrading ? "1px solid rgba(139,92,246,0.4)" : "none", borderRadius: "4px", cursor: "pointer", padding: "2px 5px" }}
                                   onMouseEnter={e => { if (!isTrading) e.currentTarget.style.color = "#a78bfa"; }}
                                   onMouseLeave={e => { if (!isTrading) e.currentTarget.style.color = "#64748b"; }}
                                 >trade</button>
@@ -3822,7 +3823,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               <button
                                 onClick={() => dropItem(name, slot)}
                                 title="Drop to party pool"
-                                style={{ fontSize: "0.58rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
+                                style={{ fontSize: fs(0.58), color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
                                 onMouseEnter={e => { e.currentTarget.style.color = "#f59e0b"; }}
                                 onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; }}
                               >drop</button>
@@ -3831,23 +3832,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                         {isTrading && (
                           <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.4)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "6px 8px" }}>
-                            <div style={{ fontSize: "0.62rem", color: "#a78bfa", marginBottom: "5px", fontWeight: "bold" }}>Send to:</div>
+                            <div style={{ fontSize: fs(0.62), color: "#a78bfa", marginBottom: "5px", fontWeight: "bold" }}>Send to:</div>
                             {tradeTargets.length === 0 ? (
-                              <div style={{ fontSize: "0.65rem", color: "#64748b" }}>No other party members.</div>
+                              <div style={{ fontSize: fs(0.65), color: "#64748b" }}>No other party members.</div>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                                 {tradeTargets.map(tc => (
                                   <button key={tc.id}
                                     onClick={() => giftItem(name, slot, tc)}
-                                    style={{ textAlign: "left", padding: "4px 8px", borderRadius: "4px", fontSize: "0.72rem", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#e2e8f0", cursor: "pointer", transition: "background 0.15s" }}
+                                    style={{ textAlign: "left", padding: "4px 8px", borderRadius: "4px", fontSize: fs(0.72), background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#e2e8f0", cursor: "pointer", transition: "background 0.15s" }}
                                     onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.25)"; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.1)"; }}
                                   >
-                                    {tc.name} <span style={{ color: "#64748b", fontSize: "0.62rem" }}>{tc.race} {tc.class}</span>
+                                    {tc.name} <span style={{ color: "#64748b", fontSize: fs(0.62) }}>{tc.race} {tc.class}</span>
                                   </button>
                                 ))}
                                 <button onClick={() => setTradingItemKey(null)}
-                                  style={{ padding: "3px 8px", borderRadius: "4px", fontSize: "0.65rem", background: "none", border: "none", color: "#64748b", cursor: "pointer", textAlign: "left" }}
+                                  style={{ padding: "3px 8px", borderRadius: "4px", fontSize: fs(0.65), background: "none", border: "none", color: "#64748b", cursor: "pointer", textAlign: "left" }}
                                 >Cancel</button>
                               </div>
                             )}
@@ -3863,22 +3864,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   {isPartyLeader ? (
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "1rem", filter: "drop-shadow(0 0 5px rgba(251,191,36,0.8))" }}>👑</span>
-                        <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#fbbf24" }}>Party Leader</span>
+                        <span style={{ fontSize: fs(1), filter: "drop-shadow(0 0 5px rgba(251,191,36,0.8))" }}>👑</span>
+                        <span style={{ fontSize: fs(0.78), fontWeight: "bold", color: "#fbbf24" }}>Party Leader</span>
                       </div>
                       {campaignParty.filter(c => c.id !== partyLeaderId).length > 0 && (
                         <div>
-                          <p style={{ fontSize: "0.68rem", color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer Leadership</p>
+                          <p style={{ fontSize: fs(0.68), color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Transfer Leadership</p>
                           <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
                             {campaignParty.filter(c => c.id !== partyLeaderId).map(c => (
                               <button key={c.id} onClick={() => transferLeadership(c.id)}
                                 style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "7px", border: "1px solid rgba(251,191,36,0.2)", background: "rgba(251,191,36,0.04)", cursor: "pointer", transition: "all 0.15s", textAlign: "left" }}
                                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(251,191,36,0.12)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.5)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.background = "rgba(251,191,36,0.04)"; e.currentTarget.style.borderColor = "rgba(251,191,36,0.2)"; }}>
-                                <span style={{ fontSize: "0.8rem" }}>👑</span>
+                                <span style={{ fontSize: fs(0.8) }}>👑</span>
                                 <div>
-                                  <div style={{ fontSize: "0.78rem", fontWeight: "bold", color: "#e2e8f0" }}>{c.name}</div>
-                                  <div style={{ fontSize: "0.62rem", color: "#64748b" }}>{c.race} {c.class} · Make Leader</div>
+                                  <div style={{ fontSize: fs(0.78), fontWeight: "bold", color: "#e2e8f0" }}>{c.name}</div>
+                                  <div style={{ fontSize: fs(0.62), color: "#64748b" }}>{c.race} {c.class} · Make Leader</div>
                                 </div>
                               </button>
                             ))}
@@ -3888,10 +3889,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                   ) : leaderChar ? (
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
-                      <span style={{ fontSize: "0.9rem", filter: "drop-shadow(0 0 4px rgba(251,191,36,0.6))" }}>👑</span>
+                      <span style={{ fontSize: fs(0.9), filter: "drop-shadow(0 0 4px rgba(251,191,36,0.6))" }}>👑</span>
                       <div>
-                        <div style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold" }}>{leaderChar.name}</div>
-                        <div style={{ fontSize: "0.62rem", color: "#64748b" }}>is leading the party</div>
+                        <div style={{ fontSize: fs(0.72), color: "#fbbf24", fontWeight: "bold" }}>{leaderChar.name}</div>
+                        <div style={{ fontSize: fs(0.62), color: "#64748b" }}>is leading the party</div>
                       </div>
                     </div>
                   ) : null}
@@ -3900,13 +3901,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 {/* Rest */}
                 <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
                   <button onClick={handleShortRest}
-                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(245,158,11,0.1)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
+                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: fs(0.75), fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(245,158,11,0.1)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.1)"; }}>
                     🌙 Short Rest
                   </button>
                   <button onClick={handleLongRest}
-                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(99,102,241,0.1)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
+                    style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: fs(0.75), fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(99,102,241,0.1)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}>
                     ☀️ Long Rest
@@ -3914,7 +3915,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 </div>
               </div>
             ) : (
-              <div style={{ textAlign: "center", color: "#94a3b8", marginTop: "40px", fontSize: "0.9rem" }}>Loading character...</div>
+              <div style={{ textAlign: "center", color: "#94a3b8", marginTop: "40px", fontSize: fs(0.9) }}>Loading character...</div>
             )}
           </div>
         )}
@@ -3923,16 +3924,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {sidebarTab === "log" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-              <span style={{ fontSize: "0.78rem", color: "#64748b" }}>{logEntries.length} entries</span>
+              <span style={{ fontSize: fs(0.78), color: "#64748b" }}>{logEntries.length} entries</span>
               <button onClick={() => exportLog(logEntries, params.id)} disabled={logEntries.length === 0}
-                style={{ padding: "5px 12px", borderRadius: "6px", fontSize: "0.75rem", border: "1px solid var(--border)", background: "transparent", color: logEntries.length === 0 ? "#475569" : "#94a3b8", cursor: logEntries.length === 0 ? "default" : "pointer", transition: "color 0.15s, border-color 0.15s" }}
+                style={{ padding: "5px 12px", borderRadius: "6px", fontSize: fs(0.75), border: "1px solid var(--border)", background: "transparent", color: logEntries.length === 0 ? "#475569" : "#94a3b8", cursor: logEntries.length === 0 ? "default" : "pointer", transition: "color 0.15s, border-color 0.15s" }}
                 onMouseEnter={e => { if (logEntries.length > 0) { e.currentTarget.style.color = "white"; e.currentTarget.style.borderColor = "var(--primary)"; }}}
                 onMouseLeave={e => { e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 ↓ Export .md
               </button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              {logEntries.length === 0 && <p style={{ color: "#475569", fontSize: "0.85rem", textAlign: "center", marginTop: "40px" }}>No events yet. Start adventuring!</p>}
+              {logEntries.length === 0 && <p style={{ color: "#475569", fontSize: fs(0.85), textAlign: "center", marginTop: "40px" }}>No events yet. Start adventuring!</p>}
               {logEntries.map(entry => {
                 const time     = entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                 const isDM     = entry.role === "dm";
@@ -3940,12 +3941,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 return (
                   <div key={entry.id} style={{ padding: "9px 12px", borderRadius: "8px", borderLeft: `3px solid ${isDM ? "#8b5cf6" : isPlayer ? "#0ea5e9" : "#475569"}`, background: isDM ? "rgba(139,92,246,0.08)" : isPlayer ? "rgba(14,165,233,0.08)" : "rgba(0,0,0,0.2)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <span style={{ fontSize: "0.68rem", fontWeight: "bold", color: isDM ? "#a78bfa" : isPlayer ? "#38bdf8" : "#64748b" }}>
+                      <span style={{ fontSize: fs(0.68), fontWeight: "bold", color: isDM ? "#a78bfa" : isPlayer ? "#38bdf8" : "#64748b" }}>
                         {isDM ? "DM" : entry.role === "system" ? "System" : (entry.sender ?? "Player")}
                       </span>
-                      <span style={{ fontSize: "0.65rem", color: "#475569" }}>{time}</span>
+                      <span style={{ fontSize: fs(0.65), color: "#475569" }}>{time}</span>
                     </div>
-                    <p style={{ fontSize: "0.78rem", color: entry.role === "system" ? "#94a3b8" : "#cbd5e1", lineHeight: 1.45, margin: 0 }}>
+                    <p style={{ fontSize: fs(0.78), color: entry.role === "system" ? "#94a3b8" : "#cbd5e1", lineHeight: 1.45, margin: 0 }}>
                       {entry.content.length > 180 ? entry.content.slice(0, 180) + "…" : entry.content}
                     </p>
                   </div>
