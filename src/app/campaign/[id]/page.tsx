@@ -494,8 +494,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const usesCCTableRef       = useRef(false);
   const charWriteRef         = useRef<((charId: string, fields: Record<string, unknown>) => Promise<void>) | null>(null);
   const skipTurnTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const campaignLoadingRef   = useRef(false);
-  const loadingTimeoutRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const campaignLoadingRef      = useRef(false);
+  const loadingTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enqueueNarrationRef     = useRef<((text: string) => void) | null>(null);
 
   // ── Campaign loading gate — waits for DM text, scene image, and ambiance ────
   useEffect(() => {
@@ -512,6 +513,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (firstDm) {
         setMessages(prev => { const i = prev.findIndex(m => m.role === "dm"); return i < 0 ? prev : [...prev.slice(0, i), ...prev.slice(i + 1)]; });
         setOpeningRevealText(firstDm.content);
+        enqueueNarrationRef.current?.(firstDm.content);
       }
     }, 950);
   }, [campaignLoading, loadFadingOut, loadDmDone, loadSceneDone, loadAmbianceDone]);
@@ -1229,6 +1231,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
     playNextInQueue();
   }, [playNextInQueue]);
+  // Keep the loading-screen effect's narration call up to date
+  useEffect(() => { enqueueNarrationRef.current = enqueueNarration; }, [enqueueNarration]);
 
   // ── Party join/leave narration ────────────────────────────────────────────────
   // Joins are debounced 8 s so multiple arrivals batch into one DM announcement.
@@ -2137,6 +2141,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
   const isPartyLeader       = !!character && character.id === partyLeaderId;
+  // True when the character whose turn it is belongs to this user — in couch co-op all chars
+  // share the same user_id so this is always true; in pure multiplayer it restricts to your own turns.
+  const canPassTurn = (() => {
+    const turnChar = campaignParty.find(c => c.id === currentTurnPlayerId);
+    return !turnChar || turnChar.user_id === userId;
+  })();
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
     : (turnOrder.length <= 1 || currentTurnPlayerId === character?.id);
@@ -2876,7 +2886,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
                         )}
-                        {char.id !== character?.id && isPartyLeader && !isCurrentTurn && (
+                        {char.id !== character?.id && canPassTurn && !isCurrentTurn && (
                           <button
                             onClick={e => { e.stopPropagation(); handleTurnSkip(char, idx); }}
                             title={`Pass turn to ${char.name}`}
