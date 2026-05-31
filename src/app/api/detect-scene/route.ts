@@ -78,13 +78,32 @@ function buildCacheKey(type: string, modifiers: string[], isCombat: boolean): st
   return isCombat ? `${base}_combat` : base;
 }
 
-function buildPrompt(type: string, modifiers: string[], description: string, isCombat: boolean): string {
+function buildPrompt(
+  type: string,
+  modifiers: string[],
+  description: string,
+  isCombat: boolean,
+  party?: { race: string; class: string }[],
+  enemies?: { name: string }[],
+): string {
   const base      = SCENE_BASE[type] ?? `a ${type} location in a dark fantasy world`;
   const combat    = isCombat ? ` ${COMBAT_SUFFIX[type] ?? "as fierce combat erupts"}` : "";
   const style     = STYLE_VARIANTS[type] ?? "dramatic dark fantasy concept art, cinematic atmosphere";
   const modStr    = modifiers.length > 0 ? ` Scene quality: ${modifiers.join(", ")}.` : "";
   const narrative = description.length > 20 ? ` ${description}` : "";
-  return `${style}. ${base}${combat}.${modStr}${narrative} Ultra-wide cinematic landscape framing, no text, no UI, no watermarks, no modern elements. Highly detailed.`;
+
+  // Include party characters and active enemies to make scenes feel personal and alive
+  let figures = "";
+  if (party && party.length > 0) {
+    const charDescs = party.slice(0, 4).map(c => `${c.race} ${c.class}`).join(", ");
+    figures += ` Adventuring party present: ${charDescs}.`;
+  }
+  if (isCombat && enemies && enemies.length > 0) {
+    const enemyDescs = enemies.slice(0, 3).map(e => e.name).join(", ");
+    figures += ` Enemies: ${enemyDescs}.`;
+  }
+
+  return `${style}. ${base}${combat}.${modStr}${narrative}${figures} Ultra-wide cinematic landscape framing, no text, no UI, no watermarks, no modern elements. Highly detailed.`;
 }
 
 // How similar is the new scene to the current one? Used to suppress trivial re-draws.
@@ -114,8 +133,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       narrative: string; currentScene: string; isCombat?: boolean; campaignDescription?: string;
+      party?:   { name: string; race: string; class: string }[];
+      enemies?: { name: string }[];
     };
-    const { narrative, isCombat = false, campaignDescription } = body;
+    const { narrative, isCombat = false, campaignDescription, party, enemies } = body;
     currentScene = body.currentScene ?? "wilderness";
 
     if (!narrative?.trim()) return Response.json({ sceneName: currentScene });
@@ -155,7 +176,7 @@ export async function POST(req: NextRequest) {
 
     // Same scene key AND AI confirmed no meaningful visual change — nothing to do
     if (sceneName === currentScene && !shouldChange) {
-      return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description });
+      return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description, shouldChange: false });
     }
     // Different key always proceeds (new scene type or modifiers = new image needed);
     // same key with shouldChange=true also proceeds (dramatic in-place transformation)
@@ -165,11 +186,11 @@ export async function POST(req: NextRequest) {
     const cacheMap = new Map((allCached ?? []).map(s => [s.name as string, s.image_url as string]));
 
     const exactUrl = cacheMap.get(sceneName);
-    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl, sceneType, modifiers, description });
+    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl, sceneType, modifiers, description, shouldChange: true });
 
     // Step 3: Truly new scene — generate a bespoke image and save it for future reuse
-    const openai    = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const fullPrompt = buildPrompt(sceneType, modifiers, description, isCombat);
+    const openai     = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const fullPrompt = buildPrompt(sceneType, modifiers, description, isCombat, party, enemies);
 
     const imgResponse = await openai.images.generate({
       model:   "gpt-image-1",
@@ -195,9 +216,9 @@ export async function POST(req: NextRequest) {
     const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(storageKey);
     await supabase.from("scenes").upsert({ name: sceneName, image_url: publicUrl });
 
-    return Response.json({ sceneName, imageUrl: publicUrl, sceneType, modifiers, description });
+    return Response.json({ sceneName, imageUrl: publicUrl, sceneType, modifiers, description, shouldChange: true });
   } catch (err) {
     console.error("[detect-scene]", err);
-    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null });
+    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null, shouldChange: false });
   }
 }

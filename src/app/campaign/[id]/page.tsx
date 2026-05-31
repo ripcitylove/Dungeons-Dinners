@@ -285,6 +285,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [input,            setInput]             = useState("");
   const [isTyping,         setIsTyping]          = useState(false);
   const [showDice,         setShowDice]          = useState(false);
+  const [pendingDiceShow,  setPendingDiceShow]   = useState(false);
   const [showChatHint,     setShowChatHint]      = useState(false);
   const [tutorialStep,     setTutorialStep]       = useState<number | null>(null);
   const [character,        setCharacter]         = useState<Character | null>(null);
@@ -1087,15 +1088,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
   }, [enemies.map(e => e.id).join(",")]);
 
-  // When DM names a player to roll: auto-open their dice panel
-  // Turn does NOT advance — rollRequestedUserId gates who can submit
+  // When DM names a player to roll: mark pending — dice opens AFTER narration finishes
   useEffect(() => {
-    if (!diceRollTarget || !character) return;
+    if (!diceRollTarget) {
+      setPendingDiceShow(false);
+      return;
+    }
+    if (!character) return;
     if (diceRollTarget.toLowerCase() === character.name.toLowerCase()) {
-      setShowDice(true);
+      setPendingDiceShow(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diceRollTarget]);
+
+  // Open dice panel once narration and DM typing have both finished
+  useEffect(() => {
+    if (pendingDiceShow && !narrating && !isTyping) {
+      setPendingDiceShow(false);
+      setShowDice(true);
+    }
+  }, [pendingDiceShow, narrating, isTyping]);
 
   // ── State changes (HP, gold, items, XP) ──────────────────────────────────────
 
@@ -1120,12 +1132,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Items, gold, status effects, and spell slots require an explicit name match.
     // XP alone may be distributed party-wide (null target_name).
     const isExplicitTarget = !!change.target_name; // target_name matched (non-match already returned above)
+    // Spell slots with null target apply only to the current-turn character (solo or multiplayer).
+    const isCurrentTurnChar = turnOrderRef.current.length <= 1
+      || turnOrderRef.current[currentTurnIndexRef.current] === char.id;
     const hasChange =
       change.hp_delta !== 0 ||
+      (change.spell_slots_used > 0 && (isExplicitTarget || isCurrentTurnChar)) ||
       (isExplicitTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
         change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
-        change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0 ||
-        change.spell_slots_used > 0)) ||
+        change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
       change.xp_award > 0;
     if (!hasChange) return;
 
@@ -1149,9 +1164,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
     }
 
-    // Spell slots — only apply when explicitly targeting this character; skip if already paid via click-cast
+    // Spell slots — apply when named explicitly OR when DM said "you" (null target, current-turn char only).
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
-    if (isExplicitTarget && change.spell_slots_used > 0) {
+    if ((isExplicitTarget || isCurrentTurnChar) && change.spell_slots_used > 0) {
       if (pendingSpellCastRef.current > 0) {
         pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - change.spell_slots_used);
       } else {
@@ -1168,7 +1183,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (isExplicitTarget) change.weapons_gained.forEach(w => parts.push(`+${w}`));
     if (isExplicitTarget) change.status_effects_gained.forEach(s => parts.push(`⚡ ${s}`));
     if (isExplicitTarget) change.status_effects_lost.forEach(s => parts.push(`✓ ${s} cleared`));
-    if (isExplicitTarget && change.spell_slots_used > 0) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
+    if ((isExplicitTarget || isCurrentTurnChar) && change.spell_slots_used > 0) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
     if (isExplicitTarget && newHp === 0 && change.hp_delta < 0) parts.push("💀 UNCONSCIOUS");
 
     // XP + level up
@@ -1247,13 +1262,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     const cleanup = () => {
       el.oncanplaythrough = null;
+      el.onerror          = null;
+      el.onended          = null;
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
 
     el.onended = cleanup;
-    el.onerror = () => cleanup();
+    el.onerror = cleanup;
     el.src = entry as string;
     // Wait for canplaythrough (same pattern as working ambiance player) before calling play().
     // Xbox Edge requires the browser to confirm data is available; calling play() immediately
@@ -1322,7 +1339,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         full += chunk; narBuf += chunk;
         setStreamingContent(full);
         if (narrationEnabledRef.current) {
-          const m = narBuf.match(/^([\s\S]{60,}?[.!?…]["']?)\s+/);
+          const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
         }
       }
@@ -1550,6 +1567,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCombatActive(true);
       setSidebarTab("combat");
       channelRef.current?.send({ type: "broadcast", event: "enemies_spawned", payload: { enemies: spawned } });
+      // Immediately switch to combat music without waiting for scene image generation
+      const combatSceneName = currentSceneRef.current.replace(/_combat$/, "") + "_combat";
+      (window as Window).__dndSetMusicScene?.(combatSceneName);
     } catch (err) {
       console.error("[spawnEnemies]", err);
     }
@@ -1584,7 +1604,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         });
         channelRef.current?.send({ type: "broadcast", event: "enemies_updated", payload: { changes, combat_ended } });
       }
-      if (combat_ended) setCombatActive(false);
+      if (combat_ended) {
+        setCombatActive(false);
+        // Return to ambient scene music when combat ends
+        const ambientScene = currentSceneRef.current.replace(/_combat$/, "");
+        (window as Window).__dndSetMusicScene?.(ambientScene);
+      }
     } catch (err) {
       console.error("[updateEnemyStates]", err);
     }
@@ -1773,7 +1798,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setStreamingContent(full);
         // Sentence-level streaming narration — fires TTS as each sentence completes
         if (narrationEnabledRef.current) {
-          const m = narBuf.match(/^([\s\S]{60,}?[.!?…]["']?)\s+/);
+          const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
         }
       }
@@ -1782,22 +1807,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
-      // Detect which character the DM is asking to roll, and what die type
-      // Safety guard: only honour a roll request for the character whose turn it currently is.
-      // If the DM asks a non-active player to roll, discard the request — it should not happen.
-      const rollTarget   = detectDiceRollTarget(full);
-      const currentTurnCharIdForRoll = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-      const targetChar   = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
-      const isCurrentTurnPlayer = !targetChar || turnOrderRef.current.length <= 1
-        || targetChar.id === currentTurnCharIdForRoll;
-      const validRollTarget  = isCurrentTurnPlayer ? rollTarget  : null;
-      const targetUserId     = isCurrentTurnPlayer ? (targetChar?.user_id ?? null) : null;
-      const detectedRollMode = validRollTarget ? detectRollMode(full) : "normal";
-      setDiceRollTarget(validRollTarget);
-      setRequiredDiceType(detectRequiredDiceType(full));
+      // Detect which character the DM is asking to roll, and what die type.
+      // If DM asks a different character than the current turn, rewind the turn to that character
+      // so they can roll before the game advances to the next player.
+      const rollTarget      = detectDiceRollTarget(full);
+      const detectedDieType = detectRequiredDiceType(full);
+      let targetChar        = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
+
+      // Unnamed roll request (DM says "Roll a DEX save" without naming anyone):
+      // assign to the player who just acted — they're almost always the one who needs to roll.
+      // Fall back to the current turn character for solo play.
+      if (!targetChar && detectedDieType !== null && /\b(?:roll|make|give me)\b/i.test(full)) {
+        const prevActingName = opts?.prevPlayerName;
+        const prevActingChar = prevActingName
+          ? campaignPartyRef.current.find(c => c.name === prevActingName)
+          : null;
+        const currentTurnCharId = turnOrderRef.current[currentTurnIndexRef.current];
+        const currentTurnChar   = currentTurnCharId
+          ? campaignPartyRef.current.find(c => c.id === currentTurnCharId)
+          : null;
+        targetChar = prevActingChar ?? currentTurnChar ?? characterRef.current;
+      }
+
+      const validRollTarget  = targetChar?.name ?? rollTarget;
+      const targetUserId     = targetChar?.user_id ?? null;
+      const detectedRollMode = (validRollTarget || detectedDieType) ? detectRollMode(full) : "normal";
+      setDiceRollTarget(validRollTarget ?? null);
+      setRequiredDiceType(detectedDieType);
       setRequiredRollMode(detectedRollMode !== "normal" ? detectedRollMode : null);
       setRollRequestedUserId(targetUserId);
       rollRequestedUserIdRef.current = targetUserId;
+      // Rewind turn to rolling character if DM addressed someone other than the current turn player
+      if (targetChar && turnOrderRef.current.length > 1) {
+        const rollerIdx = turnOrderRef.current.findIndex(id => id === targetChar.id);
+        if (rollerIdx >= 0 && rollerIdx !== currentTurnIndexRef.current) {
+          setCurrentTurnIndex(rollerIdx);
+          currentTurnIndexRef.current = rollerIdx;
+          const rollerPartyIdx = campaignPartyRef.current.findIndex(c => c.id === targetChar.id);
+          if (rollerPartyIdx >= 0) setActiveCharIdx(rollerPartyIdx);
+          channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: rollerIdx } });
+        }
+      }
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
       // Enemy combat: spawn enemies when combat starts, or update existing enemy states
@@ -1856,36 +1906,44 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      // Scene detection (non-blocking — updates background when ready)
-      const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
-      setSceneLoading(true);
-      fetch("/api/detect-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: isCombatNow, campaignDescription: campaignDescriptionRef.current }) })
-        .then(r => r.json())
-        .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
-          if (imageUrl && sceneName !== currentSceneRef.current) {
-            currentSceneRef.current = sceneName;
-            setCurrentSceneUrl(imageUrl);
-            channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
-            (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
-          }
-          // Ambient audio generation (non-blocking, fires whether or not image changed)
-          if (sceneType) {
-            fetch("/api/generate-scene-audio", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: isCombatNow }),
-            })
-              .then(r => r.json())
-              .then(({ audioUrl }: { audioUrl: string | null }) => {
-                if (audioUrl) {
-                  (window as Window).__dndSetAmbiance?.(audioUrl);
-                  channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl } });
-                }
-              })
-              .catch(() => {});
-          }
+      // Scene detection — skip on roll submissions (dice mechanics, not narrative scene changes)
+      if (!opts?.isRollResult) {
+        const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
+        const partySnap   = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class }));
+        const enemySnap   = enemiesRef.current.filter(e => !e.is_defeated).map(e => ({ name: e.name }));
+        setSceneLoading(true);
+        fetch("/api/detect-scene", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: isCombatNow, campaignDescription: campaignDescriptionRef.current, party: partySnap, enemies: enemySnap }),
         })
-        .catch(() => {})
-        .finally(() => setSceneLoading(false));
+          .then(r => r.json())
+          .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
+            // Only update background, music, and ambiance when the server decided a change is warranted
+            if (imageUrl) {
+              currentSceneRef.current = sceneName;
+              setCurrentSceneUrl(imageUrl);
+              channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
+              (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
+              // Ambiance is tied to scene changes — only update when the image changed
+              if (sceneType) {
+                fetch("/api/generate-scene-audio", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: isCombatNow }),
+                })
+                  .then(r => r.json())
+                  .then(({ audioUrl }: { audioUrl: string | null }) => {
+                    if (audioUrl) {
+                      (window as Window).__dndSetAmbiance?.(audioUrl);
+                      channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl } });
+                    }
+                  })
+                  .catch(() => {});
+              }
+            }
+          })
+          .catch(() => {})
+          .finally(() => setSceneLoading(false));
+      }
 
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -1945,9 +2003,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
     let nextPlayerName: string | null = null;
     if (isRollSubmit && order.length > 1) {
-      // Roll result: stay on the current player's turn so DM addresses them after resolving the roll
-      const currentCid = order[currentTurnIndexRef.current];
-      nextPlayerName = campaignPartyRef.current.find(c => c.id === currentCid)?.name ?? null;
+      // Roll submitted: DM resolves the roll, then advance to the next player's turn.
+      const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
+      const nextCid = order[nextIdx];
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
+      setCurrentTurnIndex(nextIdx);
+      currentTurnIndexRef.current = nextIdx;
+      channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
+      if (campaignPartyRef.current.length > 1) setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
     } else if (!isRollSubmit && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
@@ -2925,11 +2988,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* Suggested actions */}
         {suggestions.length > 0 && !isTyping && isMyTurn && (
           <div style={{ padding: "10px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.04)" }}>
-            <p style={{ fontSize: "0.65rem", color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
+            <p style={{ fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {suggestions.map((s, i) => (
                 <button key={i} onClick={() => handleSend(s)} disabled={narrating}
-                  style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
+                  style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: `${(chatFontSize * 0.91).toFixed(2)}rem`, border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
                   onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; } }}
                   onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; } }}>
                   {s}
