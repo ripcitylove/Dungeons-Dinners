@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
-import { ALLOWED_EMAIL } from '../../lib/allowedUsers';
 import '../globals.css';
 
 export default function AuthPage() {
@@ -25,14 +24,8 @@ export default function AuthPage() {
     window.__dndMusicPlay?.();
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-
-      if (data.user?.email !== ALLOWED_EMAIL) {
-        await supabase.auth.signOut();
-        throw new Error('Access restricted. This application is private.');
-      }
-
       router.push('/dashboard');
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Login failed');

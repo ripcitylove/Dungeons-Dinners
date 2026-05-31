@@ -44,9 +44,63 @@ function mod(score: number) {
   return m >= 0 ? `+${m}` : `${m}`;
 }
 
+function modNum(score: number): number {
+  return Math.floor((score - 10) / 2);
+}
+
+function profBonusNum(level: number): number {
+  return level <= 4 ? 2 : level <= 8 ? 3 : level <= 12 ? 4 : 5;
+}
+
 function profBonus(level: number): string {
-  const b = level <= 4 ? 2 : level <= 8 ? 3 : level <= 12 ? 4 : 5;
+  const b = profBonusNum(level);
   return `+${b}`;
+}
+
+function sn(n: number): string { return n >= 0 ? `+${n}` : `${n}`; }
+
+const SPELLCASTING_ABILITY: Record<string, keyof Character> = {
+  Bard: "charisma", Cleric: "wisdom", Druid: "wisdom",
+  Paladin: "charisma", Ranger: "wisdom", Sorcerer: "charisma",
+  Warlock: "charisma", Wizard: "intelligence",
+  Fighter: "intelligence", Rogue: "intelligence",
+};
+
+const SKILL_ABILITY: Record<string, keyof Character> = {
+  Athletics: "strength",
+  Acrobatics: "dexterity", "Sleight of Hand": "dexterity", Stealth: "dexterity",
+  Arcana: "intelligence", History: "intelligence", Investigation: "intelligence",
+  Nature: "intelligence", Religion: "intelligence",
+  "Animal Handling": "wisdom", Insight: "wisdom", Medicine: "wisdom",
+  Perception: "wisdom", Survival: "wisdom",
+  Deception: "charisma", Intimidation: "charisma", Performance: "charisma", Persuasion: "charisma",
+};
+
+function buildAttackLine(c: Character): string {
+  const pb = profBonusNum(c.level);
+  const str = modNum(c.strength), dex = modNum(c.dexterity);
+  const parts: string[] = [
+    `Melee ATK ${sn(str + pb)} (STR${sn(str)}+prof${pb})`,
+    `Ranged ATK ${sn(dex + pb)} (DEX${sn(dex)}+prof${pb})`,
+  ];
+  const spKey = SPELLCASTING_ABILITY[c.class];
+  if (spKey && (c.cantrips_known?.length || c.spells_prepared?.length)) {
+    const sm = modNum(c[spKey] as number);
+    parts.push(`Spell ATK ${sn(sm + pb)} · DC ${8 + sm + pb} (${String(spKey).slice(0,3).toUpperCase()}${sn(sm)}+prof${pb})`);
+  }
+  parts.push(`Initiative ${sn(dex)}`);
+  return parts.join(" · ");
+}
+
+function buildSkillLine(c: Character): string {
+  if (!c.skill_proficiencies?.length) return "";
+  const pb = profBonusNum(c.level);
+  const bonuses = c.skill_proficiencies.map(skill => {
+    const key = SKILL_ABILITY[skill];
+    const score = key ? (c[key] as number ?? 10) : 10;
+    return `${skill} ${sn(modNum(score) + pb)}`;
+  });
+  return `Proficient skills (with prof bonus): ${bonuses.join(", ")}`;
 }
 
 const VOICE_AND_RULES = `You are a master Dungeon Master with the storytelling instincts of a seasoned fantasy novelist. Every word you write should pull the player deeper into the world.
@@ -66,14 +120,27 @@ WHAT TO AVOID
 - Don't pad responses. Every sentence should earn its place.
 
 COMBAT (follow D&D 5e rules exactly)
-- Attack rolls: roll d20 + attack bonus vs. the target's AC. Hit = apply damage; miss = describe the near miss.
-- When an enemy attacks the party: roll d20 + enemy attack bonus vs. the character's AC. State the roll result and whether it hits.
-- Damage: roll the damage dice and state the exact number taken, always using the character's name (e.g., "Thorin takes 8 slashing damage").
+- Attack rolls: say "Roll a d20." When the player reports the number, add their ATK bonus (from ATTACK BONUSES in their stat block) and compare to the target AC. Announce: "11 + 5 = 16 — hits AC 14!"
+- Enemy attacks: you roll d20 + enemy ATK bonus vs. character AC yourself. State hit/miss and exact damage taken by the character.
+- Damage: after a hit say "Roll a d[N]" (the weapon die). You add the ability mod and any magic bonuses, then state the total: "6 + 3 = 9 slashing."
 - At 0 HP: the character falls Unconscious (death saving throws apply).
-- Spell saves: call for the appropriate saving throw (e.g., "Roll a DEX save, DC 14").
+- Spell saves: say "Roll a d20." You add their save modifier (ability mod + prof if proficient in that save) and compare to the DC: "9 + 4 = 13 — fails DC 14."
 - Use exact numbers — players need to track their HP.
 - ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
-- ALWAYS name the specific character targeted: "The orc swings at Aragorn — roll 14 hits AC 15, dealing 9 slashing damage."
+- ALWAYS name the specific character targeted: "The orc swings at Aragorn — 14 + 5 = 19 hits AC 15, 9 slashing damage."
+
+MODIFIER HANDLING — YOU DO ALL MATH, PLAYERS ROLL ONLY THE RAW DIE
+You hold the full character sheet. Players submit only the number showing on the physical die.
+- NEVER say "add your modifier", "add proficiency", or ask the player to do any arithmetic.
+- NEVER use phrasing like "roll your Stealth check" or "roll d20 + your DEX" — always say "roll a d20" and calculate the final number yourself.
+- Each character block below contains pre-calculated ATTACK BONUSES and PROFICIENT SKILLS — use them directly, do not re-derive.
+- Attack rolls: d20 result + Melee ATK bonus (STR-based weapons) or Ranged ATK bonus (ranged/finesse/DEX weapons).
+- Spell attacks: d20 result + Spell ATK bonus from the stat block.
+- Skill checks: if the skill appears in Proficient skills list, use that pre-calculated total. Otherwise d20 + raw ability mod only.
+- Saving throws: d20 + ability mod + prof bonus when the save type is in their Save proficiencies list; otherwise d20 + ability mod alone.
+- Damage after a hit: ask "Roll a d[N]." Add STR mod for melee, DEX for ranged/finesse, no mod for most spell damage. Magic weapon bonus (+1/+2/+3) adds to both attack rolls and damage.
+- Critical hit (natural 20): double the damage dice rolled (not the modifier). Roll the weapon die twice, add mod once.
+- Show all arithmetic in one compact line per roll: "8 + 5 = 13 — misses AC 14." Never ask players to verify or re-check.
 
 SPELLS & SLOTS
 - Track spell slot usage. When a leveled spell is cast, state it consumes a slot ("That uses one of your 1st-level slots").
@@ -98,13 +165,13 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Always address characters by their FIRST NAME ONLY (e.g. say "Aria" not "Aria Moonwhisper"). Never use a character's full name in narration or dialogue.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
 - CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then ask the CURRENT TURN player what they do.
-- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a [check], DC [X]." After their roll resolves, address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
+- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." (Never mention modifiers — you will add them when the player reports the result.) After their roll resolves, address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
 - Do NOT include "[Name], roll a [type]" for any character other than the one described above.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 
 MECHANICS (woven into the narrative, not announced)
-- Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll your thieves' tools against DC 13."
+- Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll a d20." (You then add their tool/skill bonus and compare to DC 13.)
 - Treasure is contextual — award it when it makes sense and feels earned. Not every fight ends with loot. Not every NPC carries coin. The world runs on more than gold. Items appear when the DM decides, not on a schedule.
 
 CHARACTER SPOTLIGHT
@@ -173,7 +240,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -219,7 +286,11 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const partyLeaderBlock = partyLeaderName && party && party.length > 1
-    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address ONLY ${partyLeaderName} and explicitly say it is a group/party check. Example: "${partyLeaderName}, roll Stealth for the group." Never ask each party member individually for the same roll.\n`
+    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address ONLY ${partyLeaderName} and explicitly say it is a group/party check. Example: "${partyLeaderName}, roll a d20 for the group." Never ask each party member individually for the same roll.\n`
+    : "";
+
+  const turnSkipBlock = isTurnSkip && skippedPlayerName && currentTurnPlayerName
+    ? `\n[TURN PASSED — ${skippedPlayerName} passes to ${currentTurnPlayerName}]\nBriefly acknowledge ${skippedPlayerName} stepping back (one short phrase). Then re-orient ${currentTurnPlayerName}: in 1–2 sentences describe what they currently see, hear, or face — the immediate situation from their perspective right now. End by asking ${currentTurnPlayerName} directly what they want to do. 3–4 sentences total. No dice rolls, no combat resolution.\n`
     : "";
 
   const isMulti = party && party.length > 1;
@@ -242,8 +313,9 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const alignStr   = c.alignment ? `\n  Alignment: ${c.alignment}` : "";
       const bgStr      = c.background ? `\n  Background: ${c.background}` : "";
       const saves      = CLASS_SAVES[c.class] ? `Save proficiencies: ${CLASS_SAVES[c.class].join(", ")}` : "";
-      const skillProfs = c.skill_proficiencies?.length ? `Skilled: ${c.skill_proficiencies.join(", ")}` : "";
-      const profLine   = [saves, skillProfs].filter(Boolean).join(" | ");
+      const atkLine    = buildAttackLine(c);
+      const skillLine  = buildSkillLine(c);
+      const profLine   = [saves, skillLine].filter(Boolean).join("\n  ");
       const cantStr    = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
       const spellStr   = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
       const spellLine  = (cantStr || spellStr)
@@ -253,11 +325,12 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       return `${c.name}${titleStr} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${alignStr}${bgStr}
   HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
+  ATTACK BONUSES: ${atkLine}
   Weapons: ${weapons}  |  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock || pendingReconcileBlock}${partyLeaderBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${partyLeaderBlock}${targetBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -291,26 +364,28 @@ ${partyScaleHint(partySize, avgLevel)}`;
 
   const titleStr   = char.title ? ` "${char.title}"` : "";
   const solSaves   = CLASS_SAVES[char.class] ? `\nSaving throw proficiencies: ${CLASS_SAVES[char.class].join(", ")}` : "";
-  const solSkills  = char.skill_proficiencies?.length ? `\nSkill proficiencies: ${char.skill_proficiencies.join(", ")}` : "";
+  const solSkills  = buildSkillLine(char) ? `\n${buildSkillLine(char)}` : (char.skill_proficiencies?.length ? `\nSkill proficiencies: ${char.skill_proficiencies.join(", ")}` : "");
   const solAlign   = char.alignment ? `\nAlignment: ${char.alignment}` : "";
   const solBg      = char.background ? `\nBackground: ${char.background}` : "";
+  const solAtk     = buildAttackLine(char);
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnBlock}${partyLeaderBlock}${targetBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${partyLeaderBlock}${targetBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
+ATTACK BONUSES: ${solAtk}
 Weapons: ${weapons}
 Items: ${items}${solAlign}${solBg}${solSaves}${solSkills}
 Status: ${statuses}${spellInfo}${itemFx}
 
-Reference these stats for all checks and combat. Apply proficiency bonus (${pb}) to saving throws in ${CLASS_SAVES[char.class]?.join("/") ?? "class"} saves and to proficient skill checks. Roll attacks against the character's AC (${ac}). Enforce spell slot limits.`;
+Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${pb}) to ${CLASS_SAVES[char.class]?.join("/")??"class"} saves and proficient skill checks. Player rolls only the raw die; you add modifiers. Enforce spell slot limits.`;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -324,6 +399,8 @@ export async function POST(req: NextRequest) {
       partyLeaderName?: string;
       pendingReconciliation?: boolean;
       isRollResult?: boolean;
+      isTurnSkip?: boolean;
+      skippedPlayerName?: string;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -344,12 +421,12 @@ export async function POST(req: NextRequest) {
 
     // max_tokens is a hard ceiling that enforces the word budget.
     // Calibrated so a well-formed response always fits but the DM can't ramble.
-    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : 190;
+    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : isTurnSkip ? 150 : 190;
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName),
       messages:   claudeMessages,
       stream:     true,
     });

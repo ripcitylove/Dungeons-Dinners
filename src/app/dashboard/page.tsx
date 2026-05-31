@@ -576,7 +576,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
               <div>
                 <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Characters</h2>
-                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Roster</p>
+                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
               </div>
               {characters.length > 0 && (
                 <Link href="/create-character" style={{ textDecoration: "none" }}>

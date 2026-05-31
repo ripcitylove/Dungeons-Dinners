@@ -13,6 +13,15 @@ All values that change during gameplay — HP, gold, XP, level, spell slots, sta
 - Never show stale values. If a value can change, it must be wired to live state.
 - Party cards must display: HP, gold, XP progress, spell slots (spellcasting classes), and status effects — all kept current in real time.
 
+# Change Safety (Non-Negotiable)
+
+Every change must be clean, correct, and isolated — it must not break or negatively impact any already-working feature.
+
+- Before implementing any change, identify all features that share code or state with the area being modified and verify they still work after the change.
+- If a proposed implementation would impact or break an existing feature, stop. Explain what the conflict is and why it exists. Ask for explicit confirmation before proceeding.
+- If there is an alternative approach that satisfies the request without affecting other features, that alternative is always the preferred path. Only take the impactful route if the user confirms it after being fully informed.
+- "It compiles" is not "it works." Verify behavior in the browser across all affected surfaces before reporting a change as complete.
+
 # Testing Before Pushing (Non-Negotiable)
 
 Every change must be tested before pushing to live. This is not optional.
