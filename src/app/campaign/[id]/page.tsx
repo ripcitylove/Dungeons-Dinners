@@ -2862,19 +2862,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
             <button
               onClick={() => { const v = Math.max(0.65, parseFloat((chatFontSize - 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
-              title="Decrease font size"
               disabled={chatFontSize <= 0.65}
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize <= 0.65 ? "not-allowed" : "pointer", opacity: chatFontSize <= 0.65 ? 0.35 : 1, fontSize: "0.62rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
-              onMouseEnter={e => { if (chatFontSize > 0.65) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
+              onMouseEnter={e => { if (chatFontSize > 0.65) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A−</button>
             <button
               onClick={() => { const v = Math.min(1.35, parseFloat((chatFontSize + 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
-              title="Increase font size"
               disabled={chatFontSize >= 1.35}
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize >= 1.35 ? "not-allowed" : "pointer", opacity: chatFontSize >= 1.35 ? 0.35 : 1, fontSize: "0.9rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
-              onMouseEnter={e => { if (chatFontSize < 1.35) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
+              onMouseEnter={e => { if (chatFontSize < 1.35) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A+</button>
           </div>
           {/* Voice/narration picker */}
@@ -3017,7 +3015,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     )}
                     {/* Target badge */}
                     {isTargeted && (
-                      <div style={{ position: "absolute", top: "-8px", left: "50%", transform: "translateX(-50%)", fontSize: "0.5rem", background: "#ef4444", color: "white", borderRadius: "3px", padding: "1px 5px", fontWeight: "bold", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                      <div style={{ position: "absolute", top: "-8px", left: "50%", transform: "translateX(-50%)", fontSize: "0.5rem", background: "#ef4444", color: "white", borderRadius: "3px", padding: "1px 5px", fontWeight: "bold", letterSpacing: "0.04em", whiteSpace: "nowrap", cursor: "help" }}
+                        onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.TARGET_ENEMY.title, MECHANIC_TIPS.TARGET_ENEMY.body, "#ef4444"), ev)}
+                        onMouseLeave={hideTooltip}>
                         ⚔ TARGET
                       </div>
                     )}
@@ -3154,13 +3154,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           {(["party", "sheet", "log"] as const).map(tab => {
             const TAB_META = {
-              party:  { label: "Party",     sub: "Everyone"          },
-              sheet:  { label: "Character", sub: "Stats & Inventory" },
-              log:    { label: "Story Log", sub: "Full Transcript"   },
+              party:  { label: "Party",     sub: "Everyone",          tip: "View all party members — HP, gold, XP, spell slots, and active status effects." },
+              sheet:  { label: "Character", sub: "Stats & Inventory", tip: "Your character's ability scores, spell slots, spellbook, inventory, and currency." },
+              log:    { label: "Story Log", sub: "Full Transcript",   tip: "The complete transcript of this session — every DM narration and player action." },
             };
-            const { label, sub } = TAB_META[tab];
+            const { label, sub, tip } = TAB_META[tab];
             return (
               <button key={tab} onClick={() => setSidebarTab(tab)}
+                onMouseEnter={e => showTooltip(tipBox(label, tip, "#8b5cf6"), e)}
+                onMouseLeave={hideTooltip}
                 style={{ flex: 1, padding: "10px 4px 8px", fontSize: "0.65rem", fontWeight: "bold",
                   background: sidebarTab === tab ? "rgba(139,92,246,0.15)" : "transparent",
                   borderTop: "none", borderLeft: "none", borderRight: "none",
@@ -3245,14 +3247,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: fs(0.88), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
                           {char.id === partyLeaderId && (
-                            <span title="Party Leader" style={{ fontSize: fs(1.05), flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block" }}>👑</span>
+                            <span style={{ fontSize: fs(1.05), flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help" }}
+                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PARTY_LEADER.title, MECHANIC_TIPS.PARTY_LEADER.body, "#f59e0b"), e)}
+                              onMouseLeave={hideTooltip}>👑</span>
                           )}
                           {isActive && campaignParty.length > 1 && (
-                            <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
+                            <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em", cursor: "help" }}
+                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.ACTIVE_TURN.title, MECHANIC_TIPS.ACTIVE_TURN.body, "#8b5cf6"), e)}
+                              onMouseLeave={hideTooltip}>⚡ Active</span>
                           )}
                         </div>
                         <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>
-                          {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · Lvl {char.level}
+                          {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · <span style={{ cursor: "help" }}
+                            onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e)}
+                            onMouseLeave={hideTooltip}>Lvl {char.level}</span>
                         </div>
                       </div>
                     </div>
@@ -3648,7 +3656,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 {/* Spellbook */}
                 {SPELLCASTING_CLASSES.has(character.class) && ((character.cantrips_known?.length ?? 0) > 0 || (character.spells_prepared?.length ?? 0) > 0) && (
                   <div>
-                    <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
+                    <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)", cursor: "help" }}
+                      onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.SPELLBOOK.title, MECHANIC_TIPS.SPELLBOOK.body, "#8b5cf6"), e)}
+                      onMouseLeave={hideTooltip}>Spellbook</h3>
                     {(character.cantrips_known?.length ?? 0) > 0 && (
                       <div style={{ marginBottom: "10px" }}>
                         <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px", cursor: "help" }}
@@ -3691,7 +3701,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 {slotLevels.map(lvl => {
                                   const avail = Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0));
                                   return (
-                                    <span key={lvl} style={{ fontSize: fs(0.58), background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600 }}>
+                                    <span key={lvl} style={{ fontSize: fs(0.58), background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600, cursor: "help" }}
+                                      onMouseEnter={e => showTooltip(tipBox(`Level ${lvl} Spell Slots`, `${avail} of ${maxSlots[lvl]} remaining. ${MECHANIC_TIPS.SPELL_SLOTS.body}`, "#8b5cf6"), e)}
+                                      onMouseLeave={hideTooltip}>
                                       L{lvl}: {avail}/{maxSlots[lvl]}
                                     </span>
                                   );
@@ -4019,7 +4031,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               onMouseLeave={hideTooltip}>{label}</span>
                         }
                         {isTargeted && (
-                          <span style={{ fontSize: "0.58rem", background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", letterSpacing: "0.04em" }}>⚔ TARGET</span>
+                          <span style={{ fontSize: "0.58rem", background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", letterSpacing: "0.04em", cursor: "help" }}
+                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.TARGET_ENEMY.title, MECHANIC_TIPS.TARGET_ENEMY.body, "#ef4444"), ev)}
+                            onMouseLeave={hideTooltip}>⚔ TARGET</span>
                         )}
                       </div>
                     </div>
@@ -4031,7 +4045,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: "3px", transition: "width 0.6s ease, background 0.4s ease" }} />
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "0.65rem", color: "#64748b" }}>ATK +{e.attack_bonus} · {e.damage_dice}</span>
+                          <span style={{ fontSize: "0.65rem", color: "#64748b", cursor: "help" }}
+                          onMouseEnter={ev => showTooltip(tipBox("Attack & Damage", `ATK +${e.attack_bonus} is added to a d20 roll to hit. On a hit, ${e.damage_dice} is rolled for damage dealt to HP.`, "#ef4444"), ev)}
+                          onMouseLeave={hideTooltip}>ATK +{e.attack_bonus} · {e.damage_dice}</span>
                           {e.status_effects.length > 0 && (
                             <span style={{ fontSize: "0.62rem", color: "#f59e0b" }}>{e.status_effects.join(", ")}</span>
                           )}

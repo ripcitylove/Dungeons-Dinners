@@ -70,6 +70,13 @@ export const MECHANIC_TIPS: Record<string, TipEntry> = {
   LEVEL:          { title: "Character Level", body: "Ranges 1–20. Each level adds HP (hit die + CON mod), increases power, and unlocks class features. Proficiency Bonus increases at levels 5, 9, 13, and 17." },
   ATTUNEMENT:     { title: "Attunement", body: "Some magic items require a short rest to bond with before their magic activates. You can attune to at most 3 items at once. Breaking attunement takes another short rest." },
   CURSED:         { title: "Cursed Item", body: "This item carries a hidden negative effect. Once attuned or equipped, it often cannot be removed without a Remove Curse spell or similar magic. Handle with caution." },
+  SPELLBOOK:      { title: "Spellbook", body: "Your character's known spells. Cantrips are free and infinite — no slot required. Prepared spells each consume a spell slot when cast. Click any spell to cast it in the story." },
+  TRINKET:        { title: "Starting Trinket", body: "A small personal item with no combat stats — a locket, a coin, a carved figurine. The DM may reference it in story moments to add personality to your character." },
+  BACKGROUND_STORY: { title: "Character Background", body: "Optional backstory the DM uses to tailor encounters, add story hooks, and generate your portrait. The more detail, the more personalized your adventure." },
+  PARTY_LEADER:   { title: "Party Leader", body: "The party leader helps set the group's direction. Leadership can be transferred to another character at any time from the Party panel." },
+  ACTIVE_TURN:    { title: "Active Turn", body: "It's this character's turn to act. Type an action, cast a spell, or pick a suggestion chip below. The DM will advance to the next player when the turn resolves." },
+  TARGET_ENEMY:   { title: "Targeted Enemy", body: "Your attacks and offensive spells default to this enemy. Click another enemy to switch targets, or click the same one to deselect." },
+  FONT_SIZE:      { title: "Text Size", body: "Adjust the font size of the story and chat panel. Changes are saved for future sessions." },
 };
 
 // ── Status conditions ─────────────────────────────────────────────────────────
@@ -164,6 +171,28 @@ export const WEAPON_TIPS: Record<string, TipEntry> = {
   "Daggers (x2)": { title: "Daggers x2", body: "1d4 piercing · Light, finesse, thrown 20/60 ft. Two daggers enable two-weapon fighting as a bonus action with no feat required. Excellent for Rogues." },
   "Warhammer":    { title: "Warhammer", body: "1d8 bludgeoning · Versatile (1d10 two-handed). A martial weapon favored by divine warriors. Common choice for Clerics and STR-based characters." },
   "Crossbow":     { title: "Crossbow", body: "1d8 piercing · Range 80/320 ft. Loading: one attack per action without Crossbow Expert feat. Strong ranged damage for non-DEX builds." },
+};
+
+// ── Spell schools ─────────────────────────────────────────────────────────────
+export const SPELL_SCHOOL_TIPS: Record<string, TipEntry> = {
+  Evocation:     { title: "Evocation", body: "Raw magical energy shaped into elemental effects — fire, lightning, cold, force, thunder. The most offensive magic school." },
+  Abjuration:    { title: "Abjuration", body: "Protective and defensive magic — barriers, counterspells, dispelling effects, and banishment." },
+  Conjuration:   { title: "Conjuration", body: "Teleportation, summoning creatures or objects, and creating matter from thin air. Creates allies and tactical options." },
+  Illusion:      { title: "Illusion", body: "Deceives the senses with false images, sounds, and sensations. Effects only last while believed — disbelieved with a WIS or Investigation check." },
+  Enchantment:   { title: "Enchantment", body: "Controls and manipulates minds — charm, sleep, fear, and compulsion. Targets must fail a WIS save. Has no effect on constructs or undead." },
+  Necromancy:    { title: "Necromancy", body: "Harnesses life force and death — healing, draining life, raising undead, and speaking with the dead. Powerful but feared by many civilizations." },
+  Transmutation: { title: "Transmutation", body: "Alters physical properties — change shape, enhance strength, adjust speed, or polymorph. Highly versatile utility school." },
+  Divination:    { title: "Divination", body: "Reveals hidden information — detect magic, identify items, read thoughts, or glimpse the future. Less combat-focused but invaluable for planning." },
+};
+
+// ── Standard Array value hints ─────────────────────────────────────────────────
+export const ARRAY_VALUE_TIPS: Record<number, string> = {
+  15: "+2 modifier · Best score available. Assign to your class's primary ability.",
+  14: "+2 modifier · Second-best. Good for a key secondary stat.",
+  13: "+1 modifier · Above average. Cover a stat you'll use often.",
+  12: "+1 modifier · Solid. Good for saving throws or backup skills.",
+  10: "+0 modifier · Average. For stats you'll rely on less.",
+   8: "-1 modifier · Dump stat. Weakest score — for abilities you rarely use.",
 };
 
 // ── Enemy health conditions ───────────────────────────────────────────────────

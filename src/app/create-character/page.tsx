@@ -13,7 +13,7 @@ import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from '../../lib/proficiencyData';
 import { useTooltip, tipBox } from '../../hooks/useTooltip';
-import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, ALIGNMENT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, MECHANIC_TIPS } from '../../lib/tooltipData';
+import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, ALIGNMENT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, MECHANIC_TIPS, SPELL_SCHOOL_TIPS, ARRAY_VALUE_TIPS } from '../../lib/tooltipData';
 
 type AbilityScores = {
   strength: number; dexterity: number; constitution: number;
@@ -94,9 +94,11 @@ const STAT_KEYS = ['strength', 'dexterity', 'constitution', 'intelligence', 'wis
 const STAT_LABELS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
 
 function SpellCard({
-  spell, selected, disabled, onToggle,
+  spell, selected, disabled, onToggle, showTooltip, hideTooltip,
 }: {
   spell: SpellEntry; selected: boolean; disabled: boolean; onToggle: () => void;
+  showTooltip?: (c: React.ReactNode, e: React.MouseEvent) => void;
+  hideTooltip?: () => void;
 }) {
   const schoolColors: Record<string, string> = {
     Evocation: "#ef4444", Abjuration: "#3b82f6", Conjuration: "#8b5cf6",
@@ -116,7 +118,10 @@ function SpellCard({
         <span style={{ fontSize: "0.82rem", fontWeight: "bold", color: selected ? color : "white" }}>{spell.name}</span>
         {selected && <span style={{ fontSize: "0.65rem", color, flexShrink: 0 }}>✓</span>}
       </div>
-      <div style={{ fontSize: "0.62rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{spell.school}</div>
+      <div style={{ fontSize: "0.62rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em", cursor: "help", display: "inline-block" }}
+        onMouseEnter={e => { e.stopPropagation(); const t = SPELL_SCHOOL_TIPS[spell.school]; if (t && showTooltip) showTooltip(tipBox(t.title, t.body, color), e); }}
+        onMouseLeave={e => { e.stopPropagation(); hideTooltip?.(); }}
+      >{spell.school}</div>
       <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{spell.desc}</div>
     </div>
   );
@@ -474,15 +479,21 @@ export default function CreateCharacter() {
         {/* Progress bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', position: 'relative' }}>
           <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '2px', background: 'var(--border)', zIndex: 0 }} />
-          {Array.from({ length: totalSteps }, (_, i) => i + 1).map(i => (
-            <div key={i} style={{
-              width: '32px', height: '32px', borderRadius: '50%',
-              background: step >= i ? 'var(--primary)' : 'var(--card-bg)',
-              border: `2px solid ${step >= i ? 'var(--primary)' : 'var(--border)'}`,
-              display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1,
-              color: step >= i ? 'white' : 'var(--foreground)', fontWeight: 'bold', fontSize: '0.85rem',
-            }}>{i}</div>
-          ))}
+          {Array.from({ length: totalSteps }, (_, i) => i + 1).map(i => {
+            const stepLabels = ["Identity — name, race, sex, alignment", "Class — role, proficiencies, skills", "Ability Scores — your six stats", "Equipment — weapon and shield", "Background — backstory for the DM", "Spells — cantrips and prepared spells"];
+            return (
+            <div key={i}
+              onMouseEnter={e => showTooltip(tipBox(`Step ${i}`, stepLabels[i - 1] ?? '', step >= i ? '#8b5cf6' : '#64748b'), e)}
+              onMouseLeave={hideTooltip}
+              style={{
+                width: '32px', height: '32px', borderRadius: '50%',
+                background: step >= i ? 'var(--primary)' : 'var(--card-bg)',
+                border: `2px solid ${step >= i ? 'var(--primary)' : 'var(--border)'}`,
+                display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1,
+                color: step >= i ? 'white' : 'var(--foreground)', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'help',
+              }}>{i}</div>
+            );
+          })}
         </div>
 
         <h1 style={{ fontSize: '2rem', marginBottom: '24px', textAlign: 'center' }}>{stepTitle}</h1>
@@ -496,7 +507,9 @@ export default function CreateCharacter() {
               {/* Name + Title row */}
               <div style={{ display: 'flex', gap: '12px' }}>
                 <div style={{ flex: 2 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Character Name</label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                    onMouseEnter={e => showTooltip(tipBox('Character Name', 'What your hero is called in the world. The DM and other players will use this name throughout your adventure.', '#c4b5fd'), e)}
+                    onMouseLeave={hideTooltip}>Character Name</label>
                   <input
                     type="text" value={character.name}
                     onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
@@ -506,7 +519,9 @@ export default function CreateCharacter() {
                   {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                    onMouseEnter={e => showTooltip(tipBox('Title', 'An optional honorific like "the Brave" or "Shadowbane." The DM uses it alongside your name in narration — e.g. "Aria the Brave steps forward…"', '#c4b5fd'), e)}
+                    onMouseLeave={hideTooltip}>
                     Title <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span>
                   </label>
                   <input
@@ -536,14 +551,21 @@ export default function CreateCharacter() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Sex</label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                  onMouseEnter={e => showTooltip(tipBox('Sex / Pronouns', 'Sets the pronouns the DM uses when narrating your character\'s actions — he/him, she/her, or they/them.', '#c4b5fd'), e)}
+                  onMouseLeave={hideTooltip}>Sex</label>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  {(['male', 'female', 'non-binary'] as const).map(s => (
+                  {(['male', 'female', 'non-binary'] as const).map(s => {
+                    const pronounMap = { male: 'he/him', female: 'she/her', 'non-binary': 'they/them' };
+                    return (
                     <div key={s} onClick={() => setCharacter(c => ({ ...c, sex: s }))}
+                      onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, '#c4b5fd'), e)}
+                      onMouseLeave={hideTooltip}
                       style={{ flex: 1, padding: '14px', borderRadius: '8px', border: `1px solid ${character.sex === s ? 'var(--primary)' : 'var(--border)'}`, background: character.sex === s ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', textTransform: 'capitalize' }}>
                       {s}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -702,7 +724,10 @@ export default function CreateCharacter() {
                       const isUsed = Object.values(arrayAssignments).includes(v);
                       const isSelected = selectedArrayVal === v;
                       return (
-                        <div key={v} onClick={() => handleArrayChipClick(v)} style={{
+                        <div key={v} onClick={() => handleArrayChipClick(v)}
+                          onMouseEnter={e => { const tip = ARRAY_VALUE_TIPS[v]; if (tip) showTooltip(tipBox(String(v), tip, '#8b5cf6'), e); }}
+                          onMouseLeave={hideTooltip}
+                          style={{
                           width: '52px', height: '52px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontWeight: 'bold', fontSize: '1.1rem', cursor: isUsed ? 'default' : 'pointer', transition: 'all 0.15s',
                           border: `2px solid ${isSelected ? 'var(--primary)' : isUsed ? '#1e293b' : 'var(--border)'}`,
@@ -856,7 +881,9 @@ export default function CreateCharacter() {
               )}
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Starting Trinket <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span></label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                  onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.TRINKET.title, MECHANIC_TIPS.TRINKET.body, '#f59e0b'), e)}
+                  onMouseLeave={hideTooltip}>Starting Trinket <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span></label>
                 <input type="text" value={character.trinket}
                   onChange={e => setCharacter(c => ({ ...c, trinket: e.target.value }))}
                   style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
@@ -875,7 +902,9 @@ export default function CreateCharacter() {
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ color: '#94a3b8' }}>
+                  <label style={{ color: '#94a3b8', cursor: 'help' }}
+                    onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.BACKGROUND_STORY.title, MECHANIC_TIPS.BACKGROUND_STORY.body, '#c4b5fd'), e)}
+                    onMouseLeave={hideTooltip}>
                     Character Background <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional, up to 500 characters)</span>
                   </label>
                   <button
@@ -900,6 +929,8 @@ export default function CreateCharacter() {
                       setGeneratingBg(false);
                     }}
                     disabled={generatingBg || !character.race || !character.class}
+                    onMouseEnter={e => showTooltip(tipBox('✨ Generate with AI', 'Uses AI to write a ~500-character backstory tailored to your race, class, alignment, and name. You can edit the result freely after it generates.', '#c4b5fd'), e)}
+                    onMouseLeave={hideTooltip}
                     style={{
                       padding: '5px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold',
                       border: '1px solid rgba(139,92,246,0.4)', background: 'rgba(139,92,246,0.12)',
@@ -953,7 +984,8 @@ export default function CreateCharacter() {
                       <SpellCard key={spell.name} spell={spell}
                         selected={selectedCantrips.includes(spell.name)}
                         disabled={selectedCantrips.length >= spellCounts.cantrips && !selectedCantrips.includes(spell.name)}
-                        onToggle={() => toggleCantrip(spell.name)} />
+                        onToggle={() => toggleCantrip(spell.name)}
+                        showTooltip={showTooltip} hideTooltip={hideTooltip} />
                     ))}
                   </div>
                 </div>
@@ -974,7 +1006,8 @@ export default function CreateCharacter() {
                       <SpellCard key={spell.name} spell={spell}
                         selected={selectedSpells.includes(spell.name)}
                         disabled={selectedSpells.length >= spellCounts.spells && !selectedSpells.includes(spell.name)}
-                        onToggle={() => toggleSpell(spell.name)} />
+                        onToggle={() => toggleSpell(spell.name)}
+                        showTooltip={showTooltip} hideTooltip={hideTooltip} />
                     ))}
                   </div>
                 </div>

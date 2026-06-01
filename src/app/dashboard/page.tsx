@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
 import { useTooltip, tipBox } from "../../hooks/useTooltip";
-import { STAT_TIPS, RACE_TIPS, CLASS_TIPS } from "../../lib/tooltipData";
+import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, MECHANIC_TIPS } from "../../lib/tooltipData";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
@@ -508,7 +508,9 @@ export default function Dashboard() {
                     >
                       {/* Joined badge */}
                       {!camp.isOwned && (
-                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "0.65rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em" }}>
+                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "0.65rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em", cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox("Joined Campaign", "You are a member of this campaign hosted by another player. You can resume and play your character here.", "#818cf8"), e)}
+                          onMouseLeave={hideTooltip}>
                           Joined
                         </span>
                       )}
@@ -555,6 +557,8 @@ export default function Dashboard() {
                       <div style={{ display: "flex", gap: "8px", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "14px", marginTop: "auto" }}>
                         <button
                           onClick={() => copyInvite(camp.id)}
+                          onMouseEnter={e => showTooltip(tipBox("🔗 Invite Link", "Copies a link to your clipboard. Share it so another player can join this campaign with their account.", "#818cf8"), e)}
+                          onMouseLeave={hideTooltip}
                           style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", color: copiedId === camp.id ? "#22c55e" : "var(--subtle)", cursor: "pointer", fontSize: "0.78rem", padding: "6px 12px", transition: "all 0.2s", flexShrink: 0 }}
                         >
                           {copiedId === camp.id ? "Copied!" : "🔗 Invite"}
@@ -632,7 +636,9 @@ export default function Dashboard() {
                           ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           : <div style={{ width: "100%", height: "100%", background: `${classColor}10` }} />
                         }
-                        <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.62rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3 }}>
+                        <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.62rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3, cursor: "help" }}
+                          onMouseEnter={e => { e.stopPropagation(); showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e); }}
+                          onMouseLeave={e => { e.stopPropagation(); hideTooltip(); }}>
                           Lv {char.level}
                         </div>
                       </div>
