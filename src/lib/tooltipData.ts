@@ -63,6 +63,13 @@ export const MECHANIC_TIPS: Record<string, TipEntry> = {
   DEATH_SAVE:     { title: "Death Saving Throw", body: "Made at the start of each turn when unconscious. Roll a d20: 10+ is a success, 9 or lower is a failure. 3 successes = stable, 3 failures = dead. A 20 restores 1 HP." },
   CRIT:           { title: "Critical Hit", body: "Roll a natural 20 on an attack roll. Double all damage dice rolled (not modifiers). Some abilities (Savage Attacks, Champion Fighter) improve crit range or add dice." },
   CONCENTRATION:  { title: "Concentration", body: "Some spells require Concentration to maintain. You can only concentrate on one spell at a time. Taking damage forces a CON saving throw (DC 10 or half damage) to keep it." },
+  CR:             { title: "Challenge Rating (CR)", body: "A rough measure of a monster's danger. CR ½ = easy for level-1 heroes. CR 1–4 = standard threats. CR 5+ = elite dangers. CR 20+ = legendary threats that reshape history." },
+  HIT_DIE:        { title: "Hit Die", body: "Your class's healing die. Rolled on level-up for HP gained. During a Short Rest, spend Hit Dice to recover HP: roll the die and add your CON modifier per die spent." },
+  CANTRIP:        { title: "Cantrip (at-will)", body: "A spell you can cast infinitely — no spell slot required. Cantrips scale in power at levels 5, 11, and 17. Less powerful than slotted spells, but they never run out." },
+  PREPARED_SPELL: { title: "Prepared Spell", body: "A spell you've memorized for the day. Each cast expends a spell slot of that spell's level or higher. Slots restore on a Long Rest (Warlocks restore on Short Rest)." },
+  LEVEL:          { title: "Character Level", body: "Ranges 1–20. Each level adds HP (hit die + CON mod), increases power, and unlocks class features. Proficiency Bonus increases at levels 5, 9, 13, and 17." },
+  ATTUNEMENT:     { title: "Attunement", body: "Some magic items require a short rest to bond with before their magic activates. You can attune to at most 3 items at once. Breaking attunement takes another short rest." },
+  CURSED:         { title: "Cursed Item", body: "This item carries a hidden negative effect. Once attuned or equipped, it often cannot be removed without a Remove Curse spell or similar magic. Handle with caution." },
 };
 
 // ── Status conditions ─────────────────────────────────────────────────────────
@@ -140,4 +147,30 @@ export const STAT_METHOD_TIPS: Record<string, TipEntry> = {
   roll:     { title: "Roll (4d6 drop lowest)", body: "Roll 4 six-sided dice and drop the lowest result for each stat. High variance — you might get exceptional stats or mediocre ones. Re-roll as often as you like." },
   array:    { title: "Standard Array", body: "Assign the fixed values 15, 14, 13, 12, 10, 8 to your six stats. Everyone starts with the same total power — a balanced, fair choice." },
   pointbuy: { title: "Point Buy", body: "Spend 27 points to set stats between 8 and 15. Every stat starts at 8. Higher values cost more points (14 costs 7 total, 15 costs 9 total). Maximum flexibility." },
+};
+
+// ── Proficiency labels ────────────────────────────────────────────────────────
+export const PROF_TIPS: Record<string, TipEntry> = {
+  saves:   { title: "Saving Throw Proficiency", body: "Your class grants proficiency in two saving throw types. Add your Proficiency Bonus when rolling those saves. Saving throws resist spells, traps, poisons, and other hazards." },
+  armor:   { title: "Armor Proficiency", body: "The armor types your class can wear effectively. Wearing non-proficient armor imposes Disadvantage on all STR/DEX checks, saves, and attack rolls — and prevents spellcasting." },
+  weapons: { title: "Weapon Proficiency", body: "Weapon types you're trained with. Attacks with non-proficient weapons don't add your Proficiency Bonus to the attack roll — a significant penalty to hit." },
+};
+
+// ── Weapons ───────────────────────────────────────────────────────────────────
+export const WEAPON_TIPS: Record<string, TipEntry> = {
+  "Longsword":    { title: "Longsword", body: "1d8 slashing · Versatile (1d10 two-handed). A martial weapon for trained combatants. Balanced for Fighters, Paladins, and any STR-based character." },
+  "Shortbow":     { title: "Shortbow", body: "1d6 piercing · Range 80/320 ft. A simple weapon most classes can use without penalty. Ideal for DEX-based characters who need a ranged option." },
+  "Staff":        { title: "Quarterstaff", body: "1d6 bludgeoning · Versatile (1d8 two-handed). A simple weapon any class can wield. Favored by Wizards and Druids who lack martial proficiency." },
+  "Daggers (x2)": { title: "Daggers x2", body: "1d4 piercing · Light, finesse, thrown 20/60 ft. Two daggers enable two-weapon fighting as a bonus action with no feat required. Excellent for Rogues." },
+  "Warhammer":    { title: "Warhammer", body: "1d8 bludgeoning · Versatile (1d10 two-handed). A martial weapon favored by divine warriors. Common choice for Clerics and STR-based characters." },
+  "Crossbow":     { title: "Crossbow", body: "1d8 piercing · Range 80/320 ft. Loading: one attack per action without Crossbow Expert feat. Strong ranged damage for non-DEX builds." },
+};
+
+// ── Enemy health conditions ───────────────────────────────────────────────────
+export const ENEMY_CONDITION_TIPS: Record<string, string> = {
+  Healthy:  "Full health — no visible injuries. This enemy is at peak fighting condition.",
+  Wounded:  "Lightly hurt — past 75% HP. Showing signs of injury but still fully capable.",
+  Bloodied: "Badly hurt — below 50% HP. Bleeding, movement impaired. Press the attack.",
+  Critical: "Near death — below 25% HP. Staggering and desperate. One or two hits should finish it.",
+  Defeated: "Slain or incapacitated — no longer a threat in this encounter.",
 };

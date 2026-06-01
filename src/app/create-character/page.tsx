@@ -13,7 +13,7 @@ import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from '../../lib/proficiencyData';
 import { useTooltip, tipBox } from '../../hooks/useTooltip';
-import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, ALIGNMENT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS } from '../../lib/tooltipData';
+import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, ALIGNMENT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, MECHANIC_TIPS } from '../../lib/tooltipData';
 
 type AbilityScores = {
   strength: number; dexterity: number; constitution: number;
@@ -409,7 +409,7 @@ export default function CreateCharacter() {
                 isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.05)' : 'var(--card-bg)',
               borderRadius: '8px', textAlign: 'center', minWidth: '70px',
               border: `1px solid ${
-                isInteractive && arrayAssignments[valKey] !== null ? 'var(--primary)' :
+                isInteractive && arrayAssignments[valKey] !== null ? (tierStyle ? tierStyle.color + "88" : 'var(--primary)') :
                 isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.4)' :
                 tierStyle && isRevealed ? tierStyle.color + "55" : "var(--border)"
               }`,
@@ -595,11 +595,23 @@ export default function CreateCharacter() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {/* Proficiency summary */}
                   <div style={{ padding: '12px 16px', borderRadius: '10px', background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)', fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.7, display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                    <span><strong style={{ color: '#c4b5fd' }}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
+                    <span>
+                      <strong style={{ color: '#c4b5fd', cursor: 'help' }}
+                        onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.saves.title, PROF_TIPS.saves.body, '#c4b5fd'), e)}
+                        onMouseLeave={hideTooltip}>Saves:</strong> {profData.savingThrows.join(", ")}
+                    </span>
                     <span style={{ color: '#374151' }}>|</span>
-                    <span><strong style={{ color: '#c4b5fd' }}>Armor:</strong> {profData.armorProficiencies}</span>
+                    <span>
+                      <strong style={{ color: '#c4b5fd', cursor: 'help' }}
+                        onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.armor.title, PROF_TIPS.armor.body, '#c4b5fd'), e)}
+                        onMouseLeave={hideTooltip}>Armor:</strong> {profData.armorProficiencies}
+                    </span>
                     <span style={{ color: '#374151' }}>|</span>
-                    <span><strong style={{ color: '#c4b5fd' }}>Weapons:</strong> {profData.weaponProficiencies}</span>
+                    <span>
+                      <strong style={{ color: '#c4b5fd', cursor: 'help' }}
+                        onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.weapons.title, PROF_TIPS.weapons.body, '#c4b5fd'), e)}
+                        onMouseLeave={hideTooltip}>Weapons:</strong> {profData.weaponProficiencies}
+                    </span>
                   </div>
 
                   {/* Skill proficiency selection */}
@@ -731,8 +743,26 @@ export default function CreateCharacter() {
                       const incCost = (POINT_BUY_COST[val + 1] ?? 99) - (POINT_BUY_COST[val] ?? 0);
                       const canInc = val < 15 && pointsLeft >= incCost;
                       const canDec = val > 8;
+                      const pbGuide = CLASS_STAT_GUIDES[character.class]?.[STAT_LABELS[i]];
+                      const pbTierStyle = pbGuide ? getTierStyle(pbGuide.tier) : null;
                       return (
-                        <div key={statKey} style={{ padding: '14px 12px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '88px', border: '1px solid var(--border)' }}>
+                        <div key={statKey}
+                          style={{ padding: '14px 12px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '88px', border: `1px solid ${pbTierStyle ? pbTierStyle.color + "55" : 'var(--border)'}` }}
+                          onMouseEnter={e => {
+                            const st = STAT_TIPS[STAT_LABELS[i]];
+                            if (!st) return;
+                            const accent = pbTierStyle ? pbTierStyle.color : "#8b5cf6";
+                            showTooltip(
+                              <div style={{ background: "#12101f", border: `1px solid ${accent}55`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "180px", maxWidth: "240px" }}>
+                                <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "0.8rem" }}>{st.title}</div>
+                                {pbGuide && pbTierStyle && <div style={{ color: pbTierStyle.color, fontSize: "0.7rem", marginBottom: "4px", fontWeight: 600 }}>{pbTierStyle.label} for {character.class}</div>}
+                                <div style={{ color: "#94a3b8" }}>{st.body}</div>
+                                {pbGuide && <div style={{ color: "#64748b", fontSize: "0.7rem", marginTop: "5px" }}>{pbGuide.reason}</div>}
+                              </div>, e
+                            );
+                          }}
+                          onMouseLeave={hideTooltip}
+                        >
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '10px' }}>{STAT_LABELS[i]}</div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                             <button onClick={() => adjustPBStat(statKey, -1)} disabled={!canDec} style={{
@@ -751,6 +781,11 @@ export default function CreateCharacter() {
                           <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: '3px' }}>
                             {POINT_BUY_COST[val]}pt{POINT_BUY_COST[val] !== 1 ? 's' : ''}
                           </div>
+                          {pbTierStyle && (
+                            <div style={{ fontSize: '0.52rem', color: pbTierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
+                              {pbTierStyle.label.toUpperCase()}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -790,7 +825,10 @@ export default function CreateCharacter() {
                 <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Primary Weapon</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {['Longsword', 'Shortbow', 'Staff', 'Daggers (x2)', 'Warhammer', 'Crossbow'].map(w => (
-                    <div key={w} onClick={() => setCharacter(c => ({ ...c, weapon: w }))}
+                    <div key={w}
+                      onClick={() => setCharacter(c => ({ ...c, weapon: w }))}
+                      onMouseEnter={e => { const t = WEAPON_TIPS[w]; if (t) showTooltip(tipBox(t.title, t.body, '#f59e0b'), e); }}
+                      onMouseLeave={hideTooltip}
                       style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.weapon === w ? 'var(--primary)' : 'var(--border)'}`, background: character.weapon === w ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
                       {w}
                     </div>
@@ -802,6 +840,8 @@ export default function CreateCharacter() {
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Shield</label>
                   <div onClick={() => setCharacter(c => ({ ...c, shield: !c.shield }))}
+                    onMouseEnter={e => showTooltip(tipBox('Shield', '+2 to Armor Class · Requires one free hand. You cannot wield a two-handed weapon while using a shield. Usable with light, medium, or heavy armor.', '#22c55e'), e)}
+                    onMouseLeave={hideTooltip}
                     style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', border: `1px solid ${character.shield ? 'var(--primary)' : 'var(--border)'}`, background: character.shield ? 'rgba(139,92,246,0.2)' : 'transparent' }}>
                     <span style={{ fontSize: '1.5rem' }}>🛡</span>
                     <div>
@@ -901,7 +941,9 @@ export default function CreateCharacter() {
               {spellCounts.cantrips > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cantrips (at-will)</h3>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', cursor: 'help' }}
+                      onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.CANTRIP.title, MECHANIC_TIPS.CANTRIP.body, '#8b5cf6'), e)}
+                      onMouseLeave={hideTooltip}>Cantrips (at-will)</h3>
                     <span style={{ fontSize: '0.78rem', color: selectedCantrips.length === spellCounts.cantrips ? '#22c55e' : '#8b5cf6', fontWeight: 'bold' }}>
                       {selectedCantrips.length} / {spellCounts.cantrips} selected
                     </span>
@@ -920,7 +962,9 @@ export default function CreateCharacter() {
               {spellCounts.spells > 0 && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>1st-Level Spells</h3>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', cursor: 'help' }}
+                      onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PREPARED_SPELL.title, MECHANIC_TIPS.PREPARED_SPELL.body, '#8b5cf6'), e)}
+                      onMouseLeave={hideTooltip}>1st-Level Spells</h3>
                     <span style={{ fontSize: '0.78rem', color: selectedSpells.length === spellCounts.spells ? '#22c55e' : '#8b5cf6', fontWeight: 'bold' }}>
                       {selectedSpells.length} / {spellCounts.spells} {SPELL_LIMITS[character.class]?.spellFormula ? 'prepared' : 'known'}
                     </span>

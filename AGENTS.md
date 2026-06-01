@@ -50,10 +50,16 @@ const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 - `RACE_TIPS[race]` — racial abilities and bonuses
 - `CLASS_TIPS[cls]` — class role, hit die, primary stat, abilities
 - `SKILL_TIPS[skill]` — skill checks and governing ability
-- `MECHANIC_TIPS.HP / .GOLD / .XP / .SPELL_SLOTS / .SHORT_REST / .LONG_REST / .PASS_TURN / .INITIATIVE / ...`
-- `ALIGNMENT_TIPS[key]` — alignment descriptions
+- `MECHANIC_TIPS.HP / .AC / .GOLD / .XP / .SPELL_SLOTS / .SHORT_REST / .LONG_REST / .PASS_TURN / .INITIATIVE / .CR / .HIT_DIE / .CANTRIP / .PREPARED_SPELL / .LEVEL / .ATTUNEMENT / .CURSED / ...`
+- `ALIGNMENT_TIPS[key]` — alignment descriptions (string, not TipEntry)
 - `STAT_METHOD_TIPS.roll / .array / .pointbuy`
-- `CONDITION_TIPS[condition]` — string (not TipEntry)
+- `CONDITION_TIPS[condition]` — status effect descriptions (string, not TipEntry)
+- `PROF_TIPS.saves / .armor / .weapons` — proficiency category descriptions
+- `WEAPON_TIPS[weapon]` — weapon stats, damage dice, and usage notes
+- `ENEMY_CONDITION_TIPS[label]` — enemy health state descriptions (Healthy/Wounded/Bloodied/Critical/Defeated)
+- `DICE_TIPS[die]` — d4/d6/d8/d10/d12/d20/d100 explanations
+
+**Coverage rule** — every D&D term a new player might not understand needs a tooltip: races, classes, alignments, proficiency labels, weapon names, spell headers (Cantrips, Prepared Spells), enemy stats (CR, AC, ATK), condition badges, stat methods, skill chips, rest buttons, and game mechanic labels. Add new entries to `tooltipData.ts` rather than writing descriptions inline in components.
 
 **Wire a tooltip:**
 ```tsx

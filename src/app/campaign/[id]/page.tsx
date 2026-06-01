@@ -15,7 +15,7 @@ import {
   type LootItem,
 } from "../../../lib/lootData";
 import { tipBox } from "../../../hooks/useTooltip";
-import { MECHANIC_TIPS } from "../../../lib/tooltipData";
+import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS } from "../../../lib/tooltipData";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -2977,6 +2977,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div
                     key={e.id}
                     onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
+                    onMouseEnter={ev => { const condLabel = e.is_defeated ? "Defeated" : CONDITION_LABELS[cond]; const condDesc = ENEMY_CONDITION_TIPS[condLabel]; showTooltip(tipBox(e.name, `${condLabel}${condDesc ? ' — ' + condDesc : ''}\n${e.enemy_type} · CR ${e.cr} · AC ${e.ac}`, condColor), ev); }}
+                    onMouseLeave={hideTooltip}
                     style={{
                       flexShrink: 0, width: "clamp(72px, 5.5rem, 104px)",
                       background: e.is_defeated ? "rgba(0,0,0,0.2)" : isTargeted ? "rgba(120,0,0,0.7)" : "rgba(60,0,0,0.55)",
@@ -3649,7 +3651,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spellbook</h3>
                     {(character.cantrips_known?.length ?? 0) > 0 && (
                       <div style={{ marginBottom: "10px" }}>
-                        <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Cantrips · at-will</div>
+                        <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px", cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.CANTRIP.title, MECHANIC_TIPS.CANTRIP.body, "#8b5cf6"), e)}
+                          onMouseLeave={hideTooltip}>Cantrips · at-will</div>
                         {character.cantrips_known!.map((s, i) => {
                           const entry = CANTRIPS[character.class]?.find(e => e.name === s);
                           const active = hoveredSpell === `c-${i}`;
@@ -3679,7 +3683,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       return (
                         <div>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                            <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Prepared Spells</div>
+                            <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", cursor: "help" }}
+                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PREPARED_SPELL.title, MECHANIC_TIPS.PREPARED_SPELL.body, "#8b5cf6"), e)}
+                              onMouseLeave={hideTooltip}>Prepared Spells</div>
                             {slotLevels.length > 0 && (
                               <div style={{ display: "flex", gap: "5px" }}>
                                 {slotLevels.map(lvl => {
@@ -3996,13 +4002,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           {e.name}
                         </div>
                         <div style={{ fontSize: "0.68rem", color: "#94a3b8" }}>
-                          {e.enemy_type} · CR {e.cr} · AC {e.ac}
+                          {e.enemy_type} · <span style={{ cursor: "help" }}
+                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.CR.title, MECHANIC_TIPS.CR.body, "#f59e0b"), ev)}
+                            onMouseLeave={hideTooltip}>CR {e.cr}</span> · <span style={{ cursor: "help" }}
+                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.AC.title, MECHANIC_TIPS.AC.body, "#94a3b8"), ev)}
+                            onMouseLeave={hideTooltip}>AC {e.ac}</span>
                         </div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end", flexShrink: 0 }}>
                         {e.is_defeated
-                          ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px" }}>DEFEATED</span>
-                          : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", fontWeight: "bold" }}>{label}</span>
+                          ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px", cursor: "help" }}
+                              onMouseEnter={ev => showTooltip(tipBox("Defeated", ENEMY_CONDITION_TIPS.Defeated, "#6b7280"), ev)}
+                              onMouseLeave={hideTooltip}>DEFEATED</span>
+                          : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", cursor: "help" }}
+                              onMouseEnter={ev => { const desc = ENEMY_CONDITION_TIPS[label]; showTooltip(tipBox(label, desc ?? "", color), ev); }}
+                              onMouseLeave={hideTooltip}>{label}</span>
                         }
                         {isTargeted && (
                           <span style={{ fontSize: "0.58rem", background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", letterSpacing: "0.04em" }}>⚔ TARGET</span>
