@@ -534,17 +534,17 @@ export default function CreateCharacter() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Race</label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                  onMouseEnter={e => showTooltip(tipBox('Race', 'Your character\'s ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.', '#c4b5fd'), e)}
+                  onMouseLeave={hideTooltip}>Race</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
                     <div key={race}
+                      onClick={() => setCharacter(c => ({ ...c, race }))}
                       onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
                       onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
-                    >
-                      <div onClick={() => setCharacter(c => ({ ...c, race }))}
-                        style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : hoveredRace === race ? 'rgba(139,92,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-                        {race}
-                      </div>
+                      style={{ padding: '16px', borderRadius: '8px', border: `1px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : hoveredRace === race ? 'rgba(139,92,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                      {race}
                     </div>
                   ))}
                 </div>
@@ -570,18 +570,18 @@ export default function CreateCharacter() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', color: '#94a3b8' }}>Alignment <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional — shapes how the DM reads your character)</span></label>
+                <label style={{ display: 'block', marginBottom: '4px', color: '#94a3b8', cursor: 'help' }}
+                  onMouseEnter={e => showTooltip(tipBox('Alignment', 'Your character\'s moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character\'s motivations. Hover any alignment for its description.', '#a78bfa'), e)}
+                  onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional — shapes how the DM reads your character)</span></label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                   {ALIGNMENTS.map(a => (
                     <div key={a.key}
+                      onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
                       onMouseEnter={e => { setHoveredAlign(a.key); showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? a.desc, "#a78bfa"), e); }}
                       onMouseLeave={() => { setHoveredAlign(null); hideTooltip(); }}
-                    >
-                      <div onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
-                        style={{ padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', border: `1px solid ${character.alignment === a.key ? 'var(--primary)' : hoveredAlign === a.key ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.alignment === a.key ? 'rgba(139,92,246,0.2)' : hoveredAlign === a.key ? 'rgba(139,92,246,0.06)' : 'transparent' }}>
-                        <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', color: character.alignment === a.key ? '#c4b5fd' : '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>{a.short}</div>
-                        <div style={{ fontSize: '0.78rem', color: character.alignment === a.key ? 'white' : '#94a3b8', lineHeight: 1.2 }}>{a.key}</div>
-                      </div>
+                      style={{ padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', border: `1px solid ${character.alignment === a.key ? 'var(--primary)' : hoveredAlign === a.key ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.alignment === a.key ? 'rgba(139,92,246,0.2)' : hoveredAlign === a.key ? 'rgba(139,92,246,0.06)' : 'transparent' }}>
+                      <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', color: character.alignment === a.key ? '#c4b5fd' : '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>{a.short}</div>
+                      <div style={{ fontSize: '0.78rem', color: character.alignment === a.key ? 'white' : '#94a3b8', lineHeight: 1.2 }}>{a.key}</div>
                     </div>
                   ))}
                 </div>
@@ -599,14 +599,12 @@ export default function CreateCharacter() {
                     const ct = CLASS_TIPS[cls];
                     return (
                     <div key={cls}
+                      onClick={() => handleClassSelect(cls)}
                       onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(<div style={{ background: "#12101f", border: "1px solid #8b5cf655", borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: "#c4b5fd", marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
                       onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
-                    >
-                      <div onClick={() => handleClassSelect(cls)}
-                        style={{ padding: '14px', borderRadius: '8px', border: `1px solid ${character.class === cls ? 'var(--primary)' : hoveredClass === cls ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.class === cls ? 'rgba(139,92,246,0.2)' : hoveredClass === cls ? 'rgba(139,92,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', fontSize: '0.9rem' }}>
-                        {cls}
-                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px' }}>✦ Spellcaster</div>}
-                      </div>
+                      style={{ padding: '14px', borderRadius: '8px', border: `1px solid ${character.class === cls ? 'var(--primary)' : hoveredClass === cls ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.class === cls ? 'rgba(139,92,246,0.2)' : hoveredClass === cls ? 'rgba(139,92,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', fontSize: '0.9rem' }}>
+                      {cls}
+                      {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px' }}>✦ Spellcaster</div>}
                     </div>
                     );
                   })}
