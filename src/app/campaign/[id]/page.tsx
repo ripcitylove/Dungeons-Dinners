@@ -516,8 +516,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const messagesRef          = useRef<Message[]>(OPENING_MESSAGES);
   const isTypingRef          = useRef(false);
   const narrationEnabledRef  = useRef(false);
-  const turnOrderRef         = useRef<string[]>([]);
-  const currentTurnIndexRef  = useRef(0);
+  const turnOrderRef              = useRef<string[]>([]);
+  const currentTurnIndexRef       = useRef(0);
+  const restoredTurnStateRef      = useRef<{ order: string[]; index: number } | null>(null);
   const currentSceneRef        = useRef<string>("");
   const enemiesRef             = useRef<CampaignEnemy[]>([]);
   const rollRequestedUserIdRef = useRef<string | null>(null);
@@ -695,6 +696,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { isGroupCheckRollRef.current = isGroupCheckRoll; }, [isGroupCheckRoll]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
 
+  // Persist turn state to DB whenever it changes so campaigns resume at the right position
+  useEffect(() => {
+    if (!turnOrder.length || !params.id) return;
+    supabase.from("campaigns")
+      .update({ turn_order: turnOrder, current_turn_index: currentTurnIndex })
+      .eq("id", params.id)
+      .then(() => {});
+  }, [turnOrder, currentTurnIndex, params.id]);
+
   // ── Per-campaign state write helper ──────────────────────────────────────────
   // Routes to campaign_characters when using the CC table, otherwise characters.
   const charWrite = useCallback(async (charId: string, fields: Record<string, unknown>) => {
@@ -714,12 +724,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, []);
 
-  // Build turn order from campaign party (character IDs sorted by name) — works with any number of accounts
+  // Build turn order from campaign party — prefer DB-restored state on resume, fall back to alphabetical
   useEffect(() => {
     if (!campaignParty.length) return;
-    const order = [...campaignParty]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(c => c.id);
+    const partyIds = new Set(campaignParty.map(c => c.id));
+    const restored = restoredTurnStateRef.current;
+    if (restored) {
+      restoredTurnStateRef.current = null;
+      const validOrder = restored.order.filter(id => partyIds.has(id));
+      // Add any party members missing from the saved order (e.g. new joiners)
+      campaignParty.forEach(c => { if (!validOrder.includes(c.id)) validOrder.push(c.id); });
+      const clampedIndex = Math.min(restored.index, validOrder.length - 1);
+      turnOrderRef.current = validOrder;
+      setTurnOrder(validOrder);
+      setCurrentTurnIndex(clampedIndex);
+      currentTurnIndexRef.current = clampedIndex;
+      return;
+    }
+    const order = [...campaignParty].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id);
     turnOrderRef.current = order;
     setTurnOrder(order);
   }, [campaignParty.length]);
@@ -763,6 +785,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const loadedLeaderCharId = (campRes.data as { party_leader_id?: string } | null)?.party_leader_id ?? null;
       setPartyLeaderId(loadedLeaderCharId);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
+
+      // Stash DB-persisted turn state — applied by the campaignParty.length effect once the party loads
+      const savedOrder = (campRes.data as { turn_order?: string[] } | null)?.turn_order;
+      const savedIndex = (campRes.data as { current_turn_index?: number } | null)?.current_turn_index ?? 0;
+      if (savedOrder?.length) restoredTurnStateRef.current = { order: savedOrder, index: savedIndex };
 
       // Load any active enemies (e.g. campaign resumed mid-combat)
       if (enemiesRes.data?.length) {
