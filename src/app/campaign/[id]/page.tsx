@@ -14,6 +14,8 @@ import {
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
   type LootItem,
 } from "../../../lib/lootData";
+import { tipBox } from "../../../hooks/useTooltip";
+import { MECHANIC_TIPS } from "../../../lib/tooltipData";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -1187,9 +1189,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diceRollTarget]);
 
-  // Open dice panel once narration and DM typing have both finished
+  // Open dice panel only after ALL narration (including in-flight TTS fetches) has finished.
+  // narrating covers active playback; the slot counter covers sentences queued but not yet playing.
   useEffect(() => {
-    if (pendingDiceShow && !narrating && !isTyping) {
+    if (!pendingDiceShow || isTyping) return;
+    const narrationInFlight = narrating || narPlaySlotRef.current < narSlotCounterRef.current;
+    if (!narrationInFlight) {
       setPendingDiceShow(false);
       setShowDice(true);
     }
@@ -3244,7 +3249,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em" }}>⚡ Active</span>
                           )}
                         </div>
-                        <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>{char.race} {char.class} · Lvl {char.level}</div>
+                        <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>
+                          {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · Lvl {char.level}
+                        </div>
                       </div>
                     </div>
                     <div style={{ width: "100%", height: "4px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginBottom: "6px" }}>
@@ -3252,10 +3259,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                        <span style={{ fontSize: fs(0.72), color, fontWeight: "bold" }} title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}>
+                        <span style={{ fontSize: fs(0.72), color, fontWeight: "bold", cursor: "help" }}
+                          title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}
+                          onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.HP.title, MECHANIC_TIPS.HP.body), e)}
+                          onMouseLeave={hideTooltip}
+                        >
                           {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
                         </span>
-                        <span style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: 600 }} title="Gold">💰 {char.inventory?.gold ?? 0}</span>
+                        <span style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: 600, cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.GOLD.title, MECHANIC_TIPS.GOLD.body, "#f59e0b"), e)}
+                          onMouseLeave={hideTooltip}
+                        >💰 {char.inventory?.gold ?? 0}</span>
                       </div>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
@@ -3271,8 +3285,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             onClick={e => { e.stopPropagation(); handleTurnSkip(char, idx); }}
                             title={`Swap turns with ${char.name}`}
                             style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.35)", color: "#a78bfa", cursor: "pointer", fontSize: fs(0.62), padding: "2px 6px", borderRadius: "4px", lineHeight: 1.4, fontWeight: 600, transition: "all 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.7)"; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.35)"; }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.7)"; showTooltip(tipBox(MECHANIC_TIPS.PASS_TURN.title, MECHANIC_TIPS.PASS_TURN.body), e); }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.35)"; hideTooltip(); }}
                           >Pass Turn</button>
                         )}
                       </div>
@@ -3288,7 +3302,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             <div style={{ width: `${xpPct}%`, height: "100%", background: char.level >= 10 ? "#f59e0b" : "linear-gradient(90deg,#6d28d9,#8b5cf6)", transition: "width 0.6s ease" }} />
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between", fontSize: fs(0.58), marginTop: "2px" }}>
-                            <span style={{ color: "#7c3aed", fontWeight: 600 }}>XP</span>
+                            <span style={{ color: "#7c3aed", fontWeight: 600, cursor: "help" }}
+                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.XP.title, MECHANIC_TIPS.XP.body, "#7c3aed"), e)}
+                              onMouseLeave={hideTooltip}
+                            >XP</span>
                             <span style={{ color: "#64748b" }}>{char.level >= 10 ? "MAX LEVEL" : `${curXp} / ${xpMax}`}</span>
                           </div>
                         </div>
@@ -3412,14 +3429,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <div style={{ display: "flex", gap: "7px" }}>
                   <button onClick={handlePartyShortRest}
                     style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; }}>
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.SHORT_REST.title, MECHANIC_TIPS.SHORT_REST.body, "#f59e0b"), e); }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; hideTooltip(); }}>
                     🌙 Short Rest
                   </button>
                   <button onClick={handlePartyLongRest}
                     style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; }}>
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.LONG_REST.title, MECHANIC_TIPS.LONG_REST.body, "#818cf8"), e); }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; hideTooltip(); }}>
                     ☀️ Long Rest
                   </button>
                 </div>
@@ -3602,7 +3619,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   const hasSlots  = Object.keys(maxSlots).length > 0;
                   return hasSlots ? (
                     <div>
-                      <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Spell Slots</h3>
+                      <h3
+                        style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)", cursor: "help" }}
+                        onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.SPELL_SLOTS.title, MECHANIC_TIPS.SPELL_SLOTS.body), e)}
+                        onMouseLeave={hideTooltip}
+                      >Spell Slots</h3>
                       {Object.entries(maxSlots).map(([lvl, max]) => {
                         const used = usedSlots[Number(lvl)] ?? 0;
                         const remaining = Math.max(0, max - used);
@@ -3879,14 +3900,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
                   <button onClick={handleShortRest}
                     style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: fs(0.75), fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(245,158,11,0.1)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.1)"; }}>
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.SHORT_REST.title, MECHANIC_TIPS.SHORT_REST.body, "#f59e0b"), e); }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.1)"; hideTooltip(); }}>
                     🌙 Short Rest
                   </button>
                   <button onClick={handleLongRest}
                     style={{ flex: 1, padding: "8px", borderRadius: "8px", fontSize: fs(0.75), fontWeight: "bold", border: "1px solid var(--border)", background: "rgba(99,102,241,0.1)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; }}>
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.LONG_REST.title, MECHANIC_TIPS.LONG_REST.body, "#818cf8"), e); }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; hideTooltip(); }}>
                     ☀️ Long Rest
                   </button>
                 </div>

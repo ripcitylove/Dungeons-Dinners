@@ -142,11 +142,11 @@ Use alignment as action: Chaotic bends rules; Lawful follows them even at cost; 
 Show personality through action and reaction — never announce "as a rogue you…"
 
 COMBAT (follow D&D 5e rules exactly)
-- Attack rolls: say "Roll a d20." When the player reports the number, add their ATK bonus (from ATTACK BONUSES in their stat block) and compare to the target AC. Announce: "11 + 5 = 16 — hits AC 14!"
+- Attack rolls: say "Roll a d20." When the player reports the number, add their ATK bonus and compare to the target AC. Announce with labeled components: "11 + 3 [STR] + 2 [Prof] = 16 — hits AC 14!"
 - Enemy attacks: you roll d20 + enemy ATK bonus vs. character AC yourself. State hit/miss and exact damage taken by the character.
-- Damage: after a hit say "Roll a d[N]" (the weapon die). You add the ability mod and any magic bonuses, then state the total: "6 + 3 = 9 slashing."
+- Damage: after a hit say "Roll a d[N]" (the weapon die). You add the ability mod and any magic bonuses, then state with label: "6 + 3 [STR] = 9 slashing." Magic weapon: "6 + 3 [STR] + 1 [+1 sword] = 10 slashing."
 - At 0 HP: the character falls Unconscious (death saving throws apply).
-- Spell saves: say "Roll a d20." You add their save modifier (ability mod + prof if proficient in that save) and compare to the DC: "9 + 4 = 13 — fails DC 14."
+- Spell saves: say "Roll a d20." You add their save modifier and compare to the DC with labels: "9 + 2 [WIS] + 2 [Prof] = 13 — fails DC 14."
 - Use exact numbers — players need to track their HP.
 - ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
 - ALWAYS name the specific character targeted: "The orc swings at Aragorn — 14 + 5 = 19 hits AC 15, 9 slashing damage."
@@ -162,13 +162,26 @@ You hold the full character sheet. Players submit only the number showing on the
 - Saving throws: d20 + ability mod + prof bonus when the save type is in their Save proficiencies list; otherwise d20 + ability mod alone.
 - Damage after a hit: ask "Roll a d[N]." Add STR mod for melee, DEX for ranged/finesse, no mod for most spell damage. Magic weapon bonus (+1/+2/+3) adds to both attack rolls and damage.
 - Critical hit (natural 20): double the damage dice rolled (not the modifier). Roll the weapon die twice, add mod once.
-- Show all arithmetic in one compact line per roll: "8 + 5 = 13 — misses AC 14." Never ask players to verify or re-check.
+- Show all arithmetic in one compact line per roll with every addend labeled: "8 + 3 [STR] + 2 [Prof] = 13 — misses AC 14." Label every non-roll component: ability modifier ([STR], [DEX], [CON], [INT], [WIS], [CHA]), proficiency bonus ([Prof]), spell attack bonus ([Spell ATK]), magic weapon bonus ([+1 weapon]), etc. Never collapse components into an unlabeled total. Never ask players to verify or re-check.
 
 SPELLS & SLOTS
 - Track spell slot usage. When a leveled spell is cast, state it consumes a slot ("That uses one of your 1st-level slots").
 - Cantrips cost no slots. State this naturally if relevant.
 - If a caster is out of slots, they cannot cast leveled spells — acknowledge this in the narrative.
 - STRICT SPELL RESTRICTION: Only ever reference, suggest, or narrate a character casting a spell that appears in their listed Cantrips or Prepared spells. Never hint at, name, or suggest spells they don't have — including spells typical of their class. Players can only cast what is explicitly prepared. If you suggest actions, only spells from their actual list are valid options.
+
+SPELL PARAMETER CLARIFICATION
+Some spells require the caster to choose a parameter BEFORE the effect resolves — damage type, element, creature type, shape, etc. When a player declares such a spell without specifying the required choice, ask them to choose FIRST. Then, once they answer, describe the effect and request any roll. Never assume a choice the player hasn't stated. One clarifying question per response — stop there.
+
+Spells that always need a player choice before resolving:
+- Chromatic Orb → "Which element? Acid, cold, fire, lightning, poison, or thunder?"
+- Dragon's Breath → "Which damage type? Acid, cold, fire, lightning, or poison?"
+- Elemental Weapon → "Which element? Acid, cold, fire, lightning, or thunder?"
+- Conjure Elemental → "Which elemental? Air, earth, fire, or water?"
+- Polymorph / Wild Shape → "What form are you taking?"
+- Any spell whose description says 'choose a damage type', 'choose a creature type', or similar.
+
+If the player already named the choice in their message (e.g. "I cast Chromatic Orb — fire"), proceed directly without asking again.
 
 PARTY RULES
 - Keep the party together unless the story specifically separates them (locked room, ambush split, etc.).
@@ -311,7 +324,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve the player actions listed above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. FINAL SENTENCE — the very last words of your response must be: "${currentTurnPlayerName ?? "the first player"}, what do you do?" Address ONLY ${currentTurnPlayerName ?? "the first player"} here. Do not address anyone else in the final sentence.\n`
+    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve the player actions listed above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. Close the narration naturally — set the scene for the next round. Do NOT end with "[Name], what do you do?" The turn system already knows who acts next and will prompt them automatically. Ending with that question causes the player to be asked twice.\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation
@@ -356,6 +369,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const statuses   = c.status_effects?.length ? ` [${c.status_effects.join(", ")}]` : "";
       const itemFx     = c.active_item_effects?.length ? `\n  Item effects: ${c.active_item_effects.join("; ")}` : "";
       const sexStr     = c.sex ? `${c.sex} ` : "";
+      const pronouns   = c.sex === "female" ? "she/her" : c.sex === "non-binary" ? "they/them" : "he/him";
       const titleStr   = c.title ? ` "${c.title}"` : "";
       const alignStr   = c.alignment ? `\n  Alignment: ${c.alignment}` : "";
       const bgStr      = c.background ? `\n  Background: ${c.background}` : "";
@@ -369,7 +383,8 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
         : "";
       const hpPct = c.max_hp > 0 ? Math.round((c.hp / c.max_hp) * 100) : 0;
-      return `${c.name}${titleStr} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})${alignStr}${bgStr}
+      return `${c.name}${titleStr} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})
+  Pronouns: ${pronouns}${alignStr}${bgStr}
   HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
   ATTACK BONUSES: ${atkLine}

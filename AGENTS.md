@@ -32,6 +32,45 @@ Every change must be tested before pushing to live. This is not optional.
 - Only after confirming the feature works correctly in the browser, report it as complete and offer to push.
 - Never claim a feature is working based solely on a successful build or TypeScript check — those verify correctness of code, not correctness of behavior.
 
+# Site-Wide Tooltip Standard
+
+Every interactive element — buttons, stats, class/race labels, spell slots, rest actions, skill chips, turn controls — must have a hover tooltip so new players understand what everything is and does.
+
+## How to add tooltips
+
+**Hook (client components):**
+```tsx
+import { useTooltip, tipBox } from "../../hooks/useTooltip";
+const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
+// Add {TooltipPortal} somewhere in the JSX return
+```
+
+**Data library** — never write D&D descriptions inline. Import from `src/lib/tooltipData.ts`:
+- `STAT_TIPS[label]` — STR/DEX/CON/INT/WIS/CHA descriptions
+- `RACE_TIPS[race]` — racial abilities and bonuses
+- `CLASS_TIPS[cls]` — class role, hit die, primary stat, abilities
+- `SKILL_TIPS[skill]` — skill checks and governing ability
+- `MECHANIC_TIPS.HP / .GOLD / .XP / .SPELL_SLOTS / .SHORT_REST / .LONG_REST / .PASS_TURN / .INITIATIVE / ...`
+- `ALIGNMENT_TIPS[key]` — alignment descriptions
+- `STAT_METHOD_TIPS.roll / .array / .pointbuy`
+- `CONDITION_TIPS[condition]` — string (not TipEntry)
+
+**Wire a tooltip:**
+```tsx
+onMouseEnter={e => { const t = STAT_TIPS[label]; if (t) showTooltip(tipBox(t.title, t.body), e); }}
+onMouseLeave={hideTooltip}
+```
+
+**`tipBox(title, body, accent?)`** renders the standard dark-fantasy tooltip card. Pass an accent color to match the element's theme.
+
+**campaign/[id]/page.tsx** already has its own `showTooltip`/`hideTooltip` at the component level (uses `globalTooltip` state). Do NOT add `useTooltip()` there — just call the existing `showTooltip`/`hideTooltip` directly and import `tipBox` and the needed data maps.
+
+## Tooltip placement rules
+- Tooltips render via portal at `document.body` — they are always above all stacking contexts.
+- `pointerEvents: none` on the tooltip div prevents it from blocking clicks.
+- Tooltips are automatically hidden when `dmBusy` activates (the `dmBusy` effect in the campaign page calls `hideTooltip()`).
+- Do not add tooltips inside elements that already have `pointerEvents: none` (e.g., the `dmBusy` lock wrapper) — the events won't fire.
+
 # Product Northstar
 
 DnD Legends is a multiplayer D&D 5e experience where **every user is a player** and **the AI is the Dungeon Master**.

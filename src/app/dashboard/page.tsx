@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
+import { useTooltip, tipBox } from "../../hooks/useTooltip";
+import { STAT_TIPS, RACE_TIPS, CLASS_TIPS } from "../../lib/tooltipData";
 import "../globals.css";
 
 type Inventory = { gold: number; weapons: string[]; items: string[] };
 type Character = {
   id: string; name: string; race: string; class: string; level: number;
-  hp: number; max_hp: number;
+  hp: number; max_hp: number; sex?: string;
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   inventory: Inventory | null;
@@ -62,7 +64,7 @@ function CharacterModal({
   const hpPct      = Math.max(0, Math.min(100, Math.round((char.hp / Math.max(1, modalMaxHp)) * 100)));
   const hpColor    = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
   const inv        = char.inventory;
-  const [hoveredStat, setHoveredStat] = useState<string | null>(null);
+  const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 
   return (
     <div
@@ -99,7 +101,7 @@ function CharacterModal({
           <div style={{ textAlign: "center" }}>
             <h2 style={{ fontSize: "1.8rem", fontWeight: "bold", marginBottom: "4px", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</h2>
             <p style={{ color: "var(--subtle)", fontSize: "0.9rem", marginBottom: "14px" }}>
-              {char.race} {char.class} · Level {char.level}
+              {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · Level {char.level}
             </p>
             <div style={{ fontSize: "0.78rem", display: "flex", justifyContent: "space-between", marginBottom: "5px", gap: "12px" }}>
               <span style={{ color: "var(--muted)" }}>Hit Points</span>
@@ -129,9 +131,21 @@ function CharacterModal({
                 return (
                   <div
                     key={label}
-                    style={{ position: "relative", background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "transparent"}`, cursor: "default", transition: "border-color 0.2s" }}
-                    onMouseEnter={() => setHoveredStat(label)}
-                    onMouseLeave={() => setHoveredStat(null)}
+                    style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "transparent"}`, cursor: "default", transition: "border-color 0.2s" }}
+                    onMouseEnter={e => {
+                      const st = STAT_TIPS[label];
+                      if (!st) return;
+                      const accent = tierStyle ? tierStyle.color : "#8b5cf6";
+                      showTooltip(
+                        <div style={{ background: "#12101f", border: `1px solid ${accent}55`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "180px", maxWidth: "240px" }}>
+                          <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "0.8rem" }}>{st.title}</div>
+                          {guide && tierStyle && <div style={{ color: tierStyle.color, fontSize: "0.7rem", marginBottom: "4px", fontWeight: 600 }}>{tierStyle.label} for {char.class}</div>}
+                          <div style={{ color: "#94a3b8" }}>{st.body}</div>
+                          {guide && <div style={{ color: "#64748b", fontSize: "0.7rem", marginTop: "5px" }}>{guide.reason}</div>}
+                        </div>, e
+                      );
+                    }}
+                    onMouseLeave={hideTooltip}
                   >
                     <div style={{ fontSize: "0.62rem", color: "var(--muted)", marginBottom: "2px" }}>{label}</div>
                     <div style={{ fontWeight: "bold", fontSize: "1.15rem" }}>{val}</div>
@@ -139,12 +153,6 @@ function CharacterModal({
                     {tierStyle && (
                       <div style={{ fontSize: "0.5rem", color: tierStyle.color, marginTop: "3px", fontWeight: "bold", letterSpacing: "0.06em" }}>
                         {tierStyle.label.toUpperCase()}
-                      </div>
-                    )}
-                    {hoveredStat === label && guide && tierStyle && (
-                      <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", background: "#1a1730", border: `1px solid ${tierStyle.color}66`, borderRadius: "7px", padding: "9px 11px", zIndex: 500, width: "160px", pointerEvents: "none", fontSize: "0.7rem", color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
-                        <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "4px", fontSize: "0.72rem" }}>{tierStyle.label} Stat</div>
-                        {guide.reason}
                       </div>
                     )}
                   </div>
@@ -184,6 +192,7 @@ function CharacterModal({
           </button>
         </div>
       </div>
+      {TooltipPortal}
     </div>
   );
 }
@@ -192,6 +201,7 @@ function CharacterModal({
 
 export default function Dashboard() {
   const router = useRouter();
+  const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
   const [loading, setLoading]               = useState(true);
   const [userId, setUserId]                 = useState<string | null>(null);
   const [characters, setCharacters]         = useState<Character[]>([]);
@@ -244,7 +254,7 @@ export default function Dashboard() {
 
       const [charsRes, campsRes] = await Promise.all([
         supabase.from("characters")
-          .select("id, name, race, class, level, hp, max_hp, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url, campaign_id")
+          .select("id, name, race, class, level, hp, max_hp, sex, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url, campaign_id")
           .eq("user_id", user.id),
         supabase.from("campaigns")
           .select("id, title, description, created_at")
@@ -633,7 +643,29 @@ export default function Dashboard() {
                       </div>
 
                       {/* Race / Class */}
-                      <div style={{ fontSize: "0.68rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div
+                        style={{ fontSize: "0.68rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        onMouseEnter={e => {
+                          e.stopPropagation();
+                          const rt = RACE_TIPS[char.race];
+                          const ct = CLASS_TIPS[char.class];
+                          if (!rt && !ct) return;
+                          showTooltip(
+                            <div style={{ background: "#12101f", border: "1px solid #8b5cf655", borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "180px", maxWidth: "240px" }}>
+                              {rt && <>
+                                <div style={{ fontWeight: 700, color: "#c4b5fd", marginBottom: "3px", fontSize: "0.8rem" }}>{rt.title}</div>
+                                <div style={{ color: "#94a3b8", marginBottom: ct ? "8px" : 0 }}>{rt.body}</div>
+                              </>}
+                              {ct && <>
+                                <div style={{ fontWeight: 700, color: CLASS_COLORS[char.class] ?? "#c4b5fd", marginBottom: "3px", fontSize: "0.8rem" }}>{ct.title}</div>
+                                <div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "3px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div>
+                                <div style={{ color: "#94a3b8" }}>{ct.body}</div>
+                              </>}
+                            </div>, e
+                          );
+                        }}
+                        onMouseLeave={hideTooltip}
+                      >
                         {char.race} {char.class}
                       </div>
 
@@ -661,6 +693,7 @@ export default function Dashboard() {
 
         </div>
       </div>
+      {TooltipPortal}
     </main>
   );
 }
