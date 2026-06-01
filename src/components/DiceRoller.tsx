@@ -135,12 +135,16 @@ function playResultSound(q: Quality) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DiceRoller({
   onRollComplete,
+  onCancel,
   requiredDice,
   requiredRollMode,
+  rollContext,
 }: {
   onRollComplete: (result: number, diceType: number, description?: string) => void;
+  onCancel?: () => void;
   requiredDice?: number | null;
   requiredRollMode?: "normal" | "advantage" | "disadvantage" | null;
+  rollContext?: string | null;
 }) {
   const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(null);
   const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">("idle");
@@ -232,6 +236,42 @@ export default function DiceRoller({
 
       {/* Atmospheric top glow */}
       <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "600px", height: "300px", background: "radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.18) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+      {/* Cancel button */}
+      {onCancel && phase === "idle" && (
+        <button
+          onClick={onCancel}
+          style={{
+            position: "absolute", top: "24px", right: "28px",
+            background: "none", border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "8px", padding: "6px 14px",
+            color: "#475569", fontSize: "0.78rem", cursor: "pointer",
+            transition: "border-color 0.15s, color 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; e.currentTarget.style.color = "#94a3b8"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#475569"; }}
+        >
+          ✕ Cancel
+        </button>
+      )}
+
+      {/* DM prompt context */}
+      {rollContext && phase === "idle" && (
+        <div style={{
+          maxWidth: "520px", padding: "12px 20px",
+          background: "rgba(139,92,246,0.07)",
+          border: "1px solid rgba(139,92,246,0.2)",
+          borderRadius: "10px",
+          marginBottom: "24px",
+          color: "#c4b5fd",
+          fontSize: "0.88rem",
+          lineHeight: 1.55,
+          textAlign: "center",
+          fontStyle: "italic",
+        }}>
+          {rollContext}
+        </div>
+      )}
 
       {/* Header */}
       <p style={{ color: "#6366f1", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: "8px" }}>

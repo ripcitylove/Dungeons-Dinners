@@ -175,6 +175,9 @@ PARTY RULES
 - Trading items and casting beneficial spells requires proximity: touch spells need contact, most spells need the target within 60 ft.
 - If party members are separated, narrate the distance and enforce range restrictions naturally.
 
+ENVIRONMENT — ALWAYS MOVING
+Never let the story stagnate in one location. Every 2–3 player exchanges, introduce a new sub-location or environmental development: the party pushes through a new door, emerges into a different chamber, a part of the environment changes dramatically (fire, collapse, rising water, a new arrival). Vary the sensory palette — shift from torchlit corridors to open caverns to narrow stairs. The world is alive and the party is always moving through it, not standing still.
+
 WORLD VARIETY & CAMPAIGN OPENINGS
 - Never default to a generic tavern. Every campaign deserves a unique starting point that fits the party and the stakes.
 - Draw from the full breadth of D&D 5e locales: a ship in a midnight squall; a prison transport wagon jolting along a mountain road; a burning village the party just stumbled upon; a royal court mid-assassination attempt; a plague-quarantined district; a half-submerged ruin breached by a treasure hunter moments ago; a desert caravan under gnoll attack; a dwarven forge-city on the eve of war; an elven forest where the trees have started dying; a gladiatorial arena where the party wakes in a holding cell; a thieves' guild den after a job gone wrong; a haunted lighthouse at the edge of a storm; an arcane academy whose headmaster just vanished.
@@ -189,9 +192,13 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then ask the CURRENT TURN player what they do.
 - ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — do not narrate what happens, do not continue the story. The result arrives as the player's next message. After their roll resolves, THEN address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
 - Do NOT include "[Name], roll a [type]" for any character other than the one described above.
+- TURN ORDER: The REMAINING THIS ROUND block (when present) shows only the players who still need to act this round. Follow it exactly. Do not address anyone not listed — they have already acted or passed this round.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 - PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted. If a player has not acted this turn, they have not acted — full stop.
+
+TURN REPLAY — NO-RESULT ACTIONS
+If a player's action produced ZERO outcome (blank wall, empty room, no one present, no information gained, no effect), do NOT advance to the next player. Keep their turn. One brief sentence describing the null result, then ask the same player what they want to try next. The engine reads who you address at the end of your response and sets the turn accordingly — so simply keep ending with "[SamePlayerName], what do you do?"
 
 MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll a d20." (You then add their tool/skill bonus and compare to DC 13.)
@@ -304,7 +311,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve ALL player actions above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. FINAL SENTENCE — the very last words of your response must be: "${currentTurnPlayerName ?? "the first player"}, what do you do?" Address ONLY ${currentTurnPlayerName ?? "the first player"} here. Do not address anyone else in the final sentence.\n`
+    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve the player actions listed above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. FINAL SENTENCE — the very last words of your response must be: "${currentTurnPlayerName ?? "the first player"}, what do you do?" Address ONLY ${currentTurnPlayerName ?? "the first player"} here. Do not address anyone else in the final sentence.\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation
@@ -324,11 +331,13 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const turnOrderBlock = turnOrder && turnOrder.length > 1
-    ? `\nTURN ORDER THIS ROUND: ${turnOrder.join(" → ")} (then repeats). Follow this sequence strictly.\n`
+    ? `\nREMAINING THIS ROUND: ${turnOrder.join(" → ")}. Address them in this exact sequence — do not ask anyone outside this list to act.\n`
     : "";
 
-  const turnSkipBlock = isTurnSkip && skippedPlayerName && currentTurnPlayerName
-    ? `\n[TURN PASSED — ${skippedPlayerName} → ${currentTurnPlayerName}]\n${skippedPlayerName} has stepped aside. Their turn is DONE. Do NOT address ${skippedPlayerName}, ask them anything, or continue any action they started.\nYour entire response: one sentence placing ${currentTurnPlayerName} in the current moment (what they see or face right now), then ask ${currentTurnPlayerName} what they do. Two sentences maximum. No dice. No combat resolution.\n`
+  const turnSkipBlock = isTurnSkip && currentTurnPlayerName
+    ? skippedPlayerName
+      ? `\n[TURN SWAPPED — ${skippedPlayerName} ↔ ${currentTurnPlayerName}]\n${skippedPlayerName} has deferred — they will still act later in the round. It is now ${currentTurnPlayerName}'s turn.\nYour entire response: one sentence placing ${currentTurnPlayerName} in the current moment (what they see or face right now), then ask ${currentTurnPlayerName} what they do. Two sentences maximum. No dice. No combat resolution.\n`
+      : `\n[TURN SWAP]\nIt is now ${currentTurnPlayerName}'s turn.\nYour entire response: one sentence placing ${currentTurnPlayerName} in the current moment, then ask ${currentTurnPlayerName} what they do. Two sentences maximum.\n`
     : "";
 
   const isMulti = party && party.length > 1;

@@ -173,9 +173,35 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   },
 ] as const;
 
-// ── Colored narrative — red for damage, green for healing ─────────────────────
+// ── Colored narrative — red for damage, green for healing, gold for roll math ──
 const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightning|thunder|poison|acid|necrotic|radiant|psychic|force)\s+)?damage\b/gi;
 const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
+// Roll math: "12 + 5 = 17", "8 + 3 + 2 = 13", or parenthetical "(d20: 12 + STR: +3)"
+const ROLL_RE   = /\b\d+(?:\s*[+\-]\s*\d+)+\s*=\s*\d+\b|\(\s*d(?:4|6|8|10|12|20):?\s*\d+[^)]{0,80}\)/gi;
+
+// Detect which player the DM is addressing at the end of a response.
+// Returns the matching full name from partyNames, or null.
+function detectNextTurnPlayer(text: string, partyNames: string[]): string | null {
+  const tail = text.slice(-280);
+  let lastMatch: { idx: number; name: string } | null = null;
+  for (const fullName of partyNames) {
+    const firstName = fullName.split(" ")[0];
+    if (firstName.length < 2) continue;
+    const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // "[Name], what do you do/try?" or "what do you do, [Name]?" or "[Name], your move/turn"
+    const re = new RegExp(
+      `\\b${esc}\\b[^\\n]{0,120}(?:what (?:do|will|would) you|what(?:'s| is) your (?:action|move)|your (?:move|turn|action)|you(?:'re| are) up)` +
+      `|(?:what (?:do|will|would) you|your (?:move|turn|action))[^\\n]{0,120}\\b${esc}\\b`,
+      "gi"
+    );
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(tail)) !== null) {
+      if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name: fullName };
+    }
+  }
+  return lastMatch?.name ?? null;
+}
 
 // Fades in each chunk of text as it arrives during streaming
 function StreamingText({ text }: { text: string }) {
@@ -236,13 +262,15 @@ function RevealText({ text, onComplete }: { text: string; onComplete?: () => voi
 }
 
 function ColorizedText({ text, playerColors = {} }: { text: string; playerColors?: Record<string, string> }) {
-  type Seg = { start: number; end: number; color: string };
+  type Seg = { start: number; end: number; color: string; tooltip?: string };
   const segs: Seg[] = [];
   let m: RegExpExecArray | null;
   DAMAGE_RE.lastIndex = 0;
   while ((m = DAMAGE_RE.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#ef4444" });
   HEAL_RE.lastIndex = 0;
   while ((m = HEAL_RE.exec(text))   !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#22c55e" });
+  ROLL_RE.lastIndex = 0;
+  while ((m = ROLL_RE.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#fbbf24", tooltip: `Roll breakdown: ${m[0].trim()}` });
   for (const [name, color] of Object.entries(playerColors)) {
     if (!name.trim()) continue;
     const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
@@ -254,7 +282,15 @@ function ColorizedText({ text, playerColors = {} }: { text: string; playerColors
   for (const seg of segs) {
     if (seg.start < pos) continue;
     if (seg.start > pos) out.push(<span key={pos}>{text.slice(pos, seg.start)}</span>);
-    out.push(<span key={seg.start} style={{ color: seg.color, fontWeight: 600 }}>{text.slice(seg.start, seg.end)}</span>);
+    out.push(
+      <span
+        key={seg.start}
+        title={seg.tooltip}
+        style={{ color: seg.color, fontWeight: 600, ...(seg.tooltip && { textDecoration: "underline dotted", cursor: "help" }) }}
+      >
+        {text.slice(seg.start, seg.end)}
+      </span>
+    );
     pos = seg.end;
   }
   if (pos < text.length) out.push(<span key={pos}>{text.slice(pos)}</span>);
@@ -462,6 +498,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [requiredRollMode,    setRequiredRollMode]    = useState<"normal" | "advantage" | "disadvantage" | null>(null);
   // userId of the player the DM explicitly called on to roll — gates isMyTurn
   const [rollRequestedUserId, setRollRequestedUserId] = useState<string | null>(null);
+  // Context sentence from the DM shown at the top of the dice screen
+  const [diceRollContext,     setDiceRollContext]     = useState<string | null>(null);
   // Enemy targeting — which enemy the player is focusing on
   const [targetedEnemyId,   setTargetedEnemyId]   = useState<string | null>(null);
 
@@ -964,6 +1002,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           }
         }
       })
+      .on("broadcast", { event: "turn_order_swap" }, ({ payload }) => {
+        if (payload.userId === userIdRef.current) return;
+        const newOrder = payload.newOrder as string[];
+        const newIndex = payload.newIndex as number;
+        turnOrderRef.current = newOrder;
+        setTurnOrder(newOrder);
+        setCurrentTurnIndex(newIndex);
+        currentTurnIndexRef.current = newIndex;
+        if (campaignPartyRef.current.length > 1) {
+          const turnCharId = newOrder[newIndex];
+          const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
+          if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+        }
+      })
       .on("broadcast", { event: "roll_request" }, ({ payload }) => {
         if ((payload as { userId: string | null }).userId === userIdRef.current) return;
         const uid = (payload as { userId: string | null }).userId ?? null;
@@ -1134,9 +1186,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Determine if this character was the acting character for this DM response.
     // prevActingCharIdRef is set in handleSend (before turn advance) and synced via dm_response broadcast.
     const wasPrevActingChar = char.id === prevActingCharIdRef.current;
-    // Fallback: solo play or when prevActingCharIdRef hasn't been set yet
-    const isCurrentTurnChar = turnOrderRef.current.length <= 1
-      || turnOrderRef.current[currentTurnIndexRef.current] === char.id;
+    // Fallback: solo play only — in multiplayer the turn advances BEFORE the DM responds, so
+    // isCurrentTurnChar would wrongly flag the NEXT player as the acting char.
+    const isCurrentTurnChar = turnOrderRef.current.length <= 1;
     const isActingChar = wasPrevActingChar || isCurrentTurnChar;
     console.log("[applyStateChange] acting", { wasPrevActingChar, isCurrentTurnChar, isActingChar, prevActingCharId: prevActingCharIdRef.current, charId: char.id, turnLen: turnOrderRef.current.length });
 
@@ -1258,6 +1310,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
     await charWrite(char.id, dbUpdate);
+
+    // Always clear any pending optimistic spell cast once the acting char's DM response is processed,
+    // even if chat-state returned spell_slots_used = 0 (so the ref never stays stuck > 0).
+    if (isActingChar && pendingSpellCastRef.current > 0) pendingSpellCastRef.current = 0;
 
     // Broadcast full stat sync so every player's party card stays accurate
     channelRef.current?.send({
@@ -1733,9 +1789,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const currentTurnName   = currentTurnCharId
         ? (campaignPartyRef.current.find(c => c.id === currentTurnCharId)?.name ?? null)
         : null;
-      // Explicit turn order for the DM — resolves ambiguity about who goes when
-      const turnOrderNames = turnOrderRef.current.length > 1
-        ? turnOrderRef.current
+      // Remaining turn order — unacted players only, starting from the current player.
+      // Passed players are excluded so the DM never cycles back to them via TURN ORDER / UP NEXT.
+      const actedIds = new Set(roundActionsRef.current.map(a => a.characterId));
+      const unactedIds   = turnOrderRef.current.filter(id => !actedIds.has(id));
+      const currentActorId   = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const currentUnactedIdx = currentActorId ? unactedIds.indexOf(currentActorId) : -1;
+      // Rotate list so current player is first (e.g. [C, B] not [B, C] when C is acting)
+      const reorderedUnacted = currentUnactedIdx > 0
+        ? [...unactedIds.slice(currentUnactedIdx), ...unactedIds.slice(0, currentUnactedIdx)]
+        : unactedIds;
+      const turnOrderNames = reorderedUnacted.length > 1
+        ? reorderedUnacted
             .map(id => campaignPartyRef.current.find(c => c.id === id)?.name ?? null)
             .filter((n): n is string => n !== null)
         : [];
@@ -1772,7 +1837,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.isTurnSkip && { isTurnSkip: true }),
           ...(opts?.skippedPlayerName && { skippedPlayerName: opts.skippedPlayerName }),
           ...(opts?.isGroupCheckResult && { isGroupCheckResult: true }),
-          ...(turnOrderNames.length > 1 && { turnOrder: turnOrderNames }),
+          ...(turnOrderNames.length > 1 && !opts?.roundSummary?.length && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
         signal: controller.signal,
@@ -1850,6 +1915,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setRequiredRollMode(detectedRollMode !== "normal" ? detectedRollMode : null);
       setRollRequestedUserId(targetUserId);
       rollRequestedUserIdRef.current = targetUserId;
+      // Capture the DM's roll-request sentence for the dice screen header
+      if (validRollTarget || detectedDieType) {
+        const rollSents = full.trim().split(/(?<=[.!?…])\s+/);
+        setDiceRollContext(rollSents[rollSents.length - 1]?.trim() || null);
+      } else {
+        setDiceRollContext(null);
+      }
       // Rewind turn to rolling character if DM addressed someone other than the current turn player
       if (targetChar && turnOrderRef.current.length > 1) {
         const rollerIdx = turnOrderRef.current.findIndex(id => id === targetChar.id);
@@ -1862,6 +1934,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
+
+      // DM-driven turn: if no roll is requested, let the DM's closing question ("Aria, what do you do?")
+      // determine whose turn it is.  Only accept the DM's directive if it names:
+      //   (a) the previously-acting player — no-result replay, or
+      //   (b) the already-advanced current turn player — normal/skip handoff.
+      // Any other target is treated as a DM narration artifact and ignored to prevent turn skips.
+      if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
+        const partyNames     = campaignPartyRef.current.map(c => c.name);
+        const dmTurnName     = detectNextTurnPlayer(full, partyNames);
+        const dmTurnChar     = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
+        if (dmTurnChar) {
+          const dmTurnIdx      = turnOrderRef.current.indexOf(dmTurnChar.id);
+          if (dmTurnIdx >= 0) {
+            const prevActorId    = prevActingCharIdRef.current;
+            const expectedCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+            const isAllowed      = dmTurnChar.id === prevActorId || dmTurnChar.id === expectedCharId;
+            if (isAllowed) {
+              // If DM kept the same player (no-result replay), un-record their action so the round
+              // doesn't stall waiting for them to "act again".
+              if (dmTurnChar.id === prevActorId) {
+                roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevActorId);
+                setRoundActions([...roundActionsRef.current]);
+              }
+              if (dmTurnIdx !== currentTurnIndexRef.current) {
+                setCurrentTurnIndex(dmTurnIdx);
+                currentTurnIndexRef.current = dmTurnIdx;
+                const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+                if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+                channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+              }
+            }
+          }
+        }
+      }
 
       // Detect group/party check — this roll does NOT consume the current player's individual turn
       const isGroupCheck = /\b(for the (?:party|group)|(?:group|party) (?:check|roll|save|saving throw))\b/i.test(full);
@@ -2005,57 +2111,60 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "round_reset",  payload: {} });
     channelRef.current?.send({ type: "broadcast", event: "turn_taken",   payload: { userId, newIndex: 0 } });
     if (campaignPartyRef.current.length > 1) setActiveCharIdx(0);
-    const lastActor = summary[summary.length - 1]?.name ?? null;
-    await sendToAI(msgs, false, { roundSummary: summary, prevPlayerName: lastActor, preserveNarration: true });
+    // Strip pass entries from the DM summary — the DM should only see actual player actions.
+    // Passed players are absent from the resolution; enemies still target all present characters.
+    const dmSummary = summary.filter(a => a.action !== "passed their turn");
+    const lastActor = dmSummary[dmSummary.length - 1]?.name ?? summary[summary.length - 1]?.name ?? null;
+    await sendToAI(msgs, false, { roundSummary: dmSummary, prevPlayerName: lastActor, preserveNarration: true });
   };
 
-  // ── Party leader turn skip ───────────────────────────────────────────────────
-  const handleTurnSkip = (toChar: Character, toPartyIdx: number) => {
+  // ── Turn swap — current player swaps their slot with the target player ───────
+  const handleTurnSkip = async (toChar: Character, toPartyIdx: number) => {
     if (campaignPartyRef.current.length <= 1) return;
+    // Can't swap while the DM is mid-response or a roll is still pending
+    if (isTypingRef.current || rollRequestedUserIdRef.current) return;
 
-    // Identify who is being skipped
-    const fromCharId = turnOrderRef.current[currentTurnIndexRef.current];
+    const fromIdx    = currentTurnIndexRef.current;
+    const fromCharId = turnOrderRef.current[fromIdx];
     const fromChar   = campaignPartyRef.current.find(c => c.id === fromCharId);
     if (!fromChar || fromChar.id === toChar.id) return;
 
-    // Move turn to the selected character
-    const newTurnIdx = turnOrderRef.current.findIndex(id => id === toChar.id);
-    if (newTurnIdx < 0) return;
+    const toIdx = turnOrderRef.current.findIndex(id => id === toChar.id);
+    if (toIdx < 0) return;
 
-    setCurrentTurnIndex(newTurnIdx);
-    currentTurnIndexRef.current = newTurnIdx;
+    // Swap positions — fromChar will still act at toIdx later; toChar acts now at fromIdx
+    const newOrder = [...turnOrderRef.current];
+    [newOrder[fromIdx], newOrder[toIdx]] = [newOrder[toIdx], newOrder[fromIdx]];
+    turnOrderRef.current = newOrder;
+    setTurnOrder(newOrder);
+    // currentTurnIndex stays at fromIdx — it now points to toChar after the swap
     setActiveCharIdx(toPartyIdx);
     setSuggestions([]);
-    channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: newTurnIdx } });
 
-    // Record the skip as a "pass" so round tracking doesn't stall
-    if (!roundActionsRef.current.some(a => a.characterId === fromChar.id)) {
-      roundActionsRef.current = [...roundActionsRef.current, { characterId: fromChar.id, name: fromChar.name, action: "passed their turn" }];
-      setRoundActions([...roundActionsRef.current]);
-    }
+    // Broadcast the new order so all clients stay in sync
+    channelRef.current?.send({ type: "broadcast", event: "turn_order_swap", payload: { userId, newOrder, newIndex: fromIdx } });
 
-    // Show banner and queue DM acknowledgement after 4 seconds
-    setTurnSkipBanner(`${fromChar.name} passes the turn to ${toChar.name}…`);
+    // Show a brief banner — auto-dismiss after 2.5s
+    setTurnSkipBanner(`${fromChar.name} swaps turns with ${toChar.name} — ${toChar.name} acts now!`);
     if (skipTurnTimeoutRef.current) clearTimeout(skipTurnTimeoutRef.current);
-    skipTurnTimeoutRef.current = setTimeout(async () => {
+    skipTurnTimeoutRef.current = setTimeout(() => {
       setTurnSkipBanner(null);
       skipTurnTimeoutRef.current = null;
-      // Don't call the DM if a roll result is still pending — the roller must go first
-      if (rollRequestedUserIdRef.current) return;
+    }, 2500);
+
+    // Call the DM — fromChar will still act later so do NOT mark them as skipped
+    pendingReconciliationRef.current = null;
+    await sendToAI(messagesRef.current, false, {
+      trackRound:     turnOrderRef.current.length > 1,
+      nextPlayerName: toChar.name,
+      prevPlayerName: fromChar.name,
+      isTurnSkip:     true,
+    });
+    const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
+    if (pending) {
       pendingReconciliationRef.current = null;
-      await sendToAI(messagesRef.current, false, {
-        trackRound:        turnOrderRef.current.length > 1,
-        nextPlayerName:    toChar.name,
-        prevPlayerName:    fromChar.name,
-        isTurnSkip:        true,
-        skippedPlayerName: fromChar.name,
-      });
-      const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
-      if (pending) {
-        pendingReconciliationRef.current = null;
-        await triggerReconciliation(pending.messages, pending.summary);
-      }
-    }, 4000);
+      await triggerReconciliation(pending.messages, pending.summary);
+    }
   };
 
   // ── Player send ───────────────────────────────────────────────────────────────
@@ -2095,10 +2204,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     prevActingCharIdRef.current = character?.id ?? null;
 
     // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
+    // Skip players who have already acted (e.g. via pass) so the turn doesn't cycle back to them.
+    const findNextUnactedIdx = (fromIdx: number) => {
+      for (let i = 1; i < order.length; i++) {
+        const candidateIdx = (fromIdx + i) % order.length;
+        if (!roundActionsRef.current.some(a => a.characterId === order[candidateIdx])) return candidateIdx;
+      }
+      return (fromIdx + 1) % order.length; // fallback: all acted (reconciliation will catch this)
+    };
+
     let nextPlayerName: string | null = null;
     if (isRollSubmit && !wasGroupCheckRoll && order.length > 1) {
-      // Roll submitted: DM resolves the roll, then advance to the next player's turn.
-      const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
+      // Roll submitted: DM resolves the roll, then advance to the next unacted player's turn.
+      const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
       const nextCid = order[nextIdx];
       nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
       setCurrentTurnIndex(nextIdx);
@@ -2111,7 +2229,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     } else if (!isRollSubmit && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
-        const nextIdx = (currentTurnIndexRef.current + 1) % order.length;
+        const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
         const nextCid = order[nextIdx];
         nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
         setCurrentTurnIndex(nextIdx);
@@ -2330,8 +2448,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setShowDice(false);
     setRequiredDiceType(null);
     setRequiredRollMode(null);
+    setDiceRollContext(null);
     const msg = description ?? `Rolled a ${result} on a d${diceType}`;
     handleSend(`[${msg}]`, true);
+  };
+
+  const handleDiceCancel = () => {
+    setShowDice(false);
+    setPendingDiceShow(false);
+    setDiceRollTarget(null);
+    setRequiredDiceType(null);
+    setRequiredRollMode(null);
+    setDiceRollContext(null);
+    setRollRequestedUserId(null);
+    rollRequestedUserIdRef.current = null;
   };
 
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
@@ -2531,7 +2661,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}
@@ -3107,10 +3237,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
                         )}
-                        {char.id !== character?.id && canPassTurn && !isCurrentTurn && (
+                        {char.id !== character?.id && isMyTurn && !isCurrentTurn && !roundActions.some(a => a.characterId === char.id) && (
                           <button
                             onClick={e => { e.stopPropagation(); handleTurnSkip(char, idx); }}
-                            title={`Pass turn to ${char.name}`}
+                            title={`Swap turns with ${char.name}`}
                             style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.35)", color: "#a78bfa", cursor: "pointer", fontSize: fs(0.62), padding: "2px 6px", borderRadius: "4px", lineHeight: 1.4, fontWeight: 600, transition: "all 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.7)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.35)"; }}
@@ -3526,6 +3656,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     const newSlots = { ...usedSlots, [availLvl]: (usedSlots[availLvl] ?? 0) + 1 };
                                     setCharacter(prev => prev ? { ...prev, spell_slots_used: newSlots } : null);
                                     setCampaignParty(prev => prev.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c));
+                                    // Sync refs immediately — applyStateChange reads characterRef.current after the DM
+                                    // responds; without this, it would overwrite the consumed slot with a stale value.
+                                    if (characterRef.current) characterRef.current = { ...characterRef.current, spell_slots_used: newSlots };
+                                    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c);
                                     await charWrite(character.id, { spell_slots_used: newSlots });
                                     pendingSpellCastRef.current += 1;
                                     handleSend(`I cast ${s}.`);

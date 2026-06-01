@@ -89,10 +89,10 @@ function buildPrompt(
   const base      = SCENE_BASE[type] ?? `a ${type} location in a dark fantasy world`;
   const combat    = isCombat ? ` ${COMBAT_SUFFIX[type] ?? "as fierce combat erupts"}` : "";
   const style     = STYLE_VARIANTS[type] ?? "dramatic dark fantasy concept art, cinematic atmosphere";
-  const modStr    = modifiers.length > 0 ? ` Scene quality: ${modifiers.join(", ")}.` : "";
+  // Give modifiers strong visual weight in the prompt — they define what makes this scene unique
+  const modStr    = modifiers.length > 0 ? ` Distinct visual character: ${modifiers.join(", ")} — make these features prominent and unmistakable.` : "";
   const narrative = description.length > 20 ? ` ${description}` : "";
 
-  // Include party characters and active enemies to make scenes feel personal and alive
   let figures = "";
   if (party && party.length > 0) {
     const charDescs = party.slice(0, 4).map(c => `${c.race} ${c.class}`).join(", ");
@@ -106,7 +106,6 @@ function buildPrompt(
   return `${style}. ${base}${combat}.${modStr}${narrative}${figures} Ultra-wide cinematic landscape framing, no text, no UI, no watermarks, no modern elements. Highly detailed.`;
 }
 
-// How similar is the new scene to the current one? Used to suppress trivial re-draws.
 function buildSceneSystem(currentScene: string): string {
   return `You are a scene classifier for a D&D fantasy RPG. Analyze the DM narrative and return JSON.
 
@@ -119,13 +118,30 @@ CLASSIFICATION RULES:
 - Wilderness ONLY if truly outdoors with no primary structure
 - Default to dungeon for any underground or enclosed ancient setting
 
+MODIFIERS — always include 2–3:
+Pick words that make this specific scene visually DISTINCTIVE — sub-location, lighting condition, dominant feature, atmosphere, color tone. These words combine into a cache key so the background image refreshes when things change.
+
+Examples by type:
+- dungeon: crypt, vaulted, torchlit, mossy, collapsed, flooded, iron, carved, narrow, altar, spiral, pit, archway, bone, throne
+- forest: moonlit, sunlit, clearing, fog, thorny, ancient, burnt, overgrown, dawn, canopy, dusk, autumn, dark
+- castle: throne, great_hall, courtyard, battlements, ruined, corridor, crypt, grand, chapel, tower, cellar
+- wilderness: cliff, stormy, snow, dawn, road, river, hilltop, desolate, marsh, canyon, meadow, coastal
+- cave: crystal, bioluminescent, waterfall, narrow, underground, dark, echoing, frozen, volcanic
+- ruins: overgrown, collapsed, sunlit, ancient, cursed, buried, flooded, hilltop, coastal
+- temple: altar, sacred, flooded, dark, abandoned, underground, glowing, ritual
+
 CHANGE DETECTION — current scene is: "${currentScene}"
-shouldChange: true ONLY if the scene is meaningfully different — a new physical location, a dramatic environmental transformation (fire, flood, collapse), or a revelation that recontextualizes the entire space. Set to false for: continuing narration in the same place, adding monsters/NPCs, dialogue, combat starting in the same location, or minor shifts in mood. When in doubt, do NOT change.
+Set shouldChange: true when ANY of these apply:
+- The party entered a different room, corridor, or area (even within the same type)
+- The chosen modifiers differ from what the current scene name implies
+- New dominant visual features have appeared (fire, water, a specific object type, different architecture)
+- The lighting or atmosphere has shifted noticeably
+- Combat has just started or ended in this location (visual stakes change)
+Set shouldChange: false ONLY when the party is definitely in the exact same spot with the exact same visual character you'd assign today — and your chosen modifiers already match the current scene key.
+When uncertain, always prefer shouldChange: true — a fresh image beats a stale one.
 
 Return ONLY valid JSON, no other text:
-{"type":"<scene_type>","shouldChange":<bool>,"description":"<2-3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word>"]}
-
-modifiers: 1-3 lowercase words for strong visual distinctions only (e.g. "burning","flooded","frozen","abandoned","crimson","collapsed"). Omit for generic scenes.`;
+{"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"]}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -148,7 +164,7 @@ export async function POST(req: NextRequest) {
     // Step 1: Classify scene, extract descriptors, and judge whether change is warranted
     const detect = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 250,
+      max_tokens: 280,
       system:     buildSceneSystem(currentScene.replace(/_combat$/, "")),
       messages:   [{ role: "user", content: `${contextPrefix}${narrative.slice(0, 900)}` }],
     });
@@ -174,12 +190,10 @@ export async function POST(req: NextRequest) {
 
     const sceneName = buildCacheKey(sceneType, modifiers, isCombat);
 
-    // Same scene key AND AI confirmed no meaningful visual change — nothing to do
+    // Skip only when scene key is identical AND AI explicitly confirmed no visual change
     if (sceneName === currentScene && !shouldChange) {
       return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description, shouldChange: false });
     }
-    // Different key always proceeds (new scene type or modifiers = new image needed);
-    // same key with shouldChange=true also proceeds (dramatic in-place transformation)
 
     // Step 2: Check cache — exact key match reuses saved image
     const { data: allCached } = await supabase.from("scenes").select("name, image_url");
