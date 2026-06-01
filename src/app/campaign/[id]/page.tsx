@@ -1962,35 +1962,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
-      // DM-driven turn: if no roll is requested, let the DM's closing question ("Aria, what do you do?")
-      // determine whose turn it is.  Only accept the DM's directive if it names:
-      //   (a) the previously-acting player — no-result replay, or
-      //   (b) the already-advanced current turn player — normal/skip handoff.
-      // Any other target is treated as a DM narration artifact and ignored to prevent turn skips.
+      // DM-driven turn: when the DM's closing question names a player ("Aria, what do you do?"),
+      // always make that player the active turn — regardless of rotation order.
+      // Exception: if they already acted this round, only allow it for the prev actor (replay).
       if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
-        const partyNames     = campaignPartyRef.current.map(c => c.name);
-        const dmTurnName     = detectNextTurnPlayer(full, partyNames);
-        const dmTurnChar     = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
+        const partyNames = campaignPartyRef.current.map(c => c.name);
+        const dmTurnName = detectNextTurnPlayer(full, partyNames);
+        const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
         if (dmTurnChar) {
-          const dmTurnIdx      = turnOrderRef.current.indexOf(dmTurnChar.id);
-          if (dmTurnIdx >= 0) {
-            const prevActorId    = prevActingCharIdRef.current;
-            const expectedCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-            const isAllowed      = dmTurnChar.id === prevActorId || dmTurnChar.id === expectedCharId;
-            if (isAllowed) {
-              // If DM kept the same player (no-result replay), un-record their action so the round
-              // doesn't stall waiting for them to "act again".
-              if (dmTurnChar.id === prevActorId) {
-                roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevActorId);
-                setRoundActions([...roundActionsRef.current]);
-              }
-              if (dmTurnIdx !== currentTurnIndexRef.current) {
-                setCurrentTurnIndex(dmTurnIdx);
-                currentTurnIndexRef.current = dmTurnIdx;
-                const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
-                if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
-                channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
-              }
+          const prevActorId  = prevActingCharIdRef.current;
+          const alreadyActed = roundActionsRef.current.some(a => a.characterId === dmTurnChar.id);
+          // If the named player has already acted, only honour it as a replay for the prev actor
+          if (!alreadyActed || dmTurnChar.id === prevActorId) {
+            if (alreadyActed && dmTurnChar.id === prevActorId) {
+              // Replay — un-record so the round doesn't stall waiting for them to act again
+              roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevActorId);
+              setRoundActions([...roundActionsRef.current]);
+            }
+            const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+            if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
+              setCurrentTurnIndex(dmTurnIdx);
+              currentTurnIndexRef.current = dmTurnIdx;
+              const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+              if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+              channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
             }
           }
         }
@@ -2056,11 +2051,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
 
-      // Round management: only detect when all players have acted (turn advance already done in handleSend)
+      // Round management: reconcile when every party member has acted (count-based, not position-based)
       if (opts?.trackRound && !rollTarget) {
         const order = turnOrderRef.current;
         if (order.length > 1) {
-          const allActed = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
+          const partySize = campaignPartyRef.current.length;
+          const allActed  = roundActionsRef.current.length >= partySize
+            && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
           if (allActed) {
             const summary    = roundActionsRef.current.map(a => ({ name: a.name, action: a.action }));
             const msgsWithDm: Message[] = [...allMessages, { role: "dm", content: full }];
@@ -2267,6 +2264,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
 
     const allActedForDM = !isRollSubmit && order.length > 1
+      && roundActionsRef.current.length >= campaignPartyRef.current.length
       && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
     pendingReconciliationRef.current = null;
