@@ -2475,6 +2475,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
     : (turnOrder.length <= 1 || currentTurnPlayerId === character?.id);
+  const dmBusy              = isTyping || narrating;
 
   const xpToNext   = character ? getXpToNextLevel(character.level) : 300;
   const xpPercent  = character ? Math.min(100, ((character.xp ?? 0) / xpToNext) * 100) : 0;
@@ -3059,7 +3060,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
 
         {/* Suggested actions — hidden while a dice roll is pending or active */}
-        {suggestions.length > 0 && !isTyping && isMyTurn && !showDice && !pendingDiceShow && (
+        {suggestions.length > 0 && !dmBusy && isMyTurn && !showDice && !pendingDiceShow && (
           <div style={{ padding: "10px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.04)" }}>
             <p style={{ fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -3157,6 +3158,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </button>
           )}
         </div>
+
+        {/* Lock all sidebar interactions while DM is responding or narrating */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", pointerEvents: dmBusy ? "none" : "auto", opacity: dmBusy ? 0.5 : 1, transition: "opacity 0.2s" }}>
 
         {/* ── Party tab ── */}
         {sidebarTab === "party" && (
@@ -3990,6 +3994,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
           </div>
         )}
+        </div>{/* end dmBusy lock wrapper */}
       </div>
 
 
