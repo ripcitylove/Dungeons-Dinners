@@ -113,6 +113,22 @@ export default async function Home() {
           <Image src="/Dragon_Ramen.png" alt="Dragon eating ramen" width={920} height={880} style={{ width: "100%", height: "auto" }} priority />
         </div>
 
+        {/* Adventuring party illustration */}
+        <div className="animate-float" style={{
+          position: "absolute",
+          right: "3%",
+          top: "6%",
+          width: "clamp(420px, 52vw, 780px)",
+          userSelect: "none",
+          pointerEvents: "none",
+          zIndex: 0,
+          animationDelay: "1s",
+          opacity: 0.92,
+          filter: "drop-shadow(0 8px 32px rgba(0,0,0,0.45))",
+        }}>
+          <Image src="/GangGang.png" alt="Adventuring party" width={2816} height={1536} style={{ width: "100%", height: "auto" }} priority />
+        </div>
+
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits
         </h1>
