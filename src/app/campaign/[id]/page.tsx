@@ -2947,31 +2947,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* ── Drag handle: Scene | Chat ── */}
       <div
-        style={{ width: "6px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s" }}
+        title="Drag to resize"
+        style={{ width: "10px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px" }}
         onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "chat", startX: e.clientX, startW: chatPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
         onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.55)"; }}
         onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "var(--border)"; }}
-      />
+      >
+        {[0,1,2,3,4].map(i => <span key={i} style={{ width: "3px", height: "3px", borderRadius: "50%", background: "rgba(255,255,255,0.18)", pointerEvents: "none" }} />)}
+      </div>
 
       {/* ── Pane 2: Chat ── */}
       <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", overflow: "hidden" }}>
         {/* Header */}
-        <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+        <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", overflow: "hidden" }}>
           <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaignTitle || "Loading…"}</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>DM: Claude · {campaignParty.length} in party</p>
           </div>
-          {/* Help / tutorial */}
-          <button
+          {/* Help / tutorial — hidden at narrow widths */}
+          {chatPaneWidth >= 360 && <button
             onClick={() => setTutorialStep(0)}
             title="Open tutorial"
             style={{ flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "8px", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.78rem", color: "#64748b", transition: "all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
-          >?</button>
-          {/* Font size controls */}
-          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+          >?</button>}
+          {/* Font size controls — hidden at narrow widths */}
+          <div style={{ display: chatPaneWidth >= 420 ? "flex" : "none", alignItems: "center", gap: "2px", flexShrink: 0 }}>
             <button
               onClick={() => { const v = Math.max(0.65, parseFloat((chatFontSize - 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
               disabled={chatFontSize <= 0.65}
@@ -3301,11 +3304,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* ── Drag handle: Chat | Sidebar ── */}
       <div
-        style={{ width: "6px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s" }}
+        title="Drag to resize"
+        style={{ width: "10px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px" }}
         onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "sidebar", startX: e.clientX, startW: sidebarPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
         onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.55)"; }}
         onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "var(--border)"; }}
-      />
+      >
+        {[0,1,2,3,4].map(i => <span key={i} style={{ width: "3px", height: "3px", borderRadius: "50%", background: "rgba(255,255,255,0.18)", pointerEvents: "none" }} />)}
+      </div>
 
       {/* ── Pane 3: Sidebar ── */}
       <div style={{ width: sidebarPaneWidth, flex: "0 0 auto", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
