@@ -116,7 +116,7 @@ export default async function Home() {
         {/* Adventuring party illustration */}
         <div className="animate-float" style={{
           position: "absolute",
-          right: "3%",
+          right: "-1%",
           top: "6%",
           width: "clamp(420px, 52vw, 780px)",
           userSelect: "none",
