@@ -54,7 +54,7 @@ export function TooltipSizeControl() {
     router.push("/dashboard");
   };
 
-  if (!mounted) return null;
+  if (!mounted || pathname === "/") return null;
 
   const isDefault = stepIdx === 0;
 

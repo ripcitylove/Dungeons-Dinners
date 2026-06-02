@@ -2994,7 +2994,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               title={narrationEnabled ? "Change DM voice" : "Enable AI narration"}
               style={{ background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent", border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: "8px", padding: "5px 10px", cursor: "pointer", fontSize: "0.85rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "5px", transition: "all 0.2s", color: narrationEnabled ? "#c4b5fd" : "#94a3b8" }}>
               {narrating ? <span style={{ animation: "blink 0.8s step-end infinite" }}>🔊</span> : narrationEnabled ? "🔊" : "🔇"}
-              {narrationEnabled && <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
+              {narrationEnabled && chatPaneWidth > 310 && <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
             </button>
             {voicePickerOpen && (
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
@@ -3352,8 +3352,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           )}
         </div>
 
-        {/* Lock all sidebar interactions while DM is responding or narrating */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", pointerEvents: dmBusy ? "none" : "auto", opacity: dmBusy ? 0.5 : 1, transition: "opacity 0.2s" }}>
+        {/* Dim sidebar while DM is busy; only block pointer events while actively typing (not narrating, so tooltips still work) */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", pointerEvents: isTyping ? "none" : "auto", opacity: dmBusy ? 0.5 : 1, transition: "opacity 0.2s" }}>
 
         {/* ── Party tab ── */}
         {sidebarTab === "party" && (
