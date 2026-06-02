@@ -126,7 +126,7 @@ export default async function Home() {
           opacity: 0.92,
           filter: "drop-shadow(0 8px 32px rgba(0,0,0,0.45))",
         }}>
-          <Image src="/GangGang.png" alt="Adventuring party" width={2816} height={1536} style={{ width: "100%", height: "auto" }} priority />
+          <Image src="/GangGang.png" alt="Adventuring party" width={2760} height={1504} style={{ width: "100%", height: "auto" }} priority />
         </div>
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
