@@ -19,6 +19,8 @@ type Character = {
   inventory: Inventory | null;
   portrait_url?: string | null;
   campaign_id?: string | null;
+  title?: string | null;
+  background?: string | null;
 };
 type Campaign = { id: string; title: string; description: string; created_at: string; isOwned: boolean };
 type CampaignMember = { id: string; name: string; race: string; class: string; level: number; portrait_url?: string | null; campaign_id: string };
@@ -54,10 +56,12 @@ function CharacterModal({
   char,
   onClose,
   onDelete,
+  onUpdate,
 }: {
   char: Character;
   onClose: () => void;
   onDelete: (id: string, name: string) => void;
+  onUpdate: (id: string, patch: Partial<Character>) => void;
 }) {
   const modalIb    = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
   const modalMaxHp = char.max_hp + modalIb.hpMaxAdd;
@@ -65,6 +69,18 @@ function CharacterModal({
   const hpColor    = hpPct > 50 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
   const inv        = char.inventory;
   const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
+  const [editMode, setEditMode]           = useState(false);
+  const [editTitle, setEditTitle]         = useState(char.title ?? "");
+  const [editBackground, setEditBackground] = useState(char.background ?? "");
+  const [editSaving, setEditSaving]       = useState(false);
+
+  const handleEditSave = async () => {
+    setEditSaving(true);
+    const patch = { title: editTitle.trim() || null, background: editBackground.trim() || null };
+    const { error } = await supabase.from("characters").update(patch).eq("id", char.id);
+    setEditSaving(false);
+    if (!error) { onUpdate(char.id, patch); setEditMode(false); }
+  };
 
   return (
     <div
@@ -186,11 +202,54 @@ function CharacterModal({
           </div>
         </div>
 
-        <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={() => onDelete(char.id, char.name)} className="btn-danger">
-            Delete Character
-          </button>
-        </div>
+        {/* Edit panel */}
+        {editMode ? (
+          <div style={{ marginTop: "24px", borderTop: "1px solid var(--border)", paddingTop: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div>
+              <label style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: "6px" }}>Title / Epithet</label>
+              <input
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder='e.g. "The Unbroken" or "Shadowblade"'
+                maxLength={60}
+                style={{ width: "100%", background: "rgba(0,0,0,0.35)", border: "1px solid var(--border)", borderRadius: "7px", padding: "8px 12px", color: "var(--text)", fontSize: "0.88rem", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: "6px" }}>Backstory</label>
+              <textarea
+                value={editBackground}
+                onChange={e => setEditBackground(e.target.value)}
+                placeholder="Where did this hero come from? What drives them forward?"
+                rows={5}
+                style={{ width: "100%", background: "rgba(0,0,0,0.35)", border: "1px solid var(--border)", borderRadius: "7px", padding: "8px 12px", color: "var(--text)", fontSize: "0.85rem", lineHeight: 1.6, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button onClick={() => setEditMode(false)} style={{ padding: "7px 16px", borderRadius: "7px", background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: "0.82rem" }}>Cancel</button>
+              <button onClick={handleEditSave} disabled={editSaving} className="btn-primary" style={{ padding: "7px 18px", fontSize: "0.82rem", opacity: editSaving ? 0.7 : 1 }}>
+                {editSaving ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {(char.title || char.background) && (
+              <div style={{ marginTop: "20px", borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
+                {char.title && <div style={{ fontSize: "0.82rem", color: "rgba(212,169,106,0.8)", fontStyle: "italic", marginBottom: char.background ? "8px" : 0 }}>&ldquo;{char.title}&rdquo;</div>}
+                {char.background && <div style={{ fontSize: "0.82rem", color: "var(--subtle)", lineHeight: 1.7 }}>{char.background}</div>}
+              </div>
+            )}
+            <div style={{ marginTop: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button onClick={() => setEditMode(true)} style={{ padding: "7px 14px", borderRadius: "7px", background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "5px" }}>
+                ✏️ Edit Title &amp; Backstory
+              </button>
+              <button onClick={() => onDelete(char.id, char.name)} className="btn-danger">
+                Delete Character
+              </button>
+            </div>
+          </>
+        )}
       </div>
       {TooltipPortal}
     </div>
@@ -386,7 +445,15 @@ export default function Dashboard() {
 
       {/* Character sheet modal */}
       {selectedChar && (
-        <CharacterModal char={selectedChar} onClose={() => setSelectedChar(null)} onDelete={deleteCharacter} />
+        <CharacterModal
+          char={selectedChar}
+          onClose={() => setSelectedChar(null)}
+          onDelete={deleteCharacter}
+          onUpdate={(id, patch) => {
+            setCharacters(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+            setSelectedChar(prev => prev?.id === id ? { ...prev, ...patch } : prev);
+          }}
+        />
       )}
 
       {/* Delete campaign confirmation */}

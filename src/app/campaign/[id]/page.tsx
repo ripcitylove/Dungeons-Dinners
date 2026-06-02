@@ -39,6 +39,8 @@ type Character = {
   strength: number; dexterity: number; constitution: number;
   intelligence: number; wisdom: number; charisma: number;
   background?: string;
+  title?: string;
+  skill_proficiencies?: string[];
   portrait_url?: string | null;
   sex?: string;
   cantrips_known?: string[];
@@ -306,6 +308,18 @@ const CLASS_COLORS: Record<string, string> = {
   Druid:     "#65a30d", Monk:      "#06b6d4", Sorcerer:  "#a855f7",
 };
 
+const CLASS_EMOJI: Record<string, string> = {
+  Fighter: "⚔️", Wizard: "🧙", Rogue: "🗡️", Cleric: "✝️", Paladin: "🛡️", Ranger: "🏹",
+  Bard: "🎶", Warlock: "🔮", Barbarian: "🪓", Druid: "🌿", Monk: "👊", Sorcerer: "✨",
+};
+
+const CLASS_SAVES: Record<string, string[]> = {
+  Barbarian: ["STR","CON"], Bard: ["DEX","CHA"], Cleric: ["WIS","CHA"],
+  Druid: ["INT","WIS"], Fighter: ["STR","CON"], Monk: ["STR","DEX"],
+  Paladin: ["WIS","CHA"], Ranger: ["STR","DEX"], Rogue: ["DEX","INT"],
+  Sorcerer: ["CON","CHA"], Warlock: ["WIS","CHA"], Wizard: ["INT","WIS"],
+};
+
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Unconscious:   { bg: "rgba(239,68,68,0.25)",   color: "#ef4444" },
   Dead:          { bg: "rgba(31,31,31,0.6)",      color: "#6b7280" },
@@ -498,6 +512,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Portrait lightbox
   const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
+  const [showBackstory, setShowBackstory] = useState(false);
 
   // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
@@ -3388,21 +3403,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const cardMaxHp    = char.max_hp + cardIb.hpMaxAdd;
                 const pct          = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
                 const color        = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
-                const classEmoji   = char.class === "Wizard" ? "🧙" : char.class === "Rogue" ? "🗡️" : char.class === "Cleric" ? "✝" : "⚔";
+                const classEmoji   = CLASS_EMOJI[char.class] ?? "⚔️";
                 const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : "var(--border)";
                 const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.3)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 return (
                   <div key={char.id}
-                    onClick={() => campaignParty.length > 1 && setActiveCharIdx(idx)}
-                    style={{ padding: "12px 14px", background: bgColor, borderRadius: "10px", border: `1.5px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
-                    <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
+                    onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
+                    style={{ padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "10px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div
                           onClick={char.portrait_url ? e => { e.stopPropagation(); setPortraitModal({ name: char.name, cls: char.class, url: char.portrait_url!, subtitle: `${char.race} ${char.class} · Level ${char.level}` }); } : undefined}
-                          style={{ width: "36px", height: "36px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none", cursor: char.portrait_url ? "zoom-in" : "default" }}>
+                          style={{ width: fs(3.2), height: fs(3.2), borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none", cursor: char.portrait_url ? "zoom-in" : "default" }}>
                           {char.portrait_url ? (
-                            <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                           ) : (
                             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(1.1) }}>{classEmoji}</div>
                           )}
@@ -3410,31 +3425,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: fs(0.88), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
+                          <span style={{ fontSize: fs(0.95), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
                           {char.id === partyLeaderId && (
                             <span style={{ fontSize: fs(1.05), flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help" }}
                               onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PARTY_LEADER.title, MECHANIC_TIPS.PARTY_LEADER.body, "#f59e0b"), e)}
                               onMouseLeave={hideTooltip}>👑</span>
                           )}
-                          {isActive && campaignParty.length > 1 && (
-                            <span style={{ fontSize: fs(0.58), background: "rgba(139,92,246,0.45)", color: "#e9d5ff", borderRadius: "3px", padding: "1px 5px", flexShrink: 0, fontWeight: "bold", letterSpacing: "0.03em", cursor: "help" }}
-                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.ACTIVE_TURN.title, MECHANIC_TIPS.ACTIVE_TURN.body, "#8b5cf6"), e)}
-                              onMouseLeave={hideTooltip}>⚡ Active</span>
-                          )}
                         </div>
-                        <div style={{ fontSize: fs(0.72), color: "#94a3b8" }}>
+                        <div style={{ fontSize: fs(0.76), color: "#94a3b8" }}>
                           {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · <span style={{ cursor: "help" }}
                             onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e)}
                             onMouseLeave={hideTooltip}>Lvl {char.level}</span>
                         </div>
                       </div>
                     </div>
-                    <div style={{ width: "100%", height: "4px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginBottom: "6px" }}>
+                    <div style={{ width: "100%", height: "6px", background: "#3f3f46", borderRadius: "3px", overflow: "hidden", marginBottom: "7px" }}>
                       <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                        <span style={{ fontSize: fs(0.72), color, fontWeight: "bold", cursor: "help" }}
+                        <span style={{ fontSize: fs(0.78), color, fontWeight: "bold", cursor: "help" }}
                           title={cardIb.hpMaxAdd > 0 ? `Base ${char.max_hp} +${cardIb.hpMaxAdd} item bonus` : undefined}
                           onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.HP.title, MECHANIC_TIPS.HP.body), e)}
                           onMouseLeave={hideTooltip}
@@ -3649,7 +3659,85 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* ── Character Sheet tab ── */}
         {sidebarTab === "sheet" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-            {stateNotice && (
+            {campaignParty[activeCharIdx] && campaignParty[activeCharIdx].id !== character?.id ? (
+              (() => {
+                const vc = campaignParty[activeCharIdx];
+                const vcColor = CLASS_COLORS[vc.class] ?? "#8b5cf6";
+                const vcPct = vc.max_hp > 0 ? Math.round((vc.hp / vc.max_hp) * 100) : 0;
+                const vcHpColor = vcPct > 60 ? "#22c55e" : vcPct > 25 ? "#f59e0b" : "#ef4444";
+                const getMod = (v: number) => { const m = Math.floor((v - 10) / 2); return m >= 0 ? `+${m}` : `${m}`; };
+                return (
+                  <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <div style={{ padding: "6px 10px", borderRadius: "6px", background: `${vcColor}18`, border: `1px solid ${vcColor}40`, fontSize: fs(0.72), color: vcColor, textAlign: "center", fontWeight: "bold" }}>
+                      👁 Viewing {vc.name}&apos;s Sheet
+                    </div>
+                    <div
+                      onClick={vc.portrait_url ? () => setPortraitModal({ name: vc.name, cls: vc.class, url: vc.portrait_url!, subtitle: `${vc.race} ${vc.class} · Level ${vc.level}` }) : undefined}
+                      style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${vcColor}40`, background: "rgba(0,0,0,0.5)", cursor: vc.portrait_url ? "zoom-in" : "default" }}>
+                      {vc.portrait_url ? (
+                        <img src={vc.portrait_url} alt={vc.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>{CLASS_EMOJI[vc.class] ?? "⚔️"}</div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: vcColor }}>{vc.name}</div>
+                      <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{vc.race} {vc.class} · Lvl {vc.level}</div>
+                    </div>
+                    {(vc.status_effects?.length ?? 0) > 0 && (
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        {vc.status_effects!.map(s => {
+                          const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
+                          return <span key={s} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40` }}>{s}</span>;
+                        })}
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: fs(0.85) }}>
+                        <span style={{ color: "#94a3b8" }}>Hit Points</span>
+                        <span style={{ fontWeight: "bold", color: vcHpColor }}>{vc.hp} / {vc.max_hp}</span>
+                      </div>
+                      <div style={{ width: "100%", height: "10px", background: "#3f3f46", borderRadius: "5px", overflow: "hidden" }}>
+                        <div style={{ width: `${vcPct}%`, height: "100%", background: vcHpColor, transition: "width 0.4s ease" }} />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                      {([["STR", vc.strength], ["DEX", vc.dexterity], ["CON", vc.constitution], ["INT", vc.intelligence], ["WIS", vc.wisdom], ["CHA", vc.charisma]] as [string, number][]).map(([lbl, val]) => (
+                        <div key={lbl} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 6px", textAlign: "center", border: "1px solid var(--border)" }}>
+                          <div style={{ fontSize: fs(0.65), color: "#64748b", letterSpacing: "0.05em", marginBottom: "2px" }}>{lbl}</div>
+                          <div style={{ fontSize: fs(1), fontWeight: "bold", color: "white" }}>{val}</div>
+                          <div style={{ fontSize: fs(0.7), color: "#8b5cf6" }}>{getMod(val)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: fs(0.65), color: "#64748b", marginBottom: "3px", letterSpacing: "0.04em" }}>GOLD</div>
+                        <div style={{ fontSize: fs(0.95), fontWeight: "bold", color: "#f59e0b" }}>{vc.inventory?.gold ?? 0} gp</div>
+                      </div>
+                      <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: fs(0.65), color: "#64748b", marginBottom: "3px", letterSpacing: "0.04em" }}>XP</div>
+                        <div style={{ fontSize: fs(0.95), fontWeight: "bold", color: "#8b5cf6" }}>{vc.xp ?? 0}</div>
+                      </div>
+                    </div>
+                    {((vc.inventory?.items?.length ?? 0) + (vc.inventory?.weapons?.length ?? 0)) > 0 && (
+                      <div>
+                        <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Inventory</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {[...(vc.inventory?.weapons ?? []), ...(vc.inventory?.items ?? [])].slice(0, 8).map((item, i) => (
+                            <div key={i} style={{ padding: "5px 8px", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", fontSize: fs(0.75), color: "#e2e8f0" }}>
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              <>
+                {stateNotice && (
               <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", fontSize: fs(0.8), color: "#34d399", textAlign: "center" }}>
                 ⚡ {stateNotice}
               </div>
@@ -3673,8 +3761,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: CLASS_COLORS[character.class] ?? "white" }}>{character.name}</div>
+                    {character.title && <div style={{ fontSize: fs(0.72), color: "rgba(180,140,70,0.75)", fontStyle: "italic", marginTop: "2px" }}>&ldquo;{character.title}&rdquo;</div>}
                     <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{character.race} {character.class} · Lvl {character.level}</div>
                   </div>
+                  <button
+                    onClick={() => setShowBackstory(true)}
+                    style={{ fontSize: fs(0.72), padding: "5px 14px", borderRadius: "20px", background: "rgba(180,120,40,0.1)", border: "1px solid rgba(180,120,40,0.35)", color: "#d4a96a", cursor: "pointer", transition: "all 0.15s", fontWeight: 600, letterSpacing: "0.03em" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(180,120,40,0.22)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.6)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(180,120,40,0.1)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.35)"; }}>
+                    📖 Backstory
+                  </button>
                 </div>
 
                 {/* Status effects */}
@@ -3915,6 +4011,41 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 )}
 
+                {/* Proficiencies */}
+                {(() => {
+                  const pb = character.level <= 4 ? 2 : character.level <= 8 ? 3 : character.level <= 12 ? 4 : 5;
+                  const saves = CLASS_SAVES[character.class] ?? [];
+                  const skills = character.skill_proficiencies ?? [];
+                  if (saves.length === 0 && skills.length === 0) return null;
+                  return (
+                    <div>
+                      <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>
+                        Proficiencies <span style={{ fontSize: fs(0.72), color: "#64748b", fontWeight: 400 }}>+{pb} prof. bonus</span>
+                      </h3>
+                      {saves.length > 0 && (
+                        <div style={{ marginBottom: "8px" }}>
+                          <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }}>Saving Throws</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                            {saves.map(s => (
+                              <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)", fontWeight: 600 }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {skills.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }}>Skill Proficiencies</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                            {skills.map(s => (
+                              <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(139,92,246,0.12)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", fontWeight: 600 }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Inventory with drop buttons */}
                 <div>
                   <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Inventory</h3>
@@ -4098,6 +4229,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             ) : (
               <div style={{ textAlign: "center", color: "#94a3b8", marginTop: "40px", fontSize: fs(0.9) }}>Loading character...</div>
             )}
+              </>
+            )}
           </div>
         )}
 
@@ -4280,6 +4413,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
           </div>
           <p style={{ position: "absolute", bottom: "20px", color: "#334155", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Click anywhere to close</p>
+        </div>,
+        document.body
+      )}
+
+      {/* Backstory storybook modal */}
+      {showBackstory && character && typeof window !== "undefined" && createPortal(
+        <div onClick={() => setShowBackstory(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000, padding: "20px" }}>
+          <div onClick={e => e.stopPropagation()} className="animate-fade-in" style={{ width: "100%", maxWidth: "520px", background: "linear-gradient(160deg, #1e140a 0%, #140e05 60%, #1a100a 100%)", border: "2px solid rgba(180,140,70,0.5)", borderRadius: "14px", padding: "40px 36px", position: "relative", boxShadow: "0 0 80px rgba(120,80,20,0.3), 0 24px 64px rgba(0,0,0,0.85), inset 0 0 40px rgba(100,60,10,0.1)", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ position: "absolute", top: "12px", left: "16px", color: "rgba(180,140,70,0.45)", fontSize: "0.9rem", lineHeight: 1, pointerEvents: "none" }}>✦</div>
+            <div style={{ position: "absolute", top: "12px", right: "16px", color: "rgba(180,140,70,0.45)", fontSize: "0.9rem", lineHeight: 1, pointerEvents: "none" }}>✦</div>
+            <div style={{ position: "absolute", bottom: "12px", left: "16px", color: "rgba(180,140,70,0.45)", fontSize: "0.9rem", lineHeight: 1, pointerEvents: "none" }}>✦</div>
+            <div style={{ position: "absolute", bottom: "12px", right: "16px", color: "rgba(180,140,70,0.45)", fontSize: "0.9rem", lineHeight: 1, pointerEvents: "none" }}>✦</div>
+            <button onClick={() => setShowBackstory(false)} style={{ position: "absolute", top: "14px", right: "40px", background: "none", border: "none", color: "rgba(180,140,70,0.6)", cursor: "pointer", fontSize: "1.1rem", lineHeight: 1, padding: "4px" }}>✕</button>
+            <div style={{ textAlign: "center", marginBottom: "28px" }}>
+              <div style={{ fontSize: "0.62rem", color: "rgba(180,140,70,0.65)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: "8px" }}>The Chronicles of</div>
+              <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#d4a96a", fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: "0.02em" }}>{character.name}</div>
+              {character.title && <div style={{ fontSize: "0.9rem", color: "rgba(212,169,106,0.65)", marginTop: "5px", fontStyle: "italic", fontFamily: "Georgia, serif" }}>&ldquo;{character.title}&rdquo;</div>}
+              <div style={{ fontSize: "0.75rem", color: "rgba(180,140,70,0.45)", marginTop: "4px" }}>{character.race} {character.class} · Level {character.level}</div>
+              <div style={{ width: "80px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(180,140,70,0.5), transparent)", margin: "14px auto 0" }} />
+            </div>
+            <div style={{ fontSize: "0.9rem", color: "#c4a882", lineHeight: 1.9, fontFamily: "Georgia, 'Times New Roman', serif", textAlign: "justify" }}>
+              {character.background?.trim()
+                ? character.background
+                : <span style={{ color: "rgba(180,140,70,0.4)", fontStyle: "italic" }}>This character&apos;s story has just begun…</span>
+              }
+            </div>
+            <div style={{ textAlign: "center", marginTop: "24px", fontSize: "0.62rem", color: "rgba(180,140,70,0.35)", letterSpacing: "0.1em", textTransform: "uppercase" }}>click outside to close</div>
+          </div>
         </div>,
         document.body
       )}

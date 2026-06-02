@@ -433,7 +433,7 @@ export function MusicPlayer() {
   // Normalize current active key for comparison (tavern aliases to social in POOL_META)
   const activeMetaKey = activePoolKey.current === "tavern" ? "social" : activePoolKey.current;
 
-  if (isOnLanding) return null;
+  if (isOnLanding || pathname === "/auth") return null;
 
   return (
     <>
