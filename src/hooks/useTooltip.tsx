@@ -1,11 +1,14 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
+
+const MARGIN = 8;
 
 type TipState = { content: React.ReactNode; x: number; y: number } | null;
 
 export function useTooltip() {
   const [tip, setTip] = useState<TipState>(null);
+  const tipElRef = useRef<HTMLDivElement | null>(null);
 
   const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => {
     setTip({ content, x: e.clientX, y: e.clientY });
@@ -13,10 +16,48 @@ export function useTooltip() {
 
   const hideTooltip = useCallback(() => setTip(null), []);
 
+  // After the tooltip mounts, measure its true size and clamp to the viewport
+  // before the browser paints — no visible flash.
+  useLayoutEffect(() => {
+    const el = tipElRef.current;
+    if (!el || !tip) return;
+    const { width, height } = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Default: centered on cursor, above it
+    let left = tip.x - width / 2;
+    let top  = tip.y - 14 - height;
+
+    // Clamp horizontally
+    left = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
+
+    // Flip below cursor if not enough room above
+    if (top < MARGIN) {
+      top = tip.y + 20;
+    }
+
+    // Clamp vertically in case below-flip also goes off screen
+    top = Math.max(MARGIN, Math.min(top, vh - height - MARGIN));
+
+    el.style.left = `${left}px`;
+    el.style.top  = `${top}px`;
+  }, [tip]);
+
   const TooltipPortal: React.ReactNode =
     tip != null && typeof window !== "undefined"
       ? createPortal(
-          <div style={{ position: "fixed", left: tip.x, top: tip.y - 14, transform: "translate(-50%, -100%)", zIndex: 99999, pointerEvents: "none", maxWidth: "280px" }}>
+          <div
+            ref={tipElRef}
+            style={{
+              position: "fixed",
+              left: -9999,
+              top: -9999,
+              zIndex: 99999,
+              pointerEvents: "none",
+              maxWidth: "280px",
+            }}
+          >
             {tip.content}
           </div>,
           document.body

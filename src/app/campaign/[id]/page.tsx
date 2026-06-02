@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, use, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, use, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -510,8 +510,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Global tooltip portal — always renders above ALL elements regardless of stacking context
   const [globalTooltip, setGlobalTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
+  const globalTipElRef = useRef<HTMLDivElement | null>(null);
   const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => setGlobalTooltip({ content, x: e.clientX, y: e.clientY }), []);
   const hideTooltip = useCallback(() => setGlobalTooltip(null), []);
+
+  // Clamp globalTooltip to viewport before paint
+  useLayoutEffect(() => {
+    const el = globalTipElRef.current;
+    if (!el || !globalTooltip) return;
+    const { width, height } = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const M = 8;
+    let left = globalTooltip.x - width / 2;
+    let top  = globalTooltip.y - 10 - height;
+    left = Math.max(M, Math.min(left, vw - width - M));
+    if (top < M) top = globalTooltip.y + 20;
+    top = Math.max(M, Math.min(top, vh - height - M));
+    el.style.left = `${left}px`;
+    el.style.top  = `${top}px`;
+  }, [globalTooltip]);
 
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
@@ -4280,7 +4298,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* Global tooltip portal — always on top of everything */}
       {typeof window !== "undefined" && globalTooltip && createPortal(
-        <div style={{ position: "fixed", left: globalTooltip.x, top: globalTooltip.y - 10, transform: "translate(-50%, -100%)", zIndex: 99999, pointerEvents: "none" }}>
+        <div ref={globalTipElRef} style={{ position: "fixed", left: -9999, top: -9999, zIndex: 99999, pointerEvents: "none", maxWidth: "280px" }}>
           {globalTooltip.content}
         </div>,
         document.body
