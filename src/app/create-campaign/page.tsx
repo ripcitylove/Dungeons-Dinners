@@ -1198,11 +1198,16 @@ export default function CreateCampaignWizard() {
               </p>
               <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "14px" }}>
                 {completedChars.map((c, i) => {
-                  const clsColor = c.rosterId ? "#fbbf24" : (CLASS_COLORS[c.class] ?? "#8b5cf6");
+                  const clsColor = CLASS_COLORS[c.class] ?? "#8b5cf6";
+                  const rChar = c.rosterId ? rosterChars?.find(r => r.id === c.rosterId) : null;
+                  const portraitUrl = rChar?.portrait_url ?? null;
                   return (
                   <div key={i} className="glass-panel" style={{ padding: "18px 16px", display: "flex", gap: "14px", alignItems: "center", border: `1px solid ${clsColor}33`, boxShadow: `0 4px 24px ${clsColor}18` }}>
-                    <div style={{ width: "48px", height: "48px", borderRadius: "10px", background: clsColor + "1a", border: `1px solid ${clsColor}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", flexShrink: 0 }}>
-                      {c.rosterId ? "📜" : (CLASS_EMOJI[c.class] ?? "🧙")}
+                    <div style={{ width: "52px", height: "52px", borderRadius: "10px", background: clsColor + "1a", border: `1px solid ${clsColor}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                      {portraitUrl
+                        ? <img src={portraitUrl} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                        : <span style={{ fontSize: "1.6rem" }}>{CLASS_EMOJI[c.class] ?? "🧙"}</span>
+                      }
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: "bold", fontSize: "0.95rem", color: "white" }}>{c.name}</div>
