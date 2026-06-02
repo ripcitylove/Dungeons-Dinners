@@ -131,14 +131,15 @@ Examples by type:
 - temple: altar, sacred, flooded, dark, abandoned, underground, glowing, ritual
 
 CHANGE DETECTION — current scene is: "${currentScene}"
-Set shouldChange: true when ANY of these apply:
-- The party entered a different room, corridor, or area (even within the same type)
-- The chosen modifiers differ from what the current scene name implies
-- New dominant visual features have appeared (fire, water, a specific object type, different architecture)
-- The lighting or atmosphere has shifted noticeably
-- Combat has just started or ended in this location (visual stakes change)
-Set shouldChange: false ONLY when the party is definitely in the exact same spot with the exact same visual character you'd assign today — and your chosen modifiers already match the current scene key.
-When uncertain, always prefer shouldChange: true — a fresh image beats a stale one.
+Set shouldChange: true ONLY when the party has CLEARLY moved to a different location:
+- Entered a completely different building, room type, or outdoor area
+- The scene TYPE itself has changed (dungeon → tavern, forest → castle, etc.)
+- Combat started or ended and the visual stakes have dramatically shifted
+Set shouldChange: false when:
+- The party is still in the same general area, even if details differ
+- Only minor atmospheric details changed (lighting, mood, small description differences)
+- The narrative is a round summary or action resolution within an existing scene
+- You are uncertain — default to false. Only set true for unambiguous location changes.
 
 Return ONLY valid JSON, no other text:
 {"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"]}`;
@@ -181,7 +182,7 @@ export async function POST(req: NextRequest) {
       if (parsed.type && SCENE_BASE[parsed.type]) sceneType = parsed.type;
       if (Array.isArray(parsed.modifiers)) modifiers = parsed.modifiers.map((m: unknown) => String(m).toLowerCase().replace(/[^a-z]/g, "")).filter(Boolean).slice(0, 3);
       if (parsed.description) description = String(parsed.description).slice(0, 400);
-      shouldChange = parsed.shouldChange !== false; // treat missing/null as true
+      shouldChange = parsed.shouldChange === true; // only change when AI explicitly confirms
     } catch {
       // JSON parse failed — extract scene type from raw text, proceed with generation
       const word = raw.toLowerCase().match(/\b(tavern|dungeon|forest|cave|ruins|castle|street|shop|temple|wilderness|ship|graveyard|prison|arena|port|desert|mountain|swamp|library|village)\b/)?.[1];

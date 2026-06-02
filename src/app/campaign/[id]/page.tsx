@@ -2072,8 +2072,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      // Scene detection — skip on roll submissions (dice mechanics, not narrative scene changes)
-      if (!opts?.isRollResult) {
+      // Scene detection — skip on roll submissions and on the brief pendingReconciliation bridge
+      // response (allActed). The bridge fires immediately before reconciliation, so two detection
+      // requests would be in-flight with the same stale currentScene — the newer one (reconciliation)
+      // would win and could revert the scene if it got stale data. Only run detection on the
+      // substantive reconciliation response.
+      if (!opts?.isRollResult && !opts?.allActed) {
         const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
         const partySnap   = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class }));
         const enemySnap   = enemiesRef.current.filter(e => !e.is_defeated).map(e => ({ name: e.name }));
