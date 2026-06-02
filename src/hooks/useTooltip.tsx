@@ -33,15 +33,15 @@ export function tipBox(title: string, body: string, accent = "#8b5cf6"): React.R
       background: "#12101f",
       border: `1px solid ${accent}55`,
       borderRadius: "8px",
-      padding: "9px 13px",
-      fontSize: "0.76rem",
+      padding: "calc(9px * var(--tooltip-font-scale, 1)) calc(13px * var(--tooltip-font-scale, 1))",
+      fontSize: "calc(0.76rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"],
       color: "#e2e8f0",
       lineHeight: 1.55,
       boxShadow: "0 6px 28px rgba(0,0,0,0.85)",
-      minWidth: "160px",
-      maxWidth: "260px",
+      minWidth: "calc(160px * var(--tooltip-font-scale, 1))" as React.CSSProperties["minWidth"],
+      maxWidth: "calc(260px * var(--tooltip-font-scale, 1))" as React.CSSProperties["maxWidth"],
     }}>
-      <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "0.8rem" }}>{title}</div>
+      <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "calc(0.8rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"] }}>{title}</div>
       <div style={{ color: "#94a3b8" }}>{body}</div>
     </div>
   );

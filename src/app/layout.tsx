@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { MusicPlayer } from "../components/MusicPlayer";
 import { FontScaleApplier } from "../components/FontScaleApplier";
+import { TooltipSizeControl } from "../components/TooltipSizeControl";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <FontScaleApplier />
+        <TooltipSizeControl />
         {children}
         <MusicPlayer />
       </body>

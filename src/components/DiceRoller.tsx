@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
 type DieSides = typeof DICE_SIDES[number];
@@ -139,12 +139,14 @@ export default function DiceRoller({
   requiredDice,
   requiredRollMode,
   rollContext,
+  autoRoll,
 }: {
   onRollComplete: (result: number, diceType: number, description?: string) => void;
   onCancel?: () => void;
   requiredDice?: number | null;
   requiredRollMode?: "normal" | "advantage" | "disadvantage" | null;
   rollContext?: string | null;
+  autoRoll?: boolean;
 }) {
   const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(null);
   const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">("idle");
@@ -152,13 +154,14 @@ export default function DiceRoller({
   const [altResult,    setAltResult]    = useState<number | null>(null);
   const [displayNum,   setDisplayNum]   = useState<number | null>(null);
   const [wrongDie,     setWrongDie]     = useState(false);
-  const countupRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countupRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const didAutoRoll   = useRef(false);
 
   const isAdvDis = !!requiredRollMode && requiredRollMode !== "normal";
   const quality = result !== null && selectedDie !== null ? getQuality(result, selectedDie) : null;
   const qs      = quality ? QUALITY[quality] : null;
 
-  const handleDieClick = (sides: DieSides) => {
+  const handleDieClick = useCallback((sides: DieSides) => {
     if (phase !== "idle") return;
 
     if (requiredDice && sides !== requiredDice) {
@@ -212,7 +215,18 @@ export default function DiceRoller({
         : undefined;
       setTimeout(() => onRollComplete(kept, sides, description), 2800);
     }, 1350);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requiredDice, requiredRollMode, isAdvDis, onRollComplete]);
+
+  // Auto-roll the required die on mount when the DM already called for it
+  useEffect(() => {
+    if (!autoRoll || !requiredDice || didAutoRoll.current) return;
+    if (!(DICE_SIDES as readonly number[]).includes(requiredDice)) return;
+    didAutoRoll.current = true;
+    const t = setTimeout(() => handleDieClick(requiredDice as DieSides), 450);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => () => { if (countupRef.current) clearInterval(countupRef.current); }, []);
 

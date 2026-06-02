@@ -2696,7 +2696,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} autoRoll={!!requiredDiceType} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}
@@ -3131,7 +3131,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)" }}>
           <div style={{ display: "flex", gap: "10px" }}>
-            <button className="btn-secondary" onClick={() => setShowDice(true)} disabled={isTyping || narrating || !isMyTurn} style={{ padding: "0 14px", fontSize: "1.2rem", flexShrink: 0 }} title="Roll Dice">🎲</button>
+            <button
+              className="btn-secondary"
+              onClick={() => setShowDice(true)}
+              disabled={isTyping || narrating || !isMyTurn}
+              title="Roll Dice"
+              style={{
+                padding: "0 14px", fontSize: "1.2rem", flexShrink: 0,
+                ...(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn && {
+                  border: "1.5px solid rgba(251,191,36,0.8)",
+                  boxShadow: "0 0 16px rgba(251,191,36,0.5), 0 0 32px rgba(251,191,36,0.2)",
+                  animation: "dicePulse 0.8s ease-in-out infinite alternate",
+                  color: "#fbbf24",
+                }),
+              }}
+            >🎲</button>
             <input
               type="text" value={input}
               onChange={e => setInput(e.target.value)}
@@ -4136,6 +4150,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
         @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         @keyframes streamFadeIn { from { opacity: 0; filter: blur(3px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+        @keyframes dicePulse { from { transform: scale(1); box-shadow: 0 0 10px rgba(251,191,36,0.4), 0 0 20px rgba(251,191,36,0.15); } to { transform: scale(1.1); box-shadow: 0 0 22px rgba(251,191,36,0.75), 0 0 44px rgba(251,191,36,0.3); } }
       `}</style>
     </main>
   );

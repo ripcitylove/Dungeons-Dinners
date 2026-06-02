@@ -430,7 +430,6 @@ export function MusicPlayer() {
     setPickerOpen(false);
   }, []);
 
-  const isTavern = activePoolKey.current === "tavern" || activePoolKey.current === "social";
   // Normalize current active key for comparison (tavern aliases to social in POOL_META)
   const activeMetaKey = activePoolKey.current === "tavern" ? "social" : activePoolKey.current;
 
@@ -441,10 +440,10 @@ export function MusicPlayer() {
       <audio
         ref={audioRef}
         preload="none"
-        loop={isTavern}
+        loop
         onPlay={()  => { setPlaying(true); setLoadError(false); musicErrors.current = 0; }}
         onPause={()  => { setPlaying(false); }}
-        onEnded={() => { if (!isTavern) playNextMusic(); }}
+        onEnded={() => playNextMusic()}
         onError={() => {
           musicErrors.current++;
           if (musicErrors.current >= MAX_SKIP) {
