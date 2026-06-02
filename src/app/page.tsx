@@ -102,7 +102,7 @@ export default async function Home() {
           position: "absolute",
           left: "3%",
           top: "6%",
-          width: "clamp(280px, 32vw, 460px)",
+          width: "clamp(420px, 52vw, 780px)",
           userSelect: "none",
           pointerEvents: "none",
           zIndex: 0,
