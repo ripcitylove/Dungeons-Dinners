@@ -2947,14 +2947,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* ── Drag handle: Scene | Chat ── */}
       <div
-        style={{ width: "5px", flexShrink: 0, cursor: "col-resize", background: "transparent", transition: "background 0.15s", zIndex: 20 }}
+        style={{ width: "6px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s" }}
         onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "chat", startX: e.clientX, startW: chatPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.45)"; }}
-        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "transparent"; }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.55)"; }}
+        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "var(--border)"; }}
       />
 
       {/* ── Pane 2: Chat ── */}
-      <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", borderRight: "1px solid var(--border)" }}>
+      <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", overflow: "hidden" }}>
         {/* Header */}
         <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
           <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
@@ -3262,7 +3262,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         )}
 
         {/* Input bar */}
-        <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)" }}>
+        <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)", overflow: "hidden" }}>
           <div style={{ display: "flex", gap: "10px" }}>
             <button
               className="btn-secondary"
@@ -3292,7 +3292,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 : !isMyTurn     ? `Waiting for ${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "other players"}…`
                 : "Describe your action…"
               }
-              style={{ flex: 1, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1 }}
+              style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "0.9rem", opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1 }}
             />
             <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0 }}>Send</button>
           </div>
@@ -3301,10 +3301,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       {/* ── Drag handle: Chat | Sidebar ── */}
       <div
-        style={{ width: "5px", flexShrink: 0, cursor: "col-resize", background: "transparent", transition: "background 0.15s", zIndex: 20 }}
+        style={{ width: "6px", flexShrink: 0, cursor: "col-resize", background: "var(--border)", transition: "background 0.15s" }}
         onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "sidebar", startX: e.clientX, startW: sidebarPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.45)"; }}
-        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "transparent"; }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.55)"; }}
+        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "var(--border)"; }}
       />
 
       {/* ── Pane 3: Sidebar ── */}
