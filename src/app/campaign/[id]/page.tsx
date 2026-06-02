@@ -2978,7 +2978,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaignTitle || "Loading…"}</h2>
-            <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px" }}>DM: Claude · {campaignParty.length} in party</p>
+            <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>DM: Claude · {campaignParty.length} in party</p>
           </div>
           {/* Help / tutorial */}
           <button
