@@ -206,7 +206,7 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — do not narrate what happens, do not continue the story. The result arrives as the player's next message. After their roll resolves, THEN address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
 - Do NOT include "[Name], roll a [type]" for any character other than the one described above.
 - TURN ORDER: The REMAINING THIS ROUND block (when present) shows only the players who still need to act this round. Follow it exactly. Do not address anyone not listed — they have already acted or passed this round.
-- After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then address the first player of the new round.
+- After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then set the scene for the next round. Do NOT end with "[Name], what do you do?" — the game engine automatically sends that prompt to the next player. Writing it causes the player to be asked twice.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 - PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted. If a player has not acted this turn, they have not acted — full stop.
 
@@ -328,7 +328,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const pendingReconcileBlock = pendingReconciliation
-    ? `\n[ROUND ENDING — ${prevActingPlayerName ?? "the last player"} just acted]\nNarrate ${prevActingPlayerName ? `${prevActingPlayerName}'s` : "their"} action outcome in 1–2 sentences. Stop there. Do NOT ask any player what they want to do next. Do NOT resolve other players' actions. Do NOT call for dice rolls. The full round summary is arriving in the next message.\n`
+    ? `\n[ROUND ENDING — ${prevActingPlayerName ?? "the last player"} just acted]\nNarrate ${prevActingPlayerName ? `${prevActingPlayerName}'s` : "their"} action outcome in 1–2 sentences. YOUR RESPONSE ENDS THERE — no question, no "what do you do?", no turn prompt of any kind. Do NOT ask any player anything. Do NOT resolve other players' actions. Do NOT call for dice rolls. The full round summary is arriving in the next message and the engine will handle all turn prompting.\n`
     : "";
 
   const targetBlock = targetedEnemyName
