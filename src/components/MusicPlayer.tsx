@@ -102,11 +102,12 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2020/06/Comrades-Always.mp3",
   ],
   sea: [
-    `${MEDIEVAL}Cold%20Journey.mp3`,
-    `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
     "https://soundimage.org/wp-content/uploads/2022/04/High-Seas-Adventures.mp3",
     "https://soundimage.org/wp-content/uploads/2020/07/Pirates.mp3",
     "https://soundimage.org/wp-content/uploads/2023/12/City-Beneath-the-Waves.mp3",
+    "https://soundimage.org/wp-content/uploads/2023/12/The-Voyage-Begins.mp3",
+    `${MIST_CROWN}01%20Foreign%20Shore.mp3`,
+    `${KM}Mariners%20Wharf.mp3`,
     `${KM}Jaunty%20Gypsy.mp3`,
   ],
 };
