@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef, use, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, use, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -510,26 +510,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // Global tooltip portal — always renders above ALL elements regardless of stacking context
   const [globalTooltip, setGlobalTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
-  const globalTipElRef = useRef<HTMLDivElement | null>(null);
   const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => setGlobalTooltip({ content, x: e.clientX, y: e.clientY }), []);
   const hideTooltip = useCallback(() => setGlobalTooltip(null), []);
-
-  // Clamp globalTooltip to viewport before paint
-  useLayoutEffect(() => {
-    const el = globalTipElRef.current;
-    if (!el || !globalTooltip) return;
-    const { width, height } = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const M = 8;
-    let left = globalTooltip.x - width / 2;
-    let top  = globalTooltip.y - 10 - height;
-    left = Math.max(M, Math.min(left, vw - width - M));
-    if (top < M) top = globalTooltip.y + 20;
-    top = Math.max(M, Math.min(top, vh - height - M));
-    el.style.left = `${left}px`;
-    el.style.top  = `${top}px`;
-  }, [globalTooltip]);
 
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
@@ -4297,12 +4279,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       )}
 
       {/* Global tooltip portal — always on top of everything */}
-      {typeof window !== "undefined" && globalTooltip && createPortal(
-        <div ref={globalTipElRef} style={{ position: "fixed", left: -9999, top: -9999, zIndex: 99999, pointerEvents: "none", maxWidth: "280px" }}>
-          {globalTooltip.content}
-        </div>,
-        document.body
-      )}
+      {typeof window !== "undefined" && globalTooltip && (() => {
+        const MAX_W = 280, EST_H = 110, M = 8;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const left = Math.max(M, Math.min(globalTooltip.x - MAX_W / 2, vw - MAX_W - M));
+        const above = globalTooltip.y - 14 > EST_H + M;
+        const top   = above ? Math.min(globalTooltip.y - 14, vh - EST_H - M) : Math.min(globalTooltip.y + 22, vh - EST_H - M);
+        return createPortal(
+          <div style={{ position: "fixed", left, top, transform: above ? "translateY(-100%)" : "none", zIndex: 99999, pointerEvents: "none", maxWidth: `${MAX_W}px` }}>
+            {globalTooltip.content}
+          </div>,
+          document.body
+        );
+      })()}
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
