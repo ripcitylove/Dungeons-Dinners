@@ -222,7 +222,7 @@ function StreamingText({ text }: { text: string }) {
   return (
     <>
       {chunks.map(({ id, content }) => (
-        <span key={id} style={{ animation: "streamFadeIn 0.45s ease forwards", opacity: 0, display: "inline" }}>
+        <span key={id} style={{ animation: "streamFadeIn 0.62s ease forwards", opacity: 0, display: "inline" }}>
           {content}
         </span>
       ))}
@@ -230,7 +230,7 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-function RevealText({ text, onComplete }: { text: string; onComplete?: () => void }) {
+function RevealText({ text, onComplete, intervalMs = 58 }: { text: string; onComplete?: () => void; intervalMs?: number }) {
   const [groups, setGroups] = React.useState<Array<{ id: number; chars: string }>>([]);
   const onCompleteRef = React.useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -246,7 +246,7 @@ function RevealText({ text, onComplete }: { text: string; onComplete?: () => voi
       let chunk = text[pos++];
       while (pos < text.length && /\s/.test(text[pos]) && chunk.length < 4) chunk += text[pos++];
       setGroups(prev => [...prev, { id: gid++, chars: chunk }]);
-    }, 42);
+    }, intervalMs);
     return () => clearInterval(interval);
   }, [text]);
 
@@ -348,6 +348,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [streamingContent, setStreamingContent]  = useState("");
   const [input,            setInput]             = useState("");
   const [isTyping,         setIsTyping]          = useState(false);
+  // Narration-synced reveal: text waits here until audio duration is known, then types at voice pace
+  const [narRevealText,       setNarRevealText]       = useState<string | null>(null);
+  const [narRevealIntervalMs, setNarRevealIntervalMs] = useState<number | null>(null);
   const [showDice,         setShowDice]          = useState(false);
   const [pendingDiceShow,  setPendingDiceShow]   = useState(false);
   const [isGroupCheckRoll, setIsGroupCheckRoll]  = useState(false);
@@ -468,7 +471,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
     return 0.9;
   });
-  const fs = (base: number) => `${(base * chatFontSize / 0.9).toFixed(2)}rem`;
+
+  // Resizable pane widths — persisted across sessions
+  const [chatPaneWidth, setChatPaneWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const v = parseInt(localStorage.getItem("dnd_chat_pane_w") ?? "");
+      if (!isNaN(v) && v >= 280 && v <= 700) return v;
+    }
+    return 380;
+  });
+  const [sidebarPaneWidth, setSidebarPaneWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const v = parseInt(localStorage.getItem("dnd_sidebar_pane_w") ?? "");
+      if (!isNaN(v) && v >= 200 && v <= 480) return v;
+    }
+    return 270;
+  });
+  const dragRef = useRef<{ which: "chat" | "sidebar"; startX: number; startW: number } | null>(null);
+
+  const chatWidthRatio    = Math.max(0.85, Math.min(1.45, chatPaneWidth / 380));
+  const sidebarWidthRatio = Math.max(0.85, Math.min(1.5,  sidebarPaneWidth / 270));
+  // fs() scales sidebar fonts with A-/A+ control AND sidebar drag width
+  const fs  = (base: number) => `${(base * chatFontSize / 0.9 * sidebarWidthRatio).toFixed(2)}rem`;
+  // chatFontPx scales chat message text with A-/A+ control AND chat drag width
+  const chatMsgSize = `${(chatFontSize * chatWidthRatio).toFixed(2)}rem`;
 
   // Portrait lightbox
   const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
@@ -508,6 +534,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const msgContainerRef      = useRef<HTMLDivElement>(null);
+  const autoScrollRafRef     = useRef<number | null>(null);
+  const narSlot0TextRef      = useRef<string | null>(null); // first narration sentence, used to compute speech rate
   const logEndRef            = useRef<HTMLDivElement>(null);
   const abortRef             = useRef<AbortController | null>(null);
   const characterRef         = useRef<Character | null>(null);
@@ -544,6 +572,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const preloadResultRef        = useRef<{ dmText: string; sceneUrl: string | null; sceneName: string; sceneType?: string; modifiers?: string[]; audioUrl: string | null } | null>(null);
   const preloadPromiseRef       = useRef<Promise<void> | null>(null);
   const preloadAbortRef         = useRef<AbortController | null>(null);
+
+  // ── Pane drag-resize ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const delta = e.clientX - dragRef.current.startX;
+      if (dragRef.current.which === "chat") {
+        const w = Math.min(700, Math.max(280, dragRef.current.startW + delta));
+        setChatPaneWidth(w);
+        localStorage.setItem("dnd_chat_pane_w", String(w));
+      } else {
+        const w = Math.min(480, Math.max(200, dragRef.current.startW - delta));
+        setSidebarPaneWidth(w);
+        localStorage.setItem("dnd_sidebar_pane_w", String(w));
+      }
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   // ── Campaign loading gate — waits for DM text, scene image, and ambiance ────
   useEffect(() => {
@@ -1141,19 +1194,48 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, params.id]);
 
+  // RAF auto-scroll — runs continuously while the DM is narrating so the chat
+  // drifts down at a pace that matches text arrival rather than jumping.
   useEffect(() => {
-    // Scroll the container directly — more reliable than scrollIntoView when
-    // the container's own height changes (e.g. suggestions box appearing/disappearing).
+    const active = isTyping || !!streamingContent || !!openingRevealText || !!narRevealText;
+    if (!active) {
+      if (autoScrollRafRef.current) { cancelAnimationFrame(autoScrollRafRef.current); autoScrollRafRef.current = null; }
+      return;
+    }
+    let rafId: number;
+    const tick = () => {
+      const el = msgContainerRef.current;
+      if (el) {
+        const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (remaining > 1) {
+          // Ease toward bottom: gentle when close, faster when behind — capped so it never feels like a snap
+          el.scrollTop += Math.max(0.8, Math.min(remaining * 0.055, 7));
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+      autoScrollRafRef.current = rafId;
+    };
+    rafId = requestAnimationFrame(tick);
+    autoScrollRafRef.current = rafId;
+    return () => { cancelAnimationFrame(rafId); autoScrollRafRef.current = null; };
+  }, [isTyping, streamingContent, openingRevealText, narRevealText]);
+
+  // Instant snap to bottom when a new non-streaming message lands or suggestions change
+  useEffect(() => {
+    if (isTyping || streamingContent || openingRevealText || narRevealText) return;
     const el = msgContainerRef.current;
     if (!el) return;
-    if (streamingContent) {
-      // Smooth-follow during streaming so text reveals feel natural
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    } else {
-      const t = setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
-      return () => clearTimeout(t);
-    }
-  }, [messages, streamingContent, suggestions]);
+    const t = setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
+    return () => clearTimeout(t);
+  }, [messages, suggestions, isTyping, streamingContent, openingRevealText, narRevealText]);
+
+  // Fallback: if narRevealText is set but audio never fires canplaythrough (quota, error, disabled mid-flight),
+  // unblock the reveal after 1.5 s so text is never permanently stuck.
+  useEffect(() => {
+    if (!narRevealText || narRevealIntervalMs !== null) return;
+    const t = setTimeout(() => setNarRevealIntervalMs(65), 1500);
+    return () => clearTimeout(t);
+  }, [narRevealText, narRevealIntervalMs]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet
@@ -1403,6 +1485,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // after load() can silently fail on strict console browsers.
     el.oncanplaythrough = () => {
       el.oncanplaythrough = null;
+      // When the first sentence loads, compute how fast to type so text matches the voice pace
+      if (slot === 0 && narSlot0TextRef.current && el.duration > 0) {
+        const avgGroupSize = 1.5; // chars per RevealText interval tick
+        const groups = narSlot0TextRef.current.length / avgGroupSize;
+        const computed = Math.round((el.duration * 1000) / groups);
+        setNarRevealIntervalMs(Math.max(28, Math.min(180, computed)));
+      }
       setNarrating(true);
       const p = el.play();
       if (p instanceof Promise) p.catch(() => cleanup());
@@ -1412,6 +1501,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const enqueueNarration = useCallback(async (text: string) => {
     const slot = narSlotCounterRef.current++;
+    if (slot === 0) narSlot0TextRef.current = text; // first sentence length drives the reveal rate
     narSlotsRef.current[slot] = null; // reserve — not ready yet
     try {
       const res = await fetch("/api/narrate", {
@@ -1450,6 +1540,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
     narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+    narSlot0TextRef.current = null;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -1751,8 +1842,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!opts?.preserveNarration) {
       if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
       narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+      narSlot0TextRef.current   = null;
       audioPlayingRef.current   = false;
       setNarrating(false);
+      setNarRevealText(null);
+      setNarRevealIntervalMs(null);
     }
 
     setIsTyping(true); isTypingRef.current = true;
@@ -1913,7 +2007,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 10) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
-      setMessages(prev => [...prev, { role: "dm", content: full }]);
+      // Route through narration-synced reveal when voice is active; add directly to messages otherwise
+      if (narrationEnabledRef.current && !campaignLoadingRef.current) {
+        setNarRevealText(full);
+        // narRevealIntervalMs will be set when slot-0 audio canplaythrough fires
+      } else {
+        setMessages(prev => [...prev, { role: "dm", content: full }]);
+      }
       if (isOpeningScene && campaignLoadingRef.current) setLoadDmDone(true);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
@@ -2740,15 +2840,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "28px", gap: "10px" }}>
                     <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.15em" }}>Party Leader</span>
                     {leaderChar.portrait_url ? (
-                      <div style={{ width: "96px", height: "96px", borderRadius: "50%", overflow: "hidden", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55, 0 0 60px ${leaderColor}20` }}>
+                      <div style={{ width: "clamp(180px, 28vmin, 380px)", height: "clamp(180px, 28vmin, 380px)", borderRadius: "50%", overflow: "hidden", border: `5px solid ${leaderColor}`, boxShadow: `0 0 60px ${leaderColor}77, 0 0 120px ${leaderColor}22` }}>
                         <img src={leaderChar.portrait_url} alt={leaderChar.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                       </div>
                     ) : (
-                      <div style={{ width: "96px", height: "96px", borderRadius: "50%", border: `3px solid ${leaderColor}`, boxShadow: `0 0 28px ${leaderColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", background: "rgba(0,0,0,0.4)" }}>
+                      <div style={{ width: "clamp(180px, 28vmin, 380px)", height: "clamp(180px, 28vmin, 380px)", borderRadius: "50%", border: `5px solid ${leaderColor}`, boxShadow: `0 0 60px ${leaderColor}77`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "clamp(4rem, 12vmin, 9rem)", background: "rgba(0,0,0,0.4)" }}>
                         {leaderChar.class === "Wizard" ? "🧙" : leaderChar.class === "Rogue" ? "🗡️" : leaderChar.class === "Cleric" ? "✝" : leaderChar.class === "Ranger" ? "🏹" : leaderChar.class === "Druid" ? "🌿" : leaderChar.class === "Bard" ? "🎵" : "⚔️"}
                       </div>
                     )}
-                    <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
+                    <span style={{ fontSize: "1.3rem", fontWeight: 700, color: "white" }}>{leaderChar.name}</span>
                   </div>
                 ) : null;
               })()}
@@ -2845,8 +2945,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
       </div>
 
+      {/* ── Drag handle: Scene | Chat ── */}
+      <div
+        style={{ width: "5px", flexShrink: 0, cursor: "col-resize", background: "transparent", transition: "background 0.15s", zIndex: 20 }}
+        onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "chat", startX: e.clientX, startW: chatPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.45)"; }}
+        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "transparent"; }}
+      />
+
       {/* ── Pane 2: Chat ── */}
-      <div style={{ flex: "0 0 clamp(320px, 30vw, 560px)", display: "flex", flexDirection: "column", background: "var(--background)", borderRight: "1px solid var(--border)" }}>
+      <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", borderRight: "1px solid var(--border)" }}>
         {/* Header */}
         <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
           <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
@@ -2903,8 +3011,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       // breaking all future narration.
                       if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
                       narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+                      narSlot0TextRef.current = null;
                       audioPlayingRef.current = false;
                       setNarrating(false);
+                      setNarRevealText(null);
+                      setNarRevealIntervalMs(null);
                       setSelectedVoice(v.id);
                       setVoicePickerOpen(false);
                       // Stop any preview playing
@@ -3041,7 +3152,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div key={idx} className="animate-fade-in" style={{ alignSelf: msg.role === "player" ? "flex-end" : "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: msg.role === "player" ? "flex-end" : "flex-start" }}>
               {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
               {msg.role === "dm"     && <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>}
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, whiteSpace: "pre-wrap",
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, whiteSpace: "pre-wrap",
                 background: msg.role === "dm" ? "rgba(139,92,246,0.15)" : msg.role === "system" ? "transparent" : "var(--card-bg)",
                 border:     msg.role === "dm" ? "1px solid rgba(139,92,246,0.3)" : msg.role === "system" ? "none" : "1px solid var(--border)",
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
@@ -3067,7 +3178,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {openingRevealText && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
                 <RevealText
                   text={stripSystemLeaks(openingRevealText)}
                   onComplete={() => {
@@ -3080,12 +3191,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
           )}
 
-          {/* Streaming */}
-          {(isTyping || streamingContent) && (
+          {/* Narration-synced reveal — text types at speech pace once audio duration is known */}
+          {narRevealText && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: `${chatFontSize}rem`, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
-                {streamingContent
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
+                {narRevealIntervalMs !== null
+                  ? <RevealText
+                      text={stripSystemLeaks(narRevealText)}
+                      intervalMs={narRevealIntervalMs}
+                      onComplete={() => {
+                        const content = narRevealText;
+                        setNarRevealText(null);
+                        setNarRevealIntervalMs(null);
+                        setMessages(prev => [...prev, { role: "dm", content }]);
+                      }}
+                    />
+                  : <span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
+                }
+              </div>
+            </div>
+          )}
+
+          {/* Streaming */}
+          {(isTyping || streamingContent) && !narRevealText && (
+            <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
+                {streamingContent && !narrationEnabled
                   ? <><StreamingText text={stripSystemLeaks(streamingContent)} /><span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
                   : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
                 }
@@ -3166,8 +3299,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         </div>
       </div>
 
+      {/* ── Drag handle: Chat | Sidebar ── */}
+      <div
+        style={{ width: "5px", flexShrink: 0, cursor: "col-resize", background: "transparent", transition: "background 0.15s", zIndex: 20 }}
+        onMouseDown={e => { e.preventDefault(); dragRef.current = { which: "sidebar", startX: e.clientX, startW: sidebarPaneWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.45)"; }}
+        onMouseLeave={e => { if (!dragRef.current) e.currentTarget.style.background = "transparent"; }}
+      />
+
       {/* ── Pane 3: Sidebar ── */}
-      <div style={{ flex: "0 0 clamp(230px, 18vw, 320px)", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ width: sidebarPaneWidth, flex: "0 0 auto", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Tab toggle */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           {(["party", "sheet", "log"] as const).map(tab => {
@@ -3181,7 +3322,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <button key={tab} onClick={() => setSidebarTab(tab)}
                 onMouseEnter={e => showTooltip(tipBox(label, tip, "#8b5cf6"), e)}
                 onMouseLeave={hideTooltip}
-                style={{ flex: 1, padding: "10px 4px 8px", fontSize: "0.65rem", fontWeight: "bold",
+                style={{ flex: 1, padding: "10px 4px 8px", fontSize: fs(0.65), fontWeight: "bold",
                   background: sidebarTab === tab ? "rgba(139,92,246,0.15)" : "transparent",
                   borderTop: "none", borderLeft: "none", borderRight: "none",
                   borderBottom: sidebarTab === tab ? "2px solid var(--primary)" : "2px solid transparent",
@@ -3189,13 +3330,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                 <span>{label}</span>
-                <span style={{ fontSize: "0.55rem", fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === tab ? "rgba(139,92,246,0.75)" : "#3f3f46", lineHeight: 1 }}>{sub}</span>
+                <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === tab ? "rgba(139,92,246,0.75)" : "#3f3f46", lineHeight: 1 }}>{sub}</span>
               </button>
             );
           })}
           {enemies.length > 0 && (
             <button onClick={() => setSidebarTab("combat")}
-              style={{ flex: 1, padding: "12px 4px", fontSize: "0.68rem", fontWeight: "bold", position: "relative",
+              style={{ flex: 1, padding: "12px 4px", fontSize: fs(0.68), fontWeight: "bold", position: "relative",
                 background: sidebarTab === "combat" ? "rgba(239,68,68,0.15)" : "transparent",
                 borderTop: "none", borderLeft: "none", borderRight: "none",
                 borderBottom: sidebarTab === "combat" ? "2px solid #ef4444" : "2px solid transparent",
@@ -3203,7 +3344,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
               <span>⚔ Combat</span>
-              <span style={{ fontSize: "0.55rem", fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "#3f3f46", lineHeight: 1 }}>Click enemies to target</span>
+              <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "#3f3f46", lineHeight: 1 }}>Click enemies to target</span>
               {combatActive && enemies.some(e => !e.is_defeated) && (
                 <span style={{ position: "absolute", top: "6px", right: "4px", width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", animation: "blink 1s step-end infinite" }} />
               )}
