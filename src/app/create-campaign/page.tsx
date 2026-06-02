@@ -60,6 +60,33 @@ const POINTBUY_DEFAULT: AbilityScores = {
 };
 
 const WEAPONS = ["Longsword", "Shortbow", "Staff", "Daggers (x2)", "Warhammer", "Crossbow"];
+
+const RACE_EMOJI: Record<string, string> = {
+  Human: "⚔", Elf: "🌙", Dwarf: "🪨", Halfling: "🌿",
+  Dragonborn: "🐉", Tiefling: "🔥", Gnome: "🔮", "Half-Elf": "✦", "Half-Orc": "💪",
+};
+const CLASS_COLORS: Record<string, string> = {
+  Fighter: "#ef4444", Wizard: "#3b82f6", Rogue: "#94a3b8", Cleric: "#f59e0b",
+  Paladin: "#fbbf24", Ranger: "#22c55e", Bard: "#ec4899", Warlock: "#a78bfa",
+  Barbarian: "#f97316", Druid: "#84cc16", Monk: "#06b6d4", Sorcerer: "#8b5cf6",
+};
+const CLASS_EMOJI: Record<string, string> = {
+  Fighter: "⚔️", Wizard: "🔮", Rogue: "🗡️", Cleric: "✨",
+  Paladin: "🛡️", Ranger: "🏹", Bard: "🎵", Warlock: "💀",
+  Barbarian: "🪓", Druid: "🌿", Monk: "👊", Sorcerer: "🌀",
+};
+const WEAPON_EMOJI: Record<string, string> = {
+  "Longsword": "⚔️", "Shortbow": "🏹", "Staff": "🔮",
+  "Daggers (x2)": "🗡️", "Warhammer": "🔨", "Crossbow": "🎯",
+};
+const ALIGNMENT_COLORS: Record<string, string> = {
+  "Lawful Good": "#f59e0b", "Neutral Good": "#fbbf24", "Chaotic Good": "#22c55e",
+  "Lawful Neutral": "#8b5cf6", "True Neutral": "#64748b", "Chaotic Neutral": "#f97316",
+  "Lawful Evil": "#6366f1", "Neutral Evil": "#ef4444", "Chaotic Evil": "#dc2626",
+};
+const STEP_ICONS = ["🧑", "⚔️", "🎲", "🗡️", "📜", "✨"];
+const PLAYER_COUNT_NAMES = ["Solo", "Duo", "Trio", "Party", "Company", "Band", "Warband", "Brigade", "Legion", "Army"];
+
 const DEFAULT_SCORES: AbilityScores = {
   strength: 15, dexterity: 14, constitution: 13,
   intelligence: 12, wisdom: 10, charisma: 8,
@@ -134,6 +161,10 @@ export default function CreateCampaignWizard() {
   const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
   const [charNameErr, setCharNameErr] = useState("");
   const [hoveredStat, setHoveredStat] = useState<string | null>(null);
+  const [hoveredRace, setHoveredRace] = useState<string | null>(null);
+  const [hoveredClass, setHoveredClass] = useState<string | null>(null);
+  const [hoveredAlign, setHoveredAlign] = useState<string | null>(null);
+  const [hoveredWeapon, setHoveredWeapon] = useState<string | null>(null);
 
   // Stat method state (resets per character)
   const [statMethod, setStatMethod] = useState<StatMethod>("roll");
@@ -168,6 +199,10 @@ export default function CreateCampaignWizard() {
     setSelectedArrayVal(null);
     setCharStep(1);
     setCharNameErr("");
+    setHoveredRace(null);
+    setHoveredClass(null);
+    setHoveredAlign(null);
+    setHoveredWeapon(null);
   };
 
   const handleClassChange = (cls: string) => {
@@ -548,7 +583,7 @@ export default function CreateCampaignWizard() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "40px 20px" }}>
+    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "40px 20px", backgroundImage: "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)" }}>
       <div className="glass-panel" style={{ width: "100%", maxWidth: "860px", padding: "40px", position: "relative" }}>
 
         {/* ── Top progress ── */}
@@ -560,8 +595,8 @@ export default function CreateCampaignWizard() {
             </span>
             <span style={{ fontSize: "0.72rem", color: "#475569" }}>{Math.round(progressPct)}%</span>
           </div>
-          <div style={{ height: "4px", background: "var(--border)", borderRadius: "2px", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${progressPct}%`, background: "var(--primary)", borderRadius: "2px", transition: "width 0.5s ease" }} />
+          <div style={{ height: "6px", background: "var(--border)", borderRadius: "3px", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, var(--primary), #7c3aed)", borderRadius: "3px", transition: "width 0.5s ease", boxShadow: "0 0 10px rgba(139,92,246,0.6)" }} />
           </div>
         </div>
 
@@ -575,7 +610,13 @@ export default function CreateCampaignWizard() {
         )}
 
         {/* ── Title ── */}
-        <h1 style={{ fontSize: "1.9rem", marginBottom: "6px", textAlign: "center" }}>{stepTitle}</h1>
+        <div style={{ textAlign: "center", marginBottom: "6px" }}>
+          <div style={{ fontSize: "1.8rem", marginBottom: "6px", lineHeight: 1 }}>
+            {phase === "count" ? "⚔️" : phase === "characters" ? STEP_ICONS[charStep - 1] : phase === "review" ? "🏰" : "✨"}
+          </div>
+          <h1 className="shimmer-heading" style={{ fontSize: "1.9rem", marginBottom: 0 }}>{stepTitle}</h1>
+          <div style={{ height: "1px", width: "80px", background: "linear-gradient(90deg, transparent, var(--primary), transparent)", margin: "8px auto 0" }} />
+        </div>
         {phase === "characters" && (
           <div style={{ textAlign: "center", marginBottom: charStep === 1 ? "16px" : "28px" }}>
             <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
@@ -617,13 +658,15 @@ export default function CreateCampaignWizard() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", width: "100%", maxWidth: "520px" }}>
                 {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
                   <div key={n} onClick={() => setPlayerCount(n)} style={{
-                    padding: "18px 10px", borderRadius: "10px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                    padding: "20px 8px", borderRadius: "12px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
                     border: `2px solid ${playerCount === n ? "var(--primary)" : "var(--border)"}`,
                     background: playerCount === n ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.15)",
+                    transform: playerCount === n ? "translateY(-4px)" : "none",
+                    boxShadow: playerCount === n ? "0 8px 28px rgba(139,92,246,0.4)" : "none",
                   }}>
-                    <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: playerCount === n ? "var(--primary)" : "white" }}>{n}</div>
-                    <div style={{ fontSize: "0.62rem", color: "#64748b", marginTop: "3px" }}>
-                      {n === 1 ? "Solo" : n === 2 ? "Duo" : `${n} players`}
+                    <div style={{ fontSize: "1.6rem", fontWeight: "bold", color: playerCount === n ? "var(--primary)" : "white", lineHeight: 1 }}>{n}</div>
+                    <div style={{ fontSize: "0.58rem", color: playerCount === n ? "#c4b5fd" : "#64748b", marginTop: "5px", fontWeight: playerCount === n ? 700 : 400, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {PLAYER_COUNT_NAMES[n - 1]}
                     </div>
                   </div>
                 ))}
@@ -683,13 +726,18 @@ export default function CreateCampaignWizard() {
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
                         {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
                           <div key={race} onClick={() => setDraft(d => ({ ...d, race }))}
-                            onMouseEnter={e => { const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
-                            onMouseLeave={hideTooltip}
+                            onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
+                            onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
                             style={{
-                              padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                              border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,
-                              background: draft.race === race ? "rgba(139,92,246,0.2)" : "transparent",
-                            }}>{race}</div>
+                              padding: "13px 8px", borderRadius: "10px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                              border: `1px solid ${draft.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
+                              background: draft.race === race ? "rgba(139,92,246,0.2)" : hoveredRace === race ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.15)",
+                              transform: draft.race === race ? "translateY(-3px)" : hoveredRace === race ? "translateY(-1px)" : "none",
+                              boxShadow: draft.race === race ? "0 6px 22px rgba(139,92,246,0.35)" : "none",
+                            }}>
+                            <div style={{ fontSize: "1.4rem", marginBottom: "4px", lineHeight: 1 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
+                            <div style={{ fontSize: "0.78rem", fontWeight: draft.race === race ? 700 : 400, color: draft.race === race ? "#c4b5fd" : "inherit" }}>{race}</div>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -724,14 +772,16 @@ export default function CreateCampaignWizard() {
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
                         {ALIGNMENTS.map(a => (
                           <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))}
-                            onMouseEnter={e => showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? "", "#a78bfa"), e)}
-                            onMouseLeave={hideTooltip}
+                            onMouseEnter={e => { setHoveredAlign(a.key); showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? "", ALIGNMENT_COLORS[a.key] ?? "#a78bfa"), e); }}
+                            onMouseLeave={() => { setHoveredAlign(null); hideTooltip(); }}
                             style={{
                               padding: "8px 6px", borderRadius: "8px", cursor: "pointer", textAlign: "center", transition: "all 0.2s",
-                              border: `1px solid ${draft.alignment === a.key ? "var(--primary)" : "var(--border)"}`,
-                              background: draft.alignment === a.key ? "rgba(139,92,246,0.2)" : "transparent",
+                              border: `1px solid ${draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "var(--primary)") : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "66" : "var(--border)"}`,
+                              background: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "1a" : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "0d" : "transparent",
+                              transform: draft.alignment === a.key ? "translateY(-2px)" : "none",
+                              boxShadow: draft.alignment === a.key ? `0 4px 14px ${ALIGNMENT_COLORS[a.key] ?? "#8b5cf6"}33` : "none",
                             }}>
-                            <div style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? "#c4b5fd" : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
+                            <div style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
                             <div style={{ fontSize: "0.72rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
                           </div>
                         ))}
@@ -792,17 +842,21 @@ export default function CreateCampaignWizard() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
                     {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => {
                       const ct = CLASS_TIPS[cls];
+                      const clsColor = CLASS_COLORS[cls] ?? "#8b5cf6";
                       return (
                       <div key={cls} onClick={() => handleClassChange(cls)}
-                        onMouseEnter={e => { if (ct) showTooltip(<div style={{ background: "#12101f", border: "1px solid #8b5cf655", borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: "#c4b5fd", marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
-                        onMouseLeave={hideTooltip}
+                        onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(<div style={{ background: "#12101f", border: `1px solid ${clsColor}44`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: clsColor, marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
+                        onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
                         style={{
-                          padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", fontSize: "0.9rem",
-                          border: `1px solid ${draft.class === cls ? "var(--primary)" : "var(--border)"}`,
-                          background: draft.class === cls ? "rgba(139,92,246,0.2)" : "transparent",
+                          padding: "13px 6px", borderRadius: "10px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                          border: `1px solid ${draft.class === cls ? clsColor : hoveredClass === cls ? clsColor + "77" : "var(--border)"}`,
+                          background: draft.class === cls ? clsColor + "22" : hoveredClass === cls ? clsColor + "11" : "rgba(0,0,0,0.15)",
+                          transform: draft.class === cls ? "translateY(-3px)" : hoveredClass === cls ? "translateY(-1px)" : "none",
+                          boxShadow: draft.class === cls ? `0 6px 22px ${clsColor}44` : "none",
                         }}>
-                        {cls}
-                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.6rem", color: "#8b5cf6", marginTop: "3px" }}>✦ Spellcaster</div>}
+                        <div style={{ fontSize: "1.2rem", marginBottom: "3px", lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
+                        <div style={{ fontSize: "0.78rem", fontWeight: draft.class === cls ? 700 : 400, color: draft.class === cls ? clsColor : "inherit" }}>{cls}</div>
+                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.52rem", color: "#8b5cf6", marginTop: "2px", letterSpacing: "0.05em", fontWeight: 700 }}>✦ SPELL</div>}
                       </div>
                       );
                     })}
@@ -998,11 +1052,19 @@ export default function CreateCampaignWizard() {
                     <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8" }}>Primary Weapon</label>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
                       {WEAPONS.map(w => (
-                        <div key={w} onClick={() => setDraft(d => ({ ...d, weapon: w }))} style={{
-                          padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                          border: `1px solid ${draft.weapon === w ? "var(--primary)" : "var(--border)"}`,
-                          background: draft.weapon === w ? "rgba(139,92,246,0.2)" : "transparent",
-                        }}>⚔ {w}</div>
+                        <div key={w} onClick={() => setDraft(d => ({ ...d, weapon: w }))}
+                          onMouseEnter={() => setHoveredWeapon(w)}
+                          onMouseLeave={() => setHoveredWeapon(null)}
+                          style={{
+                            padding: "18px 10px", borderRadius: "10px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                            border: `1px solid ${draft.weapon === w ? "#f59e0b" : hoveredWeapon === w ? "rgba(245,158,11,0.5)" : "var(--border)"}`,
+                            background: draft.weapon === w ? "rgba(245,158,11,0.15)" : hoveredWeapon === w ? "rgba(245,158,11,0.07)" : "rgba(0,0,0,0.15)",
+                            transform: draft.weapon === w ? "translateY(-3px)" : hoveredWeapon === w ? "translateY(-1px)" : "none",
+                            boxShadow: draft.weapon === w ? "0 6px 22px rgba(245,158,11,0.3)" : "none",
+                          }}>
+                          <div style={{ fontSize: "1.5rem", marginBottom: "6px", lineHeight: 1 }}>{WEAPON_EMOJI[w] ?? "⚔️"}</div>
+                          <div style={{ fontSize: "0.78rem", fontWeight: draft.weapon === w ? 700 : 400, color: draft.weapon === w ? "#f59e0b" : "inherit" }}>{w}</div>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1134,36 +1196,47 @@ export default function CreateCampaignWizard() {
               <p style={{ textAlign: "center", color: "#94a3b8", marginBottom: "24px", fontSize: "0.9rem" }}>
                 Your party is assembled. The DM will name your campaign upon launch.
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "12px" }}>
-                {completedChars.map((c, i) => (
-                  <div key={i} className="glass-panel" style={{ padding: "16px", display: "flex", gap: "14px", alignItems: "center" }}>
-                    <div style={{ width: "44px", height: "44px", borderRadius: "8px", background: c.rosterId ? "rgba(245,158,11,0.12)" : "rgba(139,92,246,0.12)", border: `1px solid ${c.rosterId ? "rgba(245,158,11,0.3)" : "rgba(139,92,246,0.3)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem", flexShrink: 0 }}>
-                      {c.rosterId ? "📜" : "🧙"}
+              <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "14px" }}>
+                {completedChars.map((c, i) => {
+                  const clsColor = c.rosterId ? "#fbbf24" : (CLASS_COLORS[c.class] ?? "#8b5cf6");
+                  return (
+                  <div key={i} className="glass-panel" style={{ padding: "18px 16px", display: "flex", gap: "14px", alignItems: "center", border: `1px solid ${clsColor}33`, boxShadow: `0 4px 24px ${clsColor}18` }}>
+                    <div style={{ width: "48px", height: "48px", borderRadius: "10px", background: clsColor + "1a", border: `1px solid ${clsColor}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", flexShrink: 0 }}>
+                      {c.rosterId ? "📜" : (CLASS_EMOJI[c.class] ?? "🧙")}
                     </div>
-                    <div>
-                      <div style={{ fontWeight: "bold", fontSize: "0.95rem" }}>{c.name}</div>
-                      <div style={{ color: "#94a3b8", fontSize: "0.78rem" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Level 1"}</div>
-                      <div style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "2px" }}>
-                        ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
-                        {!c.rosterId && ` · ${c.weapon || "Iron Dagger"}`}
-                        {!c.rosterId && c.shield && " · 🛡 Shield"}
-                        {c.cantrips.length > 0 && ` · ${c.cantrips.length} cantrip${c.cantrips.length > 1 ? "s" : ""}`}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: "bold", fontSize: "0.95rem", color: "white" }}>{c.name}</div>
+                      <div style={{ color: clsColor, fontSize: "0.75rem", fontWeight: 600, marginTop: "1px" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Lv 1"}</div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "5px" }}>
+                        <span style={{ fontSize: "0.65rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>
+                          ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
+                        </span>
+                        {!c.rosterId && <span style={{ fontSize: "0.65rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>{WEAPON_EMOJI[c.weapon] ?? "⚔️"} {c.weapon || "Iron Dagger"}</span>}
+                        {c.cantrips.length > 0 && <span style={{ fontSize: "0.65rem", color: "#8b5cf6", background: "rgba(139,92,246,0.1)", borderRadius: "6px", padding: "1px 7px" }}>✨ {c.cantrips.length} cantrip{c.cantrips.length > 1 ? "s" : ""}</span>}
+                        {c.rosterId && <span style={{ fontSize: "0.62rem", color: "#fbbf24", background: "rgba(251,191,36,0.1)", borderRadius: "6px", padding: "1px 7px" }}>📜 Returning</span>}
                       </div>
-                      {c.rosterId && (
-                        <div style={{ fontSize: "0.62rem", color: "#fbbf24", marginTop: "3px" }}>Returning adventurer</div>
-                      )}
                     </div>
+                    <div style={{ fontSize: "1.4rem", opacity: 0.4 }}>{i === 0 ? "👑" : ""}</div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* Creating state */}
           {phase === "creating" && (
-            <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "20px", height: "240px" }}>
-              <div style={{ fontSize: "3rem", animation: "float 1.2s ease-in-out infinite" }}>⚔️</div>
-              <p style={{ color: "#94a3b8", fontSize: "0.95rem" }}>The DM is naming and preparing your campaign…</p>
+            <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "24px", height: "280px", background: "radial-gradient(ellipse at center, rgba(139,92,246,0.1) 0%, transparent 70%)", borderRadius: "12px" }}>
+              <div style={{ fontSize: "4rem", animation: "float 1.2s ease-in-out infinite", filter: "drop-shadow(0 0 24px rgba(139,92,246,0.7))" }}>⚔️</div>
+              <div style={{ textAlign: "center" }}>
+                <p className="shimmer-heading" style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "8px" }}>The DM is forging your world…</p>
+                <p style={{ color: "#64748b", fontSize: "0.82rem" }}>Naming your campaign and preparing the stage</p>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--primary)", animation: `blink 1.2s step-end ${i * 0.4}s infinite`, boxShadow: "0 0 8px rgba(139,92,246,0.8)" }} />
+                ))}
+              </div>
             </div>
           )}
         </div>
