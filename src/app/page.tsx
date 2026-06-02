@@ -97,42 +97,21 @@ export default async function Home() {
         <div style={{ position: "absolute", top: "5%", left: "8%", width: "500px", height: "500px", background: "var(--primary)", filter: "blur(180px)", opacity: 0.13, zIndex: -1, borderRadius: "50%" }} />
         <div style={{ position: "absolute", bottom: "5%", right: "8%", width: "420px", height: "420px", background: "#f59e0b", filter: "blur(180px)", opacity: 0.07, zIndex: -1, borderRadius: "50%" }} />
 
-        {/* Dragon — outer div handles the flip, inner handles float so transforms don't conflict */}
-        <div style={{
-          position: "absolute",
-          left: "3%",
-          top: "9%",
-          transform: "scaleX(-1)",
-          userSelect: "none",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}>
-          <div className="animate-float" style={{
-            fontSize: "clamp(260px, 30vw, 420px)",
-            lineHeight: 1,
-            opacity: 0.2,
-            filter: "drop-shadow(0 0 48px rgba(251,146,60,0.9)) drop-shadow(0 0 100px rgba(239,68,68,0.55)) drop-shadow(0 0 4px rgba(251,191,36,0.8))",
-            animationDelay: "0.5s",
-          }}>🐉</div>
-        </div>
-
-        {/* Ramen bowl — in front of the dragon's face (right side after flip) */}
+        {/* Dragon eating ramen illustration */}
         <div className="animate-float" style={{
           position: "absolute",
-          left: "calc(3% + clamp(310px, 36vw, 500px))",
-          top: "calc(9% + clamp(40px, 5vw, 70px))",
-          fontSize: "clamp(72px, 8.5vw, 110px)",
-          lineHeight: 1,
-          opacity: 0.22,
-          filter: "drop-shadow(0 0 20px rgba(251,146,60,0.75)) drop-shadow(0 0 8px rgba(251,191,36,0.6))",
-          animationDelay: "1.2s",
+          left: "3%",
+          top: "6%",
+          width: "clamp(280px, 32vw, 460px)",
           userSelect: "none",
           pointerEvents: "none",
           zIndex: 0,
-        }}>🍜</div>
-
-        {/* Fire glow behind the dragon */}
-        <div style={{ position: "absolute", left: "3%", top: "9%", width: "clamp(200px, 25vw, 360px)", height: "clamp(200px, 25vw, 360px)", background: "radial-gradient(circle, rgba(251,146,60,0.16) 0%, rgba(239,68,68,0.07) 50%, transparent 75%)", zIndex: -1, borderRadius: "50%", pointerEvents: "none" }} />
+          animationDelay: "0.5s",
+          opacity: 0.92,
+          filter: "drop-shadow(0 8px 32px rgba(0,0,0,0.45))",
+        }}>
+          <Image src="/Dragon_Ramen.png" alt="Dragon eating ramen" width={920} height={880} style={{ width: "100%", height: "auto" }} priority />
+        </div>
 
         <h1 className="animate-fade-in shimmer-heading" style={{ fontSize: "clamp(2.8rem, 8vw, 5.5rem)", fontWeight: 900, maxWidth: "880px", margin: "28px 0 24px", lineHeight: 1.05 }}>
           Your Next Great<br />Adventure Awaits

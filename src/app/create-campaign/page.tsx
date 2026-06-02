@@ -12,6 +12,8 @@ import { computeInventoryBonuses } from "../../lib/lootData";
 import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from "../../lib/proficiencyData";
+import { useTooltip, tipBox } from "../../hooks/useTooltip";
+import { RACE_TIPS, ALIGNMENT_TIPS, CLASS_TIPS, MECHANIC_TIPS, STAT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, SPELL_SCHOOL_TIPS, ARRAY_VALUE_TIPS } from "../../lib/tooltipData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type AbilityScores = {
@@ -142,6 +144,8 @@ export default function CreateCampaignWizard() {
   const [completedChars, setCompletedChars] = useState<CharDraft[]>([]);
   const [rosterChars, setRosterChars] = useState<RosterChar[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
+
+  const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 
   const isSpellcaster     = SPELLCASTING_CLASSES.has(draft.class);
   const totalCharSteps    = isSpellcaster ? 6 : 5;
@@ -673,42 +677,60 @@ export default function CreateCampaignWizard() {
 
                     {/* Race */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Race</label>
+                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", cursor: "help" }}
+                        onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
+                        onMouseLeave={hideTooltip}>Race</label>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
                         {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
-                          <div key={race} onClick={() => setDraft(d => ({ ...d, race }))} style={{
-                            padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                            border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,
-                            background: draft.race === race ? "rgba(139,92,246,0.2)" : "transparent",
-                          }}>{race}</div>
+                          <div key={race} onClick={() => setDraft(d => ({ ...d, race }))}
+                            onMouseEnter={e => { const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
+                            onMouseLeave={hideTooltip}
+                            style={{
+                              padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                              border: `1px solid ${draft.race === race ? "var(--primary)" : "var(--border)"}`,
+                              background: draft.race === race ? "rgba(139,92,246,0.2)" : "transparent",
+                            }}>{race}</div>
                         ))}
                       </div>
                     </div>
 
                     {/* Sex */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>Sex</label>
+                      <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", cursor: "help" }}
+                        onMouseEnter={e => showTooltip(tipBox("Sex / Pronouns", "Sets the pronouns the DM uses when narrating your character's actions — he/him, she/her, or they/them.", "#c4b5fd"), e)}
+                        onMouseLeave={hideTooltip}>Sex</label>
                       <div style={{ display: "flex", gap: "12px" }}>
-                        {(["male", "female", "non-binary"] as const).map(s => (
-                          <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))} style={{
-                            flex: 1, padding: "12px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize",
-                            border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
-                            background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
-                          }}>{s}</div>
-                        ))}
+                        {(["male", "female", "non-binary"] as const).map(s => {
+                          const pronounMap = { male: "he/him", female: "she/her", "non-binary": "they/them" };
+                          return (
+                          <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))}
+                            onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, "#c4b5fd"), e)}
+                            onMouseLeave={hideTooltip}
+                            style={{
+                              flex: 1, padding: "12px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize",
+                              border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
+                              background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
+                            }}>{s}</div>
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Alignment */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "6px", color: "#94a3b8" }}>Alignment <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span></label>
+                      <label style={{ display: "block", marginBottom: "6px", color: "#94a3b8", cursor: "help" }}
+                        onMouseEnter={e => showTooltip(tipBox("Alignment", "Your character's moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character's motivations. Hover any alignment for its description.", "#a78bfa"), e)}
+                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span></label>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
                         {ALIGNMENTS.map(a => (
-                          <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))} style={{
-                            padding: "8px 6px", borderRadius: "8px", cursor: "pointer", textAlign: "center", transition: "all 0.2s",
-                            border: `1px solid ${draft.alignment === a.key ? "var(--primary)" : "var(--border)"}`,
-                            background: draft.alignment === a.key ? "rgba(139,92,246,0.2)" : "transparent",
-                          }}>
+                          <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))}
+                            onMouseEnter={e => showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? "", "#a78bfa"), e)}
+                            onMouseLeave={hideTooltip}
+                            style={{
+                              padding: "8px 6px", borderRadius: "8px", cursor: "pointer", textAlign: "center", transition: "all 0.2s",
+                              border: `1px solid ${draft.alignment === a.key ? "var(--primary)" : "var(--border)"}`,
+                              background: draft.alignment === a.key ? "rgba(139,92,246,0.2)" : "transparent",
+                            }}>
                             <div style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? "#c4b5fd" : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
                             <div style={{ fontSize: "0.72rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
                           </div>
@@ -768,16 +790,22 @@ export default function CreateCampaignWizard() {
               {charStep === 2 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
-                    {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => (
-                      <div key={cls} onClick={() => handleClassChange(cls)} style={{
-                        padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", fontSize: "0.9rem",
-                        border: `1px solid ${draft.class === cls ? "var(--primary)" : "var(--border)"}`,
-                        background: draft.class === cls ? "rgba(139,92,246,0.2)" : "transparent",
-                      }}>
+                    {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => {
+                      const ct = CLASS_TIPS[cls];
+                      return (
+                      <div key={cls} onClick={() => handleClassChange(cls)}
+                        onMouseEnter={e => { if (ct) showTooltip(<div style={{ background: "#12101f", border: "1px solid #8b5cf655", borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: "#c4b5fd", marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
+                        onMouseLeave={hideTooltip}
+                        style={{
+                          padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", fontSize: "0.9rem",
+                          border: `1px solid ${draft.class === cls ? "var(--primary)" : "var(--border)"}`,
+                          background: draft.class === cls ? "rgba(139,92,246,0.2)" : "transparent",
+                        }}>
                         {cls}
                         {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.6rem", color: "#8b5cf6", marginTop: "3px" }}>✦ Spellcaster</div>}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {profData && (
@@ -803,13 +831,16 @@ export default function CreateCampaignWizard() {
                             const selected = draft.skillProficiencies.includes(skill);
                             const disabled = !selected && draft.skillProficiencies.length >= profRequired;
                             return (
-                              <div key={skill} onClick={() => toggleSkillProf(skill)} style={{
-                                padding: "5px 12px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer",
-                                border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
-                                background: selected ? "rgba(139,92,246,0.25)" : "transparent",
-                                color: selected ? "white" : disabled ? "#374151" : "#94a3b8",
-                                fontSize: "0.8rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
-                              }}>
+                              <div key={skill} onClick={() => toggleSkillProf(skill)}
+                                onMouseEnter={e => { const st = SKILL_TIPS[skill]; if (st) showTooltip(tipBox(st.title, st.body), e); }}
+                                onMouseLeave={hideTooltip}
+                                style={{
+                                  padding: "5px 12px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer",
+                                  border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
+                                  background: selected ? "rgba(139,92,246,0.25)" : "transparent",
+                                  color: selected ? "white" : disabled ? "#374151" : "#94a3b8",
+                                  fontSize: "0.8rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
+                                }}>
                                 {selected && <span style={{ marginRight: "3px", fontSize: "0.62rem" }}>✓</span>}
                                 {skill}
                               </div>
@@ -1154,6 +1185,7 @@ export default function CreateCampaignWizard() {
           </div>
         )}
       </div>
+      {TooltipPortal}
     </main>
   );
 }
