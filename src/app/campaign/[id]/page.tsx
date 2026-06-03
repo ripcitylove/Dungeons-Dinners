@@ -814,21 +814,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!campaignParty.length) return;
     const partyIds = new Set(campaignParty.map(c => c.id));
     const restored = restoredTurnStateRef.current;
+    let finalOrder: string[];
+    let finalIndex: number;
     if (restored) {
       restoredTurnStateRef.current = null;
       const validOrder = restored.order.filter(id => partyIds.has(id));
       // Add any party members missing from the saved order (e.g. new joiners)
       campaignParty.forEach(c => { if (!validOrder.includes(c.id)) validOrder.push(c.id); });
-      const clampedIndex = Math.min(restored.index, validOrder.length - 1);
-      turnOrderRef.current = validOrder;
-      setTurnOrder(validOrder);
-      setCurrentTurnIndex(clampedIndex);
-      currentTurnIndexRef.current = clampedIndex;
-      return;
+      finalOrder = validOrder;
+      finalIndex = Math.min(restored.index, validOrder.length - 1);
+    } else {
+      finalOrder = [...campaignParty].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id);
+      finalIndex = 0;
     }
-    const order = [...campaignParty].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id);
-    turnOrderRef.current = order;
-    setTurnOrder(order);
+    turnOrderRef.current = finalOrder;
+    setTurnOrder(finalOrder);
+    setCurrentTurnIndex(finalIndex);
+    currentTurnIndexRef.current = finalIndex;
+    // Generate suggestions only if it's actually this player's turn
+    const isMyTurn = finalOrder.length <= 1 || finalOrder[finalIndex] === characterRef.current?.id;
+    if (isMyTurn && characterRef.current) {
+      const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
+      if (lastDm) {
+        fetch("/api/suggest-actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dmResponse: lastDm.content, character: characterRef.current }),
+        }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
+      }
+    }
   }, [campaignParty.length]);
 
   // When the active character index changes, sync the character sheet
@@ -973,14 +987,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const lastDm = [...hist].reverse().find(m => m.role === "dm");
         if (lastDm) {
           resumeNarrationRef.current = lastDm.content;
-          // Restore suggestions — turn order not known yet on resume so always generate
-          if (characterRef.current) {
-            fetch("/api/suggest-actions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dmResponse: lastDm.content, character: characterRef.current }),
-            }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-          }
+          // Suggestions are generated after turn order is restored (see turn-order useEffect)
           // Restore the scene image — detect-scene hits its DB cache so this is fast
           const loadSceneReqId = ++sceneRequestIdRef.current;
           fetch("/api/detect-scene", {
