@@ -585,8 +585,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // and skip writing to the (now-reused) slot array, preventing old audio from clobbering new.
   const narGenerationRef     = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
-  const pendingSpellCastRef  = useRef<number>(0);
-  const prevActingCharIdRef  = useRef<string | null>(null);
+  const pendingSpellCastRef      = useRef<number>(0);
+  const pendingSpellCastLevelRef = useRef<number>(0);
+  const prevActingCharIdRef      = useRef<string | null>(null);
   const sceneRequestIdRef    = useRef(0);
   const usesCCTableRef       = useRef(false);
   const charWriteRef         = useRef<((charId: string, fields: Record<string, unknown>) => Promise<void>) | null>(null);
@@ -1421,12 +1422,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
 
     // Spell slots — consume when named explicitly OR this is the acting character.
-    // If the player clicked a spell in the UI, pendingSpellCastRef > 0 (slot already consumed) — just clear the pending count.
-    // Otherwise use spell_slot_level from the AI response if > 0, falling back to the lowest available slot.
+    // If the player clicked a spell in the UI (or fast detection fired), pendingSpellCastRef > 0
+    // (slot already consumed) — just clear the pending count, but reconcile if the AI identified
+    // an upcast level different from what fast detection assumed.
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
     if ((shouldApplySlots || hadPendingCast) && change.spell_slots_used > 0) {
       if (hadPendingCast) {
+        // Reconcile upcast: if fast detection consumed level X but AI says level Y, correct it
+        const fastLevel    = pendingSpellCastLevelRef.current;
+        const correctLevel = change.spell_slot_level;
+        if (fastLevel > 0 && correctLevel > 0 && correctLevel !== fastLevel) {
+          if ((newSlotsUsed[fastLevel] ?? 0) > 0) {
+            newSlotsUsed[fastLevel] = (newSlotsUsed[fastLevel]! - 1);
+          }
+          newSlotsUsed[correctLevel] = (newSlotsUsed[correctLevel] ?? 0) + 1;
+        }
         pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - change.spell_slots_used);
+        pendingSpellCastLevelRef.current = 0;
       } else {
         const allSlots = getSpellSlots(char.class, char.level);
         let toConsume = change.spell_slots_used;
@@ -1493,8 +1505,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     await charWrite(char.id, dbUpdate);
 
     // Always clear any pending optimistic spell cast once the acting char's DM response is processed,
-    // even if chat-state returned spell_slots_used = 0 (so the ref never stays stuck > 0).
-    if (isActingChar && pendingSpellCastRef.current > 0) pendingSpellCastRef.current = 0;
+    // even if chat-state returned spell_slots_used = 0 (so the refs never stay stuck > 0).
+    if (isActingChar && pendingSpellCastRef.current > 0) {
+      pendingSpellCastRef.current = 0;
+      pendingSpellCastLevelRef.current = 0;
+    }
 
     // Broadcast full stat sync so every player's party card stays accurate
     channelRef.current?.send({
@@ -2282,8 +2297,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c));
               characterRef.current = fastChar;
               campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c);
-              // Mark as pending so applyStateChange won't double-deduct
+              // Mark as pending so applyStateChange won't double-deduct; record level for upcast reconciliation
               pendingSpellCastRef.current++;
+              pendingSpellCastLevelRef.current = spellLvl;
               channelRef.current?.send({
                 type: "broadcast", event: "character_sync",
                 payload: { charId: actingChar.id, spell_slots_used: used },

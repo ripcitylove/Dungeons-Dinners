@@ -130,7 +130,7 @@ export default async function Home() {
             color: "#c4b5fd",
             marginBottom: "28px",
           }}>
-            AI-Powered D&amp;D 5e
+            AI-Powered Dungeon Crawler Experience
           </div>
 
           <h1 className="animate-fade-in delay-100 shimmer-heading" style={{
@@ -178,7 +178,7 @@ export default async function Home() {
             overflow: "hidden",
           }}>
             {[
-              { value: "5e", label: "D&D Rules" },
+              { value: "5e", label: "Dungeons and Dinners" },
               { value: "10", label: "Players Max" },
               { value: "AI", label: "Dungeon Master" },
               { value: "∞", label: "Unique Stories" },
@@ -279,7 +279,7 @@ export default async function Home() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {[
-              "Follows D&D 5e rules faithfully — spells, conditions, and stat blocks all correct",
+              "Follows Dungeons and Dinners rules faithfully — spells, conditions, and stat blocks all correct",
               "Reacts to your choices in real time, crafting fresh narrative on the fly",
               "Tracks all combat: initiative, HP, spell slots, conditions, and loot",
               "Runs NPCs, merchants, villains, and wandering monsters autonomously",
@@ -300,7 +300,7 @@ export default async function Home() {
         <p style={{ color: "var(--primary)", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "14px" }}>Everything You Need</p>
         <h2 style={{ fontSize: "clamp(1.8rem, 4vw, 2.7rem)", fontWeight: 800, marginBottom: "16px" }}>Built for the Full Experience</h2>
         <p style={{ color: "var(--subtle)", maxWidth: "480px", margin: "0 auto 60px", lineHeight: 1.8, fontSize: "0.95rem" }}>
-          Every system of D&amp;D 5e, faithfully implemented — so you can focus on the adventure.
+          Every system of Dungeons and Dinners, faithfully implemented — so you can focus on the adventure.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "20px", maxWidth: "1100px", margin: "0 auto" }}>
           {FEATURES.map(({ icon, title, desc }, i) => (
