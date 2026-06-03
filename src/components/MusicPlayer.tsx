@@ -18,9 +18,12 @@ const TAVERN_TRACKS: string[] = [
   `${MIST_CROWN}07%20A%20Kind%20Face.mp3`,
   `${KM}Salty%20Ditty.mp3`,
   `${KM}Drinking%20Song.mp3`,
-  `${KM}Ouroboros.mp3`,
   `${KM}Celtic%20Impulse.mp3`,
   `${MEDIEVAL}Royal%20Coupling.mp3`,
+  `${KM}Carefree.mp3`,
+  `${KM}Fluffing%20a%20Duck.mp3`,
+  `${KM}Blarney%20Street.mp3`,
+  `${KM}Merry%20Go.mp3`,
 ];
 
 const POOLS: Record<string, string[]> = {
@@ -36,6 +39,9 @@ const POOLS: Record<string, string[]> = {
     `${KM}Action.mp3`,
     `${KM}Dark%20Times.mp3`,
     `${KM}Anguish.mp3`,
+    `${KM}Volatile%20Reaction.mp3`,
+    `${KM}Strength%20of%20the%20Titans.mp3`,
+    `${KM}Heavy%20Interlude.mp3`,
     "https://soundimage.org/wp-content/uploads/2020/06/Preparing-for-Battle.mp3",
     "https://soundimage.org/wp-content/uploads/2021/08/Ancient-Crusades.mp3",
     "https://soundimage.org/wp-content/uploads/2018/01/Battle-of-the-Ancients.mp3",
@@ -50,7 +56,6 @@ const POOLS: Record<string, string[]> = {
     `${MIST_CROWN}10%20Red%20Abyss.mp3`,
     `${MIST_CROWN}11%20Descend%20the%20Central%20Bell%20Tower.mp3`,
     "https://archive.org/download/dark-fantasy-music-a-blackened-heart/Dark%20Fantasy%20Music%20-%20A%20Blackened%20Heart.mp3",
-    `${MEDIEVAL}Cold%20Journey.mp3`,
     `${KM}Atlantean%20Twilight.mp3`,
     `${KM}BlackVortex.mp3`,
     `${KM}Ossuary%206%20-%20Air.mp3`,
@@ -59,6 +64,9 @@ const POOLS: Record<string, string[]> = {
     `${DARK_AMB}Gloomy.mp3`,
     `${DARK_AMB}Nightmare.mp3`,
     `${DARK_AMB}Suspense%20Piano.mp3`,
+    `${KM}Cipher.mp3`,
+    `${KM}Investigations.mp3`,
+    `${KM}Dark%20Fog.mp3`,
   ],
   nature: [
     `${MEDIEVAL}Cold%20Journey.mp3`,
@@ -72,6 +80,9 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2014/09/Our-Mountain_v003.mp3",
     "https://soundimage.org/wp-content/uploads/2023/12/Lost-Jungle.mp3",
     "https://soundimage.org/wp-content/uploads/2020/06/Misty-Bog_remixed.mp3",
+    `${KM}Verdant%20Acres.mp3`,
+    `${KM}Healing.mp3`,
+    `${KM}Forest%20Walk.mp3`,
   ],
   mystical: [
     `${MIST_CROWN}05%20Long%20Ago%2C%20When%20the%20Light%20Fought%20Shadow.mp3`,
@@ -85,6 +96,10 @@ const POOLS: Record<string, string[]> = {
     `${DARK_AMB}Wizard%20Place.mp3`,
     "https://soundimage.org/wp-content/uploads/2023/12/Magic-Clock-Shop.mp3",
     "https://soundimage.org/wp-content/uploads/2023/12/Magic-Ocean.mp3",
+    `${KM}Ouroboros.mp3`,
+    `${KM}Gregorian%20Chant.mp3`,
+    `${KM}Wizardtorium.mp3`,
+    `${KM}Ancient%20and%20Mysterious.mp3`,
   ],
   epic: [
     `${MIST_CROWN}09%20The%20Ashen%20Fortress.mp3`,
@@ -100,6 +115,9 @@ const POOLS: Record<string, string[]> = {
     "https://soundimage.org/wp-content/uploads/2023/12/The-Voyage-Begins.mp3",
     "https://soundimage.org/wp-content/uploads/2020/06/The-Key-to-the-Kingdom.mp3",
     "https://soundimage.org/wp-content/uploads/2020/06/Comrades-Always.mp3",
+    `${KM}Heroic%20Age.mp3`,
+    `${KM}Long%20Road%20Ahead.mp3`,
+    `${KM}Stormfront.mp3`,
   ],
   sea: [
     "https://soundimage.org/wp-content/uploads/2022/04/High-Seas-Adventures.mp3",

@@ -16,6 +16,7 @@ import {
 } from "../../../lib/lootData";
 import { tipBox } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS } from "../../../lib/tooltipData";
+import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string };
@@ -24,6 +25,7 @@ type CampaignCharacterRow = {
   hp: number; max_hp: number; xp: number; level: number;
   inventory: Character["inventory"];
   spell_slots_used: Record<number, number>;
+  class_resources: Record<string, number>;
   status_effects: string[];
   cantrips_known: string[];
   spells_prepared: string[];
@@ -47,6 +49,7 @@ type Character = {
   spells_prepared?: string[];
   status_effects?: string[];
   spell_slots_used?: Record<number, number>;
+  class_resources?: Record<string, number>;
   inventory: { gold: number; cp?: number; sp?: number; ep?: number; pp?: number; weapons: string[]; items: string[] };
 };
 
@@ -383,10 +386,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [narrationEnabled, setNarrationEnabled]  = useState(true);
   const [toastMsg,         setToastMsg]          = useState<string | null>(null);
   const [narrating,        setNarrating]         = useState(false);
-  const [selectedVoice,    setSelectedVoice]     = useState<string>("chronicler");
+  const [selectedVoice,    setSelectedVoice]     = useState<string>("bard");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
   const [testingVoice,     setTestingVoice]      = useState<string | null>(null);
-  const selectedVoiceRef = useRef<string>("chronicler");
+  const [passTurnOpen,     setPassTurnOpen]      = useState(false);
+  const selectedVoiceRef = useRef<string>("bard");
   const previewAudioRef  = useRef<HTMLAudioElement | null>(null);
 
   // ── Round tracking ────────────────────────────────────────────────────────────
@@ -766,6 +770,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { isGroupCheckRollRef.current = isGroupCheckRoll; }, [isGroupCheckRoll]);
   useEffect(() => { roundActionsRef.current = roundActions; }, [roundActions]);
 
+  // Keep party card focus locked to the current-turn player
+  useEffect(() => {
+    const id = turnOrder[currentTurnIndex] ?? null;
+    if (!id || !campaignParty.length) return;
+    const idx = campaignParty.findIndex(c => c.id === id);
+    if (idx >= 0) setActiveCharIdx(idx);
+  }, [currentTurnIndex, turnOrder, campaignParty]);
+
+  // Close pass-turn submenu whenever the turn moves
+  useEffect(() => { setPassTurnOpen(false); }, [currentTurnIndex]);
+
   // Persist turn state to DB whenever it changes so campaigns resume at the right position
   useEffect(() => {
     if (!turnOrder.length || !params.id) return;
@@ -887,6 +902,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               ...char,
               hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
               inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
+              class_resources: cc.class_resources ?? {},
               status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
               spells_prepared: cc.spells_prepared,
             };
@@ -1135,17 +1151,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           xp?: number; level?: number;
           inventory?: Character["inventory"];
           spell_slots_used?: Record<number, number>;
+          class_resources?: Record<string, number>;
           status_effects?: string[];
         };
         const merge = (c: Character) => ({
           ...c,
           hp:      p.hp,
           max_hp:  p.max_hp,
-          ...(p.xp              !== undefined && { xp:              p.xp              }),
-          ...(p.level           !== undefined && { level:           p.level           }),
-          ...(p.inventory       !== undefined && { inventory:       p.inventory       }),
+          ...(p.xp               !== undefined && { xp:               p.xp               }),
+          ...(p.level            !== undefined && { level:            p.level            }),
+          ...(p.inventory        !== undefined && { inventory:        p.inventory        }),
           ...(p.spell_slots_used !== undefined && { spell_slots_used: p.spell_slots_used }),
-          ...(p.status_effects  !== undefined && { status_effects:  p.status_effects  }),
+          ...(p.class_resources  !== undefined && { class_resources:  p.class_resources  }),
+          ...(p.status_effects   !== undefined && { status_effects:   p.status_effects   }),
         });
         setCampaignParty(prev => prev.map(c => c.id !== p.charId ? c : merge(c)));
         // Also update the active character sheet for other players' characters
@@ -1620,12 +1638,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const isWarlock = char.class === "Warlock";
     // Warlock recovers all pact slots on short rest
     const newSlotsUsed = isWarlock ? {} : { ...(char.spell_slots_used ?? {}) };
+    // Reset short-rest class resources
+    const shortResetKeys = SHORT_REST_RESET_KEYS[char.class] ?? [];
+    const isBardL5Plus = char.class === "Bard" && char.level >= 5;
+    const newClassResources = { ...(char.class_resources ?? {}) };
+    for (const key of shortResetKeys) delete newClassResources[key];
+    if (isBardL5Plus) delete newClassResources["bardic_inspiration"];
     // Clear temporary status effects on rest
     const newStatuses = (char.status_effects ?? []).filter(s => !["Prone", "Frightened", "Stunned"].includes(s));
-    const updated: Character = { ...char, hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses };
+    const updated: Character = { ...char, hp: newHp, spell_slots_used: newSlotsUsed, class_resources: newClassResources, status_effects: newStatuses };
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
-    await charWrite(char.id, { hp: newHp, spell_slots_used: newSlotsUsed, status_effects: newStatuses });
+    await charWrite(char.id, { hp: newHp, spell_slots_used: newSlotsUsed, class_resources: newClassResources, status_effects: newStatuses });
     const notice = `Short Rest: d${hitDie} rolled ${roll} + CON ${conMod >= 0 ? "+" : ""}${conMod} = +${gained} HP${isWarlock ? " · Pact slots restored" : ""}`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
@@ -1639,14 +1663,44 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const longIb      = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
     const longMaxHp   = char.max_hp + longIb.hpMaxAdd;
     const newStatuses = (char.status_effects ?? []).filter(s => s === "Dead" || s === "Petrified");
-    const updated: Character = { ...char, hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses };
+    const updated: Character = { ...char, hp: longMaxHp, spell_slots_used: {}, class_resources: {}, status_effects: newStatuses };
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
-    await charWrite(char.id, { hp: longMaxHp, spell_slots_used: {}, status_effects: newStatuses });
-    const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots recovered, conditions cleared`;
+    await charWrite(char.id, { hp: longMaxHp, spell_slots_used: {}, class_resources: {}, status_effects: newStatuses });
+    const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots & class abilities recovered, conditions cleared`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 6000);
     setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
+  }, [charWrite]);
+
+  const handleUseClassAbility = useCallback(async (resourceKey: string, cost: number) => {
+    const char = characterRef.current;
+    if (!char) return;
+    const resources = CLASS_RESOURCES[char.class] ?? [];
+    const resDef = resources.find(r => r.key === resourceKey);
+    if (!resDef) return;
+    const statArr: [number, number, number, number, number, number] = [char.charisma, char.wisdom, char.constitution, char.strength, char.intelligence, char.dexterity];
+    const maxVal = resDef.getMax(char.level, ...statArr);
+    const currentUsed = (char.class_resources ?? {})[resourceKey] ?? 0;
+    const available = Math.max(0, maxVal - currentUsed);
+    if (available < cost && resDef.unit !== "passive") return;
+    const newUsed = currentUsed + cost;
+    const newClassResources = { ...(char.class_resources ?? {}), [resourceKey]: newUsed };
+    const updated = { ...char, class_resources: newClassResources };
+    setCharacter(updated);
+    characterRef.current = updated;
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updated : c);
+    await charWrite(char.id, { class_resources: newClassResources });
+    channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: {
+        charId: char.id, hp: char.hp, max_hp: char.max_hp,
+        xp: char.xp, level: char.level,
+        inventory: char.inventory, spell_slots_used: char.spell_slots_used ?? {},
+        class_resources: newClassResources, status_effects: char.status_effects ?? [],
+      },
+    });
   }, [charWrite]);
 
   const handlePartyShortRest = useCallback(async () => {
@@ -2975,7 +3029,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", overflow: "hidden" }}>
         {/* Header */}
         <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", overflow: "hidden" }}>
-          <Link href="/dashboard" style={{ flexShrink: 0, color: "#94a3b8", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" }}>← Tavern</Link>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaignTitle || "Loading…"}</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>DM: Claude · {campaignParty.length} in party</p>
@@ -3015,7 +3068,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               {narrationEnabled && chatPaneWidth > 310 && <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
             </button>
             {voicePickerOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
                 {VOICES.map(v => (
                   <div key={v.id} style={{ display: "flex", alignItems: "center", gap: "4px", borderRadius: "7px", background: selectedVoice === v.id ? "rgba(139,92,246,0.25)" : "transparent", transition: "background 0.15s" }}
                     onMouseEnter={e => { if (selectedVoice !== v.id) (e.currentTarget as HTMLDivElement).style.background = "rgba(139,92,246,0.12)"; }}
@@ -3410,7 +3463,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 return (
                   <div key={char.id}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
-                    style={{ padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    {/* Party leader crown — top-right of card */}
+                    {char.id === partyLeaderId && (
+                      <span
+                        style={{ position: "absolute", top: "8px", right: "10px", fontSize: fs(1.0), animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help", zIndex: 1 }}
+                        onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PARTY_LEADER.title, MECHANIC_TIPS.PARTY_LEADER.body, "#f59e0b"), e)}
+                        onMouseLeave={hideTooltip}>👑</span>
+                    )}
                     <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "10px" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div
@@ -3426,11 +3486,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
                           <span style={{ fontSize: fs(0.95), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
-                          {char.id === partyLeaderId && (
-                            <span style={{ fontSize: fs(1.05), flexShrink: 0, animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help" }}
-                              onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PARTY_LEADER.title, MECHANIC_TIPS.PARTY_LEADER.body, "#f59e0b"), e)}
-                              onMouseLeave={hideTooltip}>👑</span>
-                          )}
                         </div>
                         <div style={{ fontSize: fs(0.76), color: "#94a3b8" }}>
                           {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · <span style={{ cursor: "help" }}
@@ -3465,14 +3520,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
                         )}
-                        {char.id !== character?.id && isMyTurn && !isCurrentTurn && !roundActions.some(a => a.characterId === char.id) && (
+                        {isMyTurn && char.id === character?.id && campaignParty.length > 1 && (
                           <button
-                            onClick={e => { e.stopPropagation(); handleTurnSkip(char, idx); }}
-                            title={`Swap turns with ${char.name}`}
-                            style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.35)", color: "#a78bfa", cursor: "pointer", fontSize: fs(0.62), padding: "2px 6px", borderRadius: "4px", lineHeight: 1.4, fontWeight: 600, transition: "all 0.15s" }}
+                            onClick={e => { e.stopPropagation(); setPassTurnOpen(v => !v); }}
+                            style={{ background: passTurnOpen ? "rgba(139,92,246,0.28)" : "rgba(139,92,246,0.12)", border: `1px solid ${passTurnOpen ? "rgba(139,92,246,0.7)" : "rgba(139,92,246,0.35)"}`, color: "#a78bfa", cursor: "pointer", fontSize: fs(0.62), padding: "2px 8px", borderRadius: "4px", lineHeight: 1.4, fontWeight: 600, transition: "all 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.7)"; showTooltip(tipBox(MECHANIC_TIPS.PASS_TURN.title, MECHANIC_TIPS.PASS_TURN.body), e); }}
-                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.35)"; hideTooltip(); }}
-                          >Pass Turn</button>
+                            onMouseLeave={e => { e.currentTarget.style.background = passTurnOpen ? "rgba(139,92,246,0.28)" : "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = passTurnOpen ? "rgba(139,92,246,0.7)" : "rgba(139,92,246,0.35)"; hideTooltip(); }}
+                          >{passTurnOpen ? "↑ Cancel" : "Pass Turn"}</button>
                         )}
                       </div>
                     </div>
@@ -3503,21 +3557,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       const levels    = Object.keys(maxSlots).map(Number).sort();
                       if (levels.length === 0) return null;
                       return (
-                        <div style={{ marginTop: "6px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ marginTop: "7px", display: "flex", gap: "7px", flexWrap: "wrap", alignItems: "center" }}
+                          onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.SPELL_SLOTS.title, MECHANIC_TIPS.SPELL_SLOTS.body, "#8b5cf6"), e)}
+                          onMouseLeave={hideTooltip}>
                           {levels.map(lvl => {
                             const max   = maxSlots[lvl];
                             const used  = usedSlots[lvl] ?? 0;
                             const avail = Math.max(0, max - used);
                             return (
-                              <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                                <span style={{ fontSize: fs(0.52), color: "#64748b", marginRight: "1px" }}>L{lvl}</span>
+                              <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                                <span style={{ fontSize: fs(0.54), color: "#64748b", marginRight: "1px", fontWeight: 600 }}>L{lvl}</span>
                                 {Array.from({ length: max }, (_, i) => (
                                   <div key={i} style={{
-                                    width: "7px", height: "7px", borderRadius: "50%",
+                                    width: "10px", height: "10px", borderRadius: "50%",
                                     background: i < avail ? "#8b5cf6" : "transparent",
                                     border: `1.5px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}`,
                                     transition: "all 0.2s",
-                                    boxShadow: i < avail ? "0 0 3px rgba(139,92,246,0.5)" : "none",
+                                    boxShadow: i < avail ? "0 0 5px rgba(139,92,246,0.65)" : "none",
                                   }} />
                                 ))}
                               </div>
@@ -3526,6 +3582,68 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       );
                     })()}
+                    {/* Class resource pips */}
+                    {(() => {
+                      const resDefs = (CLASS_RESOURCES[char.class] ?? []).filter(r => r.unit !== "passive" && r.minLevel <= char.level);
+                      if (resDefs.length === 0) return null;
+                      const statArr: [number, number, number, number, number, number] = [char.charisma, char.wisdom, char.constitution, char.strength, char.intelligence, char.dexterity];
+                      return (
+                        <div style={{ marginTop: "6px", display: "flex", gap: "7px", flexWrap: "wrap", alignItems: "center" }}>
+                          {resDefs.map(res => {
+                            const maxVal = res.getMax(char.level, ...statArr);
+                            const usedVal = (char.class_resources ?? {})[res.key] ?? 0;
+                            const avail = Math.max(0, maxVal - usedVal);
+                            if (maxVal === 0) return null;
+                            return (
+                              <div key={res.key} style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                                onMouseEnter={e => showTooltip(
+                                  <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "8px", padding: "8px 11px", width: "210px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                                    <div style={{ fontWeight: "bold", color: res.color, marginBottom: "3px", fontSize: fs(0.75) }}>{res.emoji} {res.name}</div>
+                                    <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{avail}/{maxVal} {res.unit} · {res.resetOn === "shortRest" ? "Short Rest" : res.resetOn === "bardic" ? "Long/Short Rest" : "Long Rest"}</div>
+                                  </div>, e)}
+                                onMouseLeave={hideTooltip}>
+                                <span style={{ fontSize: fs(0.6) }}>{res.emoji}</span>
+                                {res.unit === "HP" ? (
+                                  <span style={{ fontSize: fs(0.6), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
+                                ) : maxVal <= 10 ? (
+                                  Array.from({ length: maxVal }, (_, i) => (
+                                    <div key={i} style={{
+                                      width: "9px", height: "9px", borderRadius: "50%",
+                                      background: i < avail ? res.color : "transparent",
+                                      border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`,
+                                      transition: "all 0.2s",
+                                      boxShadow: i < avail ? `0 0 4px ${res.color}88` : "none",
+                                    }} />
+                                  ))
+                                ) : (
+                                  <span style={{ fontSize: fs(0.62), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    {/* Pass-turn submenu — only on the active player's own card */}
+                    {isMyTurn && char.id === character?.id && passTurnOpen && campaignParty.length > 1 && (
+                      <div onClick={e => e.stopPropagation()} style={{ marginTop: "8px", padding: "7px 8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.28)", borderRadius: "8px" }}>
+                        <div style={{ fontSize: fs(0.6), color: "#64748b", marginBottom: "5px", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 700 }}>Pass turn to…</div>
+                        {campaignParty.filter(c => c.id !== character?.id).map(targetChar => {
+                          const targetIdx = campaignParty.findIndex(c => c.id === targetChar.id);
+                          return (
+                            <button key={targetChar.id}
+                              onClick={e => { e.stopPropagation(); setPassTurnOpen(false); handleTurnSkip(targetChar, targetIdx); }}
+                              style={{ display: "flex", alignItems: "center", gap: "7px", width: "100%", padding: "5px 7px", borderRadius: "6px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", transition: "background 0.12s" }}
+                              onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.2)"; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                            >
+                              <span style={{ fontSize: fs(0.75), color: CLASS_COLORS[targetChar.class] ?? "white", fontWeight: 700 }}>{targetChar.name}</span>
+                              <span style={{ fontSize: fs(0.65), color: "#64748b" }}>{targetChar.race} {targetChar.class}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(s => {
@@ -3720,6 +3838,43 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ fontSize: fs(0.95), fontWeight: "bold", color: "#8b5cf6" }}>{vc.xp ?? 0}</div>
                       </div>
                     </div>
+                    {/* Other player class abilities — read-only */}
+                    {(() => {
+                      const resDefs = (CLASS_RESOURCES[vc.class] ?? []).filter(r => r.unit !== "passive" && r.minLevel <= vc.level);
+                      if (resDefs.length === 0) return null;
+                      const statArr: [number, number, number, number, number, number] = [vc.charisma, vc.wisdom, vc.constitution, vc.strength, vc.intelligence, vc.dexterity];
+                      return (
+                        <div>
+                          <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Class Abilities</div>
+                          <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", alignItems: "center" }}>
+                            {resDefs.map(res => {
+                              const maxVal = res.getMax(vc.level, ...statArr);
+                              const usedVal = (vc.class_resources ?? {})[res.key] ?? 0;
+                              const avail = Math.max(0, maxVal - usedVal);
+                              if (maxVal === 0) return null;
+                              return (
+                                <div key={res.key} style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                                  onMouseEnter={e => showTooltip(
+                                    <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "8px", padding: "8px 11px", width: "200px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                                      <div style={{ fontWeight: "bold", color: res.color, marginBottom: "3px" }}>{res.emoji} {res.name}</div>
+                                      <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{avail}/{maxVal} {res.unit} remaining</div>
+                                    </div>, e)}
+                                  onMouseLeave={hideTooltip}>
+                                  <span style={{ fontSize: fs(0.75) }}>{res.emoji}</span>
+                                  {maxVal <= 10 ? (
+                                    Array.from({ length: maxVal }, (_, i) => (
+                                      <div key={i} style={{ width: "9px", height: "9px", borderRadius: "50%", background: i < avail ? res.color : "transparent", border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`, boxShadow: i < avail ? `0 0 4px ${res.color}88` : "none" }} />
+                                    ))
+                                  ) : (
+                                    <span style={{ fontSize: fs(0.68), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {((vc.inventory?.items?.length ?? 0) + (vc.inventory?.weapons?.length ?? 0)) > 0 && (
                       <div>
                         <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Inventory</div>
@@ -4010,6 +4165,106 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     })()}
                   </div>
                 )}
+
+                {/* Class Abilities */}
+                {(() => {
+                  const resDefs = (CLASS_RESOURCES[character.class] ?? []).filter(r => r.minLevel <= character.level);
+                  if (resDefs.length === 0) return null;
+                  const statArr: [number, number, number, number, number, number] = [character.charisma, character.wisdom, character.constitution, character.strength, character.intelligence, character.dexterity];
+                  return (
+                    <div>
+                      <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>Class Abilities</h3>
+                      {resDefs.map(res => {
+                        const maxVal  = res.getMax(character.level, ...statArr);
+                        const usedVal = (character.class_resources ?? {})[res.key] ?? 0;
+                        const avail   = Math.max(0, maxVal - usedVal);
+                        const isPassive = res.unit === "passive";
+                        const isHP      = res.unit === "HP";
+                        return (
+                          <div key={res.key} style={{ marginBottom: "12px", padding: "10px 12px", background: "rgba(0,0,0,0.25)", borderRadius: "9px", border: `1px solid ${res.color}33` }}>
+                            {/* Header row */}
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}
+                              onMouseEnter={e => showTooltip(
+                                <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "8px", padding: "9px 12px", width: "230px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                                  <div style={{ fontWeight: "bold", color: res.color, marginBottom: "4px", fontSize: fs(0.78) }}>{res.emoji} {res.name}</div>
+                                  <div style={{ color: "#94a3b8" }}>{res.description}</div>
+                                  {character.class === "Barbarian" && res.key === "rage" && (
+                                    <div style={{ marginTop: "5px", color: "#f97316", fontSize: fs(0.66) }}>
+                                      Damage bonus: +{getRageDamageBonus(character.level)}
+                                    </div>
+                                  )}
+                                  {character.class === "Bard" && res.key === "bardic_inspiration" && (
+                                    <div style={{ marginTop: "5px", color: "#f59e0b", fontSize: fs(0.66) }}>Die: {getBardicInspirationDie(character.level)}</div>
+                                  )}
+                                  {character.class === "Rogue" && res.key === "sneak_attack" && (
+                                    <div style={{ marginTop: "5px", color: "#a78bfa", fontSize: fs(0.66) }}>Damage: {getSneakAttackDice(character.level)}</div>
+                                  )}
+                                  {character.class === "Druid" && res.key === "wild_shape" && (
+                                    <div style={{ marginTop: "5px", color: "#22c55e", fontSize: fs(0.66) }}>Max CR: {getWildShapeCR(character.level)}</div>
+                                  )}
+                                </div>, e)}
+                              onMouseLeave={hideTooltip}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span style={{ fontSize: fs(1) }}>{res.emoji}</span>
+                                <span style={{ fontWeight: "bold", color: res.color, fontSize: fs(0.82) }}>{res.name}</span>
+                              </div>
+                              {!isPassive && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  {isHP ? (
+                                    <span style={{ fontSize: fs(0.72), color: res.color, fontWeight: 700 }}>{avail} / {maxVal} {res.unit}</span>
+                                  ) : maxVal <= 10 ? (
+                                    <div style={{ display: "flex", gap: "3px" }}>
+                                      {Array.from({ length: maxVal }, (_, i) => (
+                                        <div key={i} style={{
+                                          width: "10px", height: "10px", borderRadius: "50%",
+                                          background: i < avail ? res.color : "transparent",
+                                          border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`,
+                                          boxShadow: i < avail ? `0 0 5px ${res.color}88` : "none",
+                                          transition: "all 0.2s",
+                                        }} />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontSize: fs(0.75), color: res.color, fontWeight: 700 }}>{avail} / {maxVal}</span>
+                                  )}
+                                  <span style={{ fontSize: fs(0.6), color: "#475569" }}>{res.resetOn === "shortRest" ? "SR" : res.resetOn === "bardic" ? "LR/SR" : "LR"}</span>
+                                </div>
+                              )}
+                              {isPassive && <span style={{ fontSize: fs(0.6), color: "#475569", fontStyle: "italic" }}>passive</span>}
+                            </div>
+                            {/* Sub-abilities / use buttons */}
+                            {!isPassive && (res.subAbilities ?? []).filter(sa => sa.minLevel <= character.level).map(sa => {
+                              const canUse = !isTyping && (isHP ? avail >= sa.cost : avail >= sa.cost);
+                              return (
+                                <button key={sa.name}
+                                  disabled={!canUse}
+                                  onClick={() => { handleUseClassAbility(res.key, sa.cost); handleSend(`I use ${sa.name}.`); }}
+                                  onMouseEnter={e => { if (canUse) e.currentTarget.style.background = `${res.color}33`; showTooltip(
+                                    <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "7px", padding: "8px 10px", width: "210px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
+                                      <div style={{ fontWeight: "bold", color: res.color, marginBottom: "3px" }}>{sa.name}</div>
+                                      <div style={{ color: "#94a3b8" }}>{sa.description}</div>
+                                      {sa.cost > 0 && <div style={{ color: "#64748b", marginTop: "4px", fontSize: fs(0.65) }}>Cost: {sa.cost} {res.unit}</div>}
+                                    </div>, e); }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = canUse ? `${res.color}18` : "transparent"; hideTooltip(); }}
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "5px 8px", marginTop: "4px", borderRadius: "6px", background: canUse ? `${res.color}18` : "transparent", border: `1px solid ${canUse ? res.color + "44" : "#3f3f46"}`, cursor: canUse ? "pointer" : "default", opacity: canUse ? 1 : 0.4, transition: "all 0.15s", textAlign: "left" }}
+                                >
+                                  <span style={{ fontSize: fs(0.75), color: canUse ? "#e2e8f0" : "#64748b", fontWeight: 600 }}>{sa.name}</span>
+                                  {sa.cost > 0 && <span style={{ fontSize: fs(0.62), color: canUse ? res.color : "#64748b", fontWeight: 700 }}>-{sa.cost} {res.unit}</span>}
+                                </button>
+                              );
+                            })}
+                            {isPassive && (
+                              <div style={{ fontSize: fs(0.7), color: "#64748b", lineHeight: 1.45 }}>
+                                {character.class === "Rogue" && res.key === "sneak_attack" && <span style={{ color: "#a78bfa" }}>{getSneakAttackDice(character.level)} extra damage</span>}
+                                {character.class === "Bard" && res.key === "bardic_inspiration" && <span style={{ color: "#f59e0b" }}>Die: {getBardicInspirationDie(character.level)}</span>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* Proficiencies */}
                 {(() => {

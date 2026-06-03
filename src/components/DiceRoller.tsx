@@ -31,14 +31,26 @@ function getQuality(result: number, sides: number): Quality {
   return "poor";
 }
 
-const QUALITY: Record<Quality, { color: string; glow: string; bg: string; label: string; sub: string }> = {
-  crit:      { color: "#fbbf24", glow: "rgba(251,191,36,0.9)",  bg: "linear-gradient(135deg,#f59e0b,#b45309)", label: "✦ CRITICAL HIT ✦", sub: "Natural 20 — legendary!" },
-  fumble:    { color: "#9ca3af", glow: "rgba(80,80,80,0.6)",    bg: "linear-gradient(135deg,#374151,#111827)", label: "Critical Fumble",   sub: "Natural 1 — fate is cruel." },
-  excellent: { color: "#4ade80", glow: "rgba(34,197,94,0.75)",  bg: "linear-gradient(135deg,#16a34a,#15803d)", label: "Excellent Roll!",  sub: "" },
-  good:      { color: "#c4b5fd", glow: "rgba(139,92,246,0.75)", bg: "linear-gradient(135deg,#7c3aed,#6d28d9)", label: "",                sub: "" },
-  fair:      { color: "#94a3b8", glow: "rgba(100,116,139,0.45)",bg: "linear-gradient(135deg,#475569,#334155)", label: "",                sub: "" },
-  poor:      { color: "#f87171", glow: "rgba(239,68,68,0.55)",  bg: "linear-gradient(135deg,#b91c1c,#7f1d1d)", label: "Ouch.",           sub: "" },
+const QUALITY: Record<Quality, {
+  color: string; glow: string; bg: string; label: string; sub: string;
+  particleCount: number; flashColor: string | null;
+}> = {
+  crit:      { color: "#fbbf24", glow: "rgba(251,191,36,0.9)",  bg: "linear-gradient(135deg,#f59e0b,#b45309)", label: "✦ CRITICAL HIT ✦", sub: "Natural 20 — fate smiles upon you.",  particleCount: 20, flashColor: "rgba(251,191,36,0.18)" },
+  fumble:    { color: "#9ca3af", glow: "rgba(80,80,80,0.6)",    bg: "linear-gradient(135deg,#374151,#111827)", label: "Critical Fumble",   sub: "Natural 1 — the dice are cruel.",    particleCount: 10, flashColor: "rgba(239,68,68,0.16)" },
+  excellent: { color: "#4ade80", glow: "rgba(34,197,94,0.75)",  bg: "linear-gradient(135deg,#16a34a,#15803d)", label: "Excellent Roll!",   sub: "Fortune favors the bold.",           particleCount: 14, flashColor: null },
+  good:      { color: "#c4b5fd", glow: "rgba(139,92,246,0.75)", bg: "linear-gradient(135deg,#7c3aed,#6d28d9)", label: "",                  sub: "",                                   particleCount: 8,  flashColor: null },
+  fair:      { color: "#94a3b8", glow: "rgba(100,116,139,0.45)",bg: "linear-gradient(135deg,#475569,#334155)", label: "",                  sub: "",                                   particleCount: 4,  flashColor: null },
+  poor:      { color: "#f87171", glow: "rgba(239,68,68,0.55)",  bg: "linear-gradient(135deg,#b91c1c,#7f1d1d)", label: "Ouch.",             sub: "Better luck next time.",             particleCount: 6,  flashColor: null },
 };
+
+const CRIT_STAR_POSITIONS = [
+  { left: "12px",  top: "12px"  },
+  { left: "168px", top: "8px"   },
+  { left: "8px",   top: "162px" },
+  { left: "164px", top: "160px" },
+  { left: "88px",  top: "2px"   },
+  { left: "88px",  top: "172px" },
+];
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 function getCtx(): AudioContext | null {
@@ -78,15 +90,12 @@ function tone(ctx: AudioContext, freq: number, vol: number, delay: number, dur: 
 
 function playRollSound() {
   const ctx = getCtx(); if (!ctx) return;
-  // 9 rapid clicks (dice tumbling), accelerating then decelerating
   const pattern = [0, 0.06, 0.11, 0.155, 0.19, 0.23, 0.29, 0.38, 0.52];
   pattern.forEach((t, i) => {
     noiseBurst(ctx, 0.055, 620 + Math.random() * 280, 0.48 * Math.pow(0.84, i), t);
   });
-  // Three longer bounces
   noiseBurst(ctx, 0.07, 560, 0.38, 0.7);
   noiseBurst(ctx, 0.07, 520, 0.32, 0.88);
-  // Final heavy settle thud
   noiseBurst(ctx, 0.14, 280, 0.55, 1.06);
   tone(ctx, 160, 0.18, 1.06, 0.3, "triangle");
 }
@@ -94,39 +103,23 @@ function playRollSound() {
 function playResultSound(q: Quality) {
   const ctx = getCtx(); if (!ctx) return;
   const now = ctx.currentTime;
-
   if (q === "crit") {
-    // Gold fanfare: 5-note rapid ascending + sustain shimmer
-    [523, 659, 784, 1047, 1319].forEach((f, i) => {
-      tone(ctx, f, 0.28, i * 0.065, 1.5, "sine");
-    });
-    // High shimmer
+    [523, 659, 784, 1047, 1319].forEach((f, i) => { tone(ctx, f, 0.28, i * 0.065, 1.5, "sine"); });
     tone(ctx, 2093, 0.12, 0.33, 1.8, "triangle");
-    // Warm pad chord
-    [392, 523, 659].forEach((f, i) => {
-      tone(ctx, f, 0.08, 0.35, 1.6, "sine");
-      void i;
-    });
+    [392, 523, 659].forEach((f) => { tone(ctx, f, 0.08, 0.35, 1.6, "sine"); });
     void now;
   } else if (q === "fumble") {
-    [330, 294, 247, 196, 165].forEach((f, i) => {
-      tone(ctx, f, 0.28, i * 0.13, 0.85, "sine");
-    });
+    [330, 294, 247, 196, 165].forEach((f, i) => { tone(ctx, f, 0.28, i * 0.13, 0.85, "sine"); });
     noiseBurst(ctx, 0.18, 120, 0.42, 0.6);
     tone(ctx, 110, 0.15, 0.58, 0.5, "triangle");
   } else if (q === "excellent") {
-    [523, 659, 784, 1047].forEach((f, i) => {
-      tone(ctx, f, 0.25, i * 0.08, 1.2, "sine");
-    });
+    [523, 659, 784, 1047].forEach((f, i) => { tone(ctx, f, 0.25, i * 0.08, 1.2, "sine"); });
     tone(ctx, 1568, 0.1, 0.28, 1.1, "triangle");
   } else if (q === "good") {
-    [523, 659].forEach((f, i) => {
-      tone(ctx, f, 0.28, i * 0.07, 1.0, "sine");
-    });
+    [523, 659].forEach((f, i) => { tone(ctx, f, 0.28, i * 0.07, 1.0, "sine"); });
   } else if (q === "fair") {
     tone(ctx, 440, 0.22, 0, 0.85, "sine");
   } else {
-    // poor
     [330, 294].forEach((f, i) => tone(ctx, f, 0.22, i * 0.1, 0.7, "triangle"));
     noiseBurst(ctx, 0.1, 200, 0.28, 0.15);
   }
@@ -154,6 +147,8 @@ export default function DiceRoller({
   const [altResult,    setAltResult]    = useState<number | null>(null);
   const [displayNum,   setDisplayNum]   = useState<number | null>(null);
   const [wrongDie,     setWrongDie]     = useState(false);
+  const [showFlash,    setShowFlash]    = useState(false);
+  const [flashColor,   setFlashColor]   = useState<string>("transparent");
   const countupRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const didAutoRoll   = useRef(false);
 
@@ -184,24 +179,20 @@ export default function DiceRoller({
     let dropped: number | null = null;
     if (r2 !== null) {
       if (requiredRollMode === "advantage") {
-        kept = Math.max(r1, r2);
-        dropped = Math.min(r1, r2);
+        kept = Math.max(r1, r2); dropped = Math.min(r1, r2);
       } else {
-        kept = Math.min(r1, r2);
-        dropped = Math.max(r1, r2);
+        kept = Math.min(r1, r2); dropped = Math.max(r1, r2);
       }
     } else {
       kept = r1;
     }
 
-    // Start number count-up at 680ms
     setTimeout(() => {
       countupRef.current = setInterval(() => {
         setDisplayNum(Math.floor(Math.random() * sides) + 1);
       }, 65);
     }, 680);
 
-    // Settle at 1350ms
     setTimeout(() => {
       if (countupRef.current) { clearInterval(countupRef.current); countupRef.current = null; }
       setResult(kept);
@@ -210,6 +201,12 @@ export default function DiceRoller({
       setPhase("result");
       const q = getQuality(kept, sides);
       playResultSound(q);
+      const qData = QUALITY[q];
+      if (qData.flashColor) {
+        setFlashColor(qData.flashColor);
+        setShowFlash(true);
+        setTimeout(() => setShowFlash(false), 1400);
+      }
       const description = r2 !== null
         ? `Rolled with ${requiredRollMode}: ${r1} and ${r2}, taking ${kept} on a d${sides}`
         : undefined;
@@ -218,7 +215,6 @@ export default function DiceRoller({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requiredDice, requiredRollMode, isAdvDis, onRollComplete]);
 
-  // Auto-roll the required die on mount when the DM already called for it
   useEffect(() => {
     if (!autoRoll || !requiredDice || didAutoRoll.current) return;
     if (!(DICE_SIDES as readonly number[]).includes(requiredDice)) return;
@@ -241,17 +237,29 @@ export default function DiceRoller({
   return (
     <div style={{
       position: "fixed", inset: 0,
-      background: "rgba(3, 2, 12, 0.96)",
+      background: "rgba(3, 2, 12, 0.97)",
       zIndex: 100,
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
-      backdropFilter: "blur(24px)",
+      backdropFilter: "blur(28px)",
     }}>
 
-      {/* Atmospheric top glow */}
-      <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "600px", height: "300px", background: "radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.18) 0%, transparent 70%)", pointerEvents: "none" }} />
+      {/* Screen flash for crit / fumble */}
+      {showFlash && (
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none", zIndex: 200,
+          background: flashColor,
+          animation: "screenFlash 1.4s ease-out forwards",
+        }} />
+      )}
 
-      {/* Cancel button */}
+      {/* Atmospheric top glow */}
+      <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "700px", height: "320px", background: "radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.2) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+      {/* Thin decorative divider below top glow */}
+      <div style={{ position: "absolute", top: "0", left: "50%", transform: "translateX(-50%)", width: "360px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.45), transparent)", pointerEvents: "none" }} />
+
+      {/* Cancel */}
       {onCancel && phase === "idle" && (
         <button
           onClick={onCancel}
@@ -263,7 +271,7 @@ export default function DiceRoller({
             transition: "border-color 0.15s, color 0.15s",
           }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; e.currentTarget.style.color = "#94a3b8"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#475569"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";  e.currentTarget.style.color = "#475569"; }}
         >
           ✕ Cancel
         </button>
@@ -274,7 +282,7 @@ export default function DiceRoller({
         <div style={{
           maxWidth: "520px", padding: "12px 20px",
           background: "rgba(139,92,246,0.07)",
-          border: "1px solid rgba(139,92,246,0.2)",
+          border: "1px solid rgba(139,92,246,0.22)",
           borderRadius: "10px",
           marginBottom: "24px",
           color: "#c4b5fd",
@@ -294,7 +302,7 @@ export default function DiceRoller({
 
       {requiredDice ? (
         <p style={{ fontSize: "1.6rem", fontWeight: 800, color: "white", marginBottom: "40px", letterSpacing: "-0.01em" }}>
-          Roll a <span style={{ color: "#a78bfa", textShadow: "0 0 20px rgba(139,92,246,0.7)" }}>d{requiredDice}</span>
+          Roll a <span style={{ color: "#a78bfa", textShadow: "0 0 24px rgba(139,92,246,0.8)" }}>d{requiredDice}</span>
           {isAdvDis && (
             <span style={{ fontSize: "1rem", color: "#64748b", marginLeft: "12px", fontWeight: 600 }}>
               ({requiredRollMode})
@@ -314,13 +322,17 @@ export default function DiceRoller({
           color: "#f87171", fontSize: "0.88rem", fontWeight: 600,
           animation: "fadeIn 0.2s ease-out",
         }}>
-          You must roll a d{requiredDice} for this check.
+          A d{requiredDice} is called for — choose wisely.
         </div>
       )}
 
       {/* ── Die Selector ── */}
       {phase === "idle" && (
-        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", justifyContent: "center", maxWidth: "580px", padding: "0 20px" }}>
+        <div style={{
+          display: "flex", gap: "18px", flexWrap: "wrap", justifyContent: "center",
+          maxWidth: "580px", padding: "0 20px",
+          animation: wrongDie ? "diceShake 0.45s ease-in-out" : "none",
+        }}>
           {DICE_SIDES.map(sides => {
             const isRequired = requiredDice === sides;
             const isDimmed   = !!requiredDice && !isRequired;
@@ -329,29 +341,57 @@ export default function DiceRoller({
                 key={sides}
                 onClick={() => handleDieClick(sides)}
                 style={{
-                  width: "84px", height: "92px",
+                  width: "84px", height: "96px",
                   background: "none", border: "none",
                   cursor: isDimmed ? "default" : "pointer",
                   display: "flex", flexDirection: "column",
                   alignItems: "center", justifyContent: "center",
                   gap: "10px", padding: 0,
-                  opacity: isDimmed ? 0.18 : 1,
+                  opacity: isDimmed ? 0.11 : 1,
                   transition: "transform 0.18s ease, opacity 0.15s",
                 }}
-                onMouseEnter={e => { if (!isDimmed) { e.currentTarget.style.transform = "scale(1.15) translateY(-3px)"; } }}
+                onMouseEnter={e => { if (!isDimmed) e.currentTarget.style.transform = "scale(1.15) translateY(-4px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "scale(1) translateY(0)"; }}
               >
+                {/* Shape wrapper — bob animation lives here, not on button */}
                 <div style={{
-                  width: "54px", height: "54px",
-                  clipPath: DIE_CLIP[sides],
-                  background: isRequired
-                    ? "linear-gradient(135deg, #7c3aed, #4f46e5)"
-                    : "rgba(255,255,255,0.09)",
-                  boxShadow: isRequired
-                    ? "0 0 18px rgba(139,92,246,0.7), 0 0 36px rgba(139,92,246,0.25), inset 0 1px 0 rgba(255,255,255,0.15)"
-                    : "inset 0 1px 0 rgba(255,255,255,0.06)",
-                  transition: "all 0.18s",
-                }} />
+                  position: "relative",
+                  width: "60px", height: "60px",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  animation: isRequired ? "dieBob 1.9s ease-in-out infinite" : "none",
+                }}>
+                  {/* Beacon glow for required die (no clip-path so it stays round) */}
+                  {isRequired && (
+                    <div style={{
+                      position: "absolute", inset: "-14px",
+                      borderRadius: "50%",
+                      background: "radial-gradient(circle, rgba(139,92,246,0.5) 0%, transparent 65%)",
+                      animation: "beaconPulse 1.5s ease-in-out infinite",
+                      pointerEvents: "none",
+                    }} />
+                  )}
+                  {/* Die face */}
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    clipPath: DIE_CLIP[sides],
+                    background: isRequired
+                      ? "linear-gradient(135deg, #7c3aed, #4f46e5)"
+                      : "rgba(255,255,255,0.09)",
+                    filter: isRequired
+                      ? "drop-shadow(0 0 12px rgba(139,92,246,0.7))"
+                      : "none",
+                    transition: "all 0.18s",
+                  }} />
+                  {/* Inner shine on required die */}
+                  {isRequired && (
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      clipPath: DIE_CLIP[sides],
+                      background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 50%)",
+                      pointerEvents: "none",
+                    }} />
+                  )}
+                </div>
                 <span style={{
                   fontSize: "0.78rem", fontWeight: 700,
                   color: isRequired ? "#c4b5fd" : "#475569",
@@ -369,33 +409,80 @@ export default function DiceRoller({
       {phase === "rolling" && selectedDie && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "36px" }}>
           <div style={{ position: "relative", width: "160px", height: "160px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+
             {/* Outer pulse ring */}
             <div style={{
               position: "absolute", inset: "-20px",
               borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(139,92,246,0.28) 0%, transparent 68%)",
-              animation: "outerPulse 0.5s ease-in-out infinite alternate",
+              background: "radial-gradient(circle, rgba(139,92,246,0.3) 0%, transparent 68%)",
+              animation: "outerPulse 0.45s ease-in-out infinite alternate",
             }} />
+
+            {/* Orbiting sparks */}
+            <div style={{ position: "absolute", left: "50%", top: "50%", width: 0, height: 0 }}>
+              {[0, 1, 2, 3, 4, 5].map(i => {
+                const radius  = 62 + (i % 2) * 14;
+                const duration = 0.9 + i * 0.14;
+                const startDelay = -(i / 6) * duration;
+                return (
+                  <div key={i} style={{
+                    position: "absolute",
+                    width: 0, height: 0,
+                    left: 0, top: 0,
+                    animation: `orbit ${duration}s linear ${startDelay}s infinite`,
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      left: `${radius}px`,
+                      top: `${-(1.5 + i % 2)}px`,
+                      width: `${3 + (i % 3)}px`,
+                      height: `${3 + (i % 3)}px`,
+                      borderRadius: "50%",
+                      background: i % 3 === 0 ? "#fbbf24" : i % 3 === 1 ? "#8b5cf6" : "#c4b5fd",
+                      opacity: 0.7,
+                      boxShadow: `0 0 8px ${i % 3 === 0 ? "#fbbf24" : "#8b5cf6"}`,
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Die shape */}
             <div style={{
               position: "absolute", inset: "16px",
               clipPath: DIE_CLIP[selectedDie],
               background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
               animation: "dieRoll 0.38s linear infinite",
-              filter: "drop-shadow(0 0 18px rgba(139,92,246,0.8))",
+              filter: "drop-shadow(0 0 20px rgba(139,92,246,0.85))",
             }} />
-            {/* Number overlay — not clipped */}
+            {/* Shine on rolling die */}
+            <div style={{
+              position: "absolute", inset: "16px",
+              clipPath: DIE_CLIP[selectedDie],
+              background: "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%)",
+              animation: "dieRoll 0.38s linear infinite",
+              pointerEvents: "none",
+            }} />
+            {/* Counting number */}
             {displayNum !== null && (
               <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontSize: "2.8rem", fontWeight: 900, color: "rgba(255,255,255,0.95)", lineHeight: 1, textShadow: "0 0 14px rgba(139,92,246,0.9)", letterSpacing: "-0.02em" }}>
+                <span style={{ fontSize: "2.8rem", fontWeight: 900, color: "rgba(255,255,255,0.95)", lineHeight: 1, textShadow: "0 0 16px rgba(139,92,246,0.9)", letterSpacing: "-0.02em" }}>
                   {displayNum}
                 </span>
               </div>
             )}
           </div>
-          <p style={{ color: "#6366f1", fontSize: "0.9rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", animation: "breathe 1s ease-in-out infinite alternate" }}>
-            {isAdvDis ? "Rolling twice…" : "Casting the fates…"}
-          </p>
+
+          <div style={{ textAlign: "center" }}>
+            <p style={{ color: "#6366f1", fontSize: "0.9rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", animation: "breathe 1s ease-in-out infinite alternate" }}>
+              {isAdvDis ? "Rolling twice…" : "Casting the fates…"}
+            </p>
+            <p style={{ color: "#334155", fontSize: "0.72rem", marginTop: "6px", letterSpacing: "0.06em" }}>
+              {isAdvDis
+                ? (requiredRollMode === "advantage" ? "Keeping the higher roll" : "Keeping the lower roll")
+                : "May fortune favor you"}
+            </p>
+          </div>
         </div>
       )}
 
@@ -403,6 +490,51 @@ export default function DiceRoller({
       {phase === "result" && result !== null && selectedDie && qs && quality && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px", animation: "resultReveal 0.55s cubic-bezier(0.34,1.56,0.64,1)" }}>
           <div style={{ position: "relative", width: "200px", height: "200px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+
+            {/* Particle burst — rotated-parent approach so all particles fly outward */}
+            <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+              {Array.from({ length: qs.particleCount }).map((_, i) => {
+                const angle  = (i / qs.particleCount) * 360;
+                const size   = quality === "crit" ? 7 + (i % 3) * 2 : 4 + (i % 3);
+                const delay  = (i % 5) * 0.035;
+                const dur    = 0.75 + (i % 3) * 0.2;
+                return (
+                  <div key={i} style={{
+                    position: "absolute",
+                    left: "50%", top: "50%",
+                    width: 0, height: 0,
+                    transform: `rotate(${angle}deg)`,
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      width: `${size}px`,
+                      height: `${size}px`,
+                      marginLeft: `-${size / 2}px`,
+                      marginTop: `-${size / 2}px`,
+                      background: qs.color,
+                      borderRadius: quality === "crit" ? "1px" : "50%",
+                      boxShadow: `0 0 ${size * 2}px ${qs.color}`,
+                      animation: `particleShoot ${dur}s cubic-bezier(0.1, 0.8, 0.3, 1) ${delay}s both`,
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Crit floating ✦ stars */}
+            {quality === "crit" && CRIT_STAR_POSITIONS.map((pos, i) => (
+              <div key={i} style={{
+                position: "absolute",
+                ...pos,
+                fontSize: `${0.72 + (i % 3) * 0.38}rem`,
+                color: "#fbbf24",
+                animation: `critStar ${1.1 + i * 0.18}s ease-out ${i * 0.1}s both`,
+                pointerEvents: "none",
+                textShadow: "0 0 12px rgba(251,191,36,0.9)",
+                zIndex: 10,
+              }}>✦</div>
+            ))}
+
             {/* Far glow */}
             <div style={{
               position: "absolute", inset: "-40px",
@@ -423,7 +555,14 @@ export default function DiceRoller({
               background: qs.bg,
               filter: `drop-shadow(0 0 28px ${qs.glow}) drop-shadow(0 0 56px ${qs.glow.replace(")", ", 0.4)").replace("rgba(", "rgba(")})`,
             }} />
-            {/* Number — sibling, not clipped */}
+            {/* Shine on result die */}
+            <div style={{
+              position: "absolute", inset: "14px",
+              clipPath: DIE_CLIP[selectedDie],
+              background: "linear-gradient(135deg, rgba(255,255,255,0.22) 0%, transparent 55%)",
+              pointerEvents: "none",
+            }} />
+            {/* Number */}
             <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{
                 fontSize: quality === "crit" || quality === "fumble" ? "3.6rem" : "3.8rem",
@@ -520,6 +659,43 @@ export default function DiceRoller({
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-6px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes particleShoot {
+          0%   { transform: translateY(0)    scale(1);   opacity: 1; }
+          60%  { opacity: 0.8; }
+          100% { transform: translateY(-130px) scale(0); opacity: 0; }
+        }
+        @keyframes orbit {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes beaconPulse {
+          0%   { opacity: 0.5; transform: scale(0.92); }
+          50%  { opacity: 1;   transform: scale(1.08); }
+          100% { opacity: 0.5; transform: scale(0.92); }
+        }
+        @keyframes dieBob {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-5px); }
+        }
+        @keyframes diceShake {
+          0%,100% { transform: translateX(0); }
+          18%     { transform: translateX(-9px); }
+          36%     { transform: translateX(9px); }
+          54%     { transform: translateX(-6px); }
+          72%     { transform: translateX(6px); }
+          88%     { transform: translateX(-3px); }
+        }
+        @keyframes screenFlash {
+          0%   { opacity: 0; }
+          12%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes critStar {
+          0%   { transform: translateY(0)   scale(0) rotate(-15deg); opacity: 0; }
+          25%  { opacity: 1; }
+          70%  { transform: translateY(-28px) scale(1) rotate(8deg);  opacity: 1; }
+          100% { transform: translateY(-56px) scale(0.4) rotate(25deg); opacity: 0; }
         }
       ` }} />
     </div>
