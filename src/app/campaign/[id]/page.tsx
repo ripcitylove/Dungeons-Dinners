@@ -598,7 +598,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!dragRef.current) return;
       const delta = e.clientX - dragRef.current.startX;
       if (dragRef.current.which === "chat") {
-        const w = Math.min(700, Math.max(280, dragRef.current.startW + delta));
+        const w = Math.min(700, Math.max(280, dragRef.current.startW - delta));
         setChatPaneWidth(w);
         localStorage.setItem("dnd_chat_pane_w", String(w));
       } else {
@@ -3028,7 +3028,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       {/* ── Pane 2: Chat ── */}
       <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", overflow: "hidden" }}>
         {/* Header */}
-        <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+        <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", overflow: "visible", flexShrink: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "0.95rem", fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaignTitle || "Loading…"}</h2>
             <p style={{ color: "#94a3b8", fontSize: "0.7rem", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>DM: Claude · {campaignParty.length} in party</p>
@@ -3037,23 +3037,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {chatPaneWidth >= 360 && <button
             onClick={() => setTutorialStep(0)}
             title="Open tutorial"
-            style={{ flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "8px", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.78rem", color: "#64748b", transition: "all 0.15s" }}
+            style={{ flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "8px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.88rem", color: "#64748b", transition: "all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; }}
           >?</button>}
           {/* Font size controls — hidden at narrow widths */}
-          <div style={{ display: chatPaneWidth >= 420 ? "flex" : "none", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+          <div style={{ display: chatPaneWidth >= 420 ? "flex" : "none", alignItems: "center", gap: "3px", flexShrink: 0 }}>
             <button
               onClick={() => { const v = Math.max(0.65, parseFloat((chatFontSize - 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
               disabled={chatFontSize <= 0.65}
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize <= 0.65 ? "not-allowed" : "pointer", opacity: chatFontSize <= 0.65 ? 0.35 : 1, fontSize: "0.62rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize <= 0.65 ? "not-allowed" : "pointer", opacity: chatFontSize <= 0.65 ? 0.35 : 1, fontSize: "0.72rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
               onMouseEnter={e => { if (chatFontSize > 0.65) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A−</button>
             <button
               onClick={() => { const v = Math.min(1.35, parseFloat((chatFontSize + 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
               disabled={chatFontSize >= 1.35}
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "26px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize >= 1.35 ? "not-allowed" : "pointer", opacity: chatFontSize >= 1.35 ? 0.35 : 1, fontSize: "0.9rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize >= 1.35 ? "not-allowed" : "pointer", opacity: chatFontSize >= 1.35 ? 0.35 : 1, fontSize: "1rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
               onMouseEnter={e => { if (chatFontSize < 1.35) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A+</button>
@@ -3063,9 +3063,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <button
               onClick={() => { if (!narrationEnabled) { setNarrationEnabled(true); setVoicePickerOpen(true); } else { setVoicePickerOpen(v => !v); } }}
               title={narrationEnabled ? "Change DM voice" : "Enable AI narration"}
-              style={{ background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent", border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: "8px", padding: "5px 10px", cursor: "pointer", fontSize: "0.85rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "5px", transition: "all 0.2s", color: narrationEnabled ? "#c4b5fd" : "#94a3b8" }}>
+              style={{ background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent", border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: "8px", padding: "7px 13px", minHeight: "36px", cursor: "pointer", fontSize: "1rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "6px", transition: "all 0.2s", color: narrationEnabled ? "#c4b5fd" : "#94a3b8" }}>
               {narrating ? <span style={{ animation: "blink 0.8s step-end infinite" }}>🔊</span> : narrationEnabled ? "🔊" : "🔇"}
-              {narrationEnabled && chatPaneWidth > 310 && <span style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
+              {narrationEnabled && chatPaneWidth > 310 && <span style={{ fontSize: "0.78rem", whiteSpace: "nowrap", fontWeight: 600 }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
             </button>
             {voicePickerOpen && (
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
@@ -3557,7 +3557,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       const levels    = Object.keys(maxSlots).map(Number).sort();
                       if (levels.length === 0) return null;
                       return (
-                        <div style={{ marginTop: "7px", display: "flex", gap: "7px", flexWrap: "wrap", alignItems: "center" }}
+                        <div style={{ marginTop: "7px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}
                           onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.SPELL_SLOTS.title, MECHANIC_TIPS.SPELL_SLOTS.body, "#8b5cf6"), e)}
                           onMouseLeave={hideTooltip}>
                           {levels.map(lvl => {
@@ -3566,14 +3566,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             const avail = Math.max(0, max - used);
                             return (
                               <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                                <span style={{ fontSize: fs(0.54), color: "#64748b", marginRight: "1px", fontWeight: 600 }}>L{lvl}</span>
+                                <span style={{ fontSize: fs(0.58), color: "#94a3b8", marginRight: "2px", fontWeight: 700 }}>L{lvl}</span>
                                 {Array.from({ length: max }, (_, i) => (
                                   <div key={i} style={{
-                                    width: "10px", height: "10px", borderRadius: "50%",
+                                    width: "13px", height: "13px", borderRadius: "50%",
                                     background: i < avail ? "#8b5cf6" : "transparent",
-                                    border: `1.5px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}`,
+                                    border: `2px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}`,
                                     transition: "all 0.2s",
-                                    boxShadow: i < avail ? "0 0 5px rgba(139,92,246,0.65)" : "none",
+                                    boxShadow: i < avail ? "0 0 6px rgba(139,92,246,0.75)" : "none",
                                   }} />
                                 ))}
                               </div>
@@ -3602,21 +3602,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{avail}/{maxVal} {res.unit} · {res.resetOn === "shortRest" ? "Short Rest" : res.resetOn === "bardic" ? "Long/Short Rest" : "Long Rest"}</div>
                                   </div>, e)}
                                 onMouseLeave={hideTooltip}>
-                                <span style={{ fontSize: fs(0.6) }}>{res.emoji}</span>
+                                <span style={{ fontSize: fs(0.72) }}>{res.emoji}</span>
                                 {res.unit === "HP" ? (
-                                  <span style={{ fontSize: fs(0.6), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
+                                  <span style={{ fontSize: fs(0.68), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
                                 ) : maxVal <= 10 ? (
                                   Array.from({ length: maxVal }, (_, i) => (
                                     <div key={i} style={{
-                                      width: "9px", height: "9px", borderRadius: "50%",
+                                      width: "12px", height: "12px", borderRadius: "50%",
                                       background: i < avail ? res.color : "transparent",
-                                      border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`,
+                                      border: `2px solid ${i < avail ? res.color : "#3f3f46"}`,
                                       transition: "all 0.2s",
-                                      boxShadow: i < avail ? `0 0 4px ${res.color}88` : "none",
+                                      boxShadow: i < avail ? `0 0 5px ${res.color}99` : "none",
                                     }} />
                                   ))
                                 ) : (
-                                  <span style={{ fontSize: fs(0.62), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
+                                  <span style={{ fontSize: fs(0.7), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
                                 )}
                               </div>
                             );
@@ -3863,7 +3863,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                   <span style={{ fontSize: fs(0.75) }}>{res.emoji}</span>
                                   {maxVal <= 10 ? (
                                     Array.from({ length: maxVal }, (_, i) => (
-                                      <div key={i} style={{ width: "9px", height: "9px", borderRadius: "50%", background: i < avail ? res.color : "transparent", border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`, boxShadow: i < avail ? `0 0 4px ${res.color}88` : "none" }} />
+                                      <div key={i} style={{ width: "11px", height: "11px", borderRadius: "50%", background: i < avail ? res.color : "transparent", border: `1.5px solid ${i < avail ? res.color : "#3f3f46"}`, boxShadow: i < avail ? `0 0 5px ${res.color}99` : "none" }} />
                                     ))
                                   ) : (
                                     <span style={{ fontSize: fs(0.68), color: res.color, fontWeight: 700 }}>{avail}/{maxVal}</span>
