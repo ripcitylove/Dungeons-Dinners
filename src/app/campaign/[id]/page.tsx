@@ -1891,17 +1891,41 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Dice-roll target detection ────────────────────────────────────────────────
   const detectDiceRollTarget = useCallback((narrative: string): string | null => {
     const names = campaignPartyRef.current.map(c => c.name).filter(Boolean);
+    if (!names.length) return null;
+
+    // Pass 1 — sentence-scoped: find sentences that are explicit roll requests,
+    // then look for a player name inside only those sentences. This prevents a
+    // name mentioned in narrative ("Thorin charges the orc") from stealing the
+    // roll assignment when the actual request ("Aria, make a save") is elsewhere.
+    const sentences = narrative.split(/(?<=[.!?\n])\s*/);
+    const rollSentences = sentences.filter(s =>
+      /\b(?:roll|make|give me)\b/i.test(s) &&
+      /\b(?:check|save|saving throw|attack(?: roll)?|initiative|d\d+)\b/i.test(s)
+    );
+    for (const name of names) {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (rollSentences.some(s => new RegExp(`\\b${esc}\\b`, "i").test(s))) return name;
+    }
+
+    // Pass 2 — pattern-based fallback on the full text, covering phrasings
+    // that span sentence boundaries or use indirect constructions.
     for (const name of names) {
       const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const patterns = [
-        new RegExp(`\\b${esc}[,.]?\\s+(?:roll|make|attempt)`, "i"),
-        new RegExp(`roll[s]?[^.!?]*?\\bfor\\s+${esc}\\b`, "i"),
-        new RegExp(`\\b${esc}[,.]?\\s+(?:you|your)\\s+(?:need|must|have to)`, "i"),
+        // "Aria, roll..." / "Aria, make..." / "Aria, please roll..." / "Aria, you roll..."
+        new RegExp(`\\b${esc}[,.]?\\s+(?:please\\s+)?(?:you\\s+)?(?:roll|make|attempt)`, "i"),
+        // "roll for Aria" / "rolls for Aria"
+        new RegExp(`roll[s]?[^.!?]{0,80}\\bfor\\s+${esc}\\b`, "i"),
+        // "Aria, you need to / must / have to / should roll"
+        new RegExp(`\\b${esc}[,.]?\\s+(?:you|your)\\s+(?:need|must|have to|should)`, "i"),
+        // "Aria's turn / roll / check / save"
         new RegExp(`\\b${esc}'s?\\s+(?:turn|roll|check|saving throw|save)`, "i"),
-        new RegExp(`\\b${esc}[,]\\s+(?:make|give me)`, "i"),
+        // "need Aria to roll" / "have Aria make" / "let's have Aria roll" / "ask Aria to make"
+        new RegExp(`\\b(?:need|have|ask|want|let(?:'s)?)\\s+(?:\\w+\\s+){0,2}${esc}\\s+to\\s+(?:roll|make)`, "i"),
       ];
       if (patterns.some(p => p.test(narrative))) return name;
     }
+
     return null;
   }, []);
 
