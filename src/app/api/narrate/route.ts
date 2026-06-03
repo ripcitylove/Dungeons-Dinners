@@ -64,7 +64,13 @@ const BUCKET = "scenes";
 // but refuse audio served directly from serverless API responses.
 function normalizeForTTS(raw: string): string {
   return raw
-    .replace(/=/g, " equals ");
+    .replace(/=/g, " equals ")
+    // Em-dashes and en-dashes → natural comma pause
+    .replace(/\s*[—–]\s*/g, ", ")
+    // Hyphen used as a separator between words/phrases ("HP - Max HP") → comma pause
+    .replace(/\s+-\s+/g, ", ")
+    // Leading list-bullet hyphens at start of line → nothing
+    .replace(/^-\s+/gm, "");
 }
 
 async function synthesize(text: string, voice: string): Promise<Response> {

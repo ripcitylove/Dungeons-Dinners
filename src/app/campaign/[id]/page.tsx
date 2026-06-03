@@ -581,6 +581,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const narSlotCounterRef    = useRef(0);
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
   const narPlaySlotRef       = useRef(0);
+  // Incremented on every queue reset — lets in-flight ElevenLabs fetches detect they're stale
+  // and skip writing to the (now-reused) slot array, preventing old audio from clobbering new.
+  const narGenerationRef     = useRef(0);
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef  = useRef<number>(0);
   const prevActingCharIdRef  = useRef<string | null>(null);
@@ -1564,6 +1567,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   const enqueueNarration = useCallback(async (text: string) => {
+    const myGen = narGenerationRef.current; // capture at enqueue time
     const slot = narSlotCounterRef.current++;
     if (slot === 0) narSlot0TextRef.current = text; // first sentence length drives the reveal rate
     narSlotsRef.current[slot] = null; // reserve — not ready yet
@@ -1573,6 +1577,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ text, voice: selectedVoiceRef.current ?? "chronicler" }),
       });
+      // If a new DM response started while this fetch was in flight, discard the result.
+      // Writing stale audio to the now-reset slot array causes the wrong clip to play.
+      if (narGenerationRef.current !== myGen) return;
       if (!res.ok) {
         if (res.status === 402) {
           setNarrationEnabled(false);
@@ -1582,15 +1589,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         narSlotsRef.current[slot] = "SKIP";
       } else {
         const { audioUrl } = await res.json() as { audioUrl?: string };
-        // Set the CDN URL directly — the <audio> element must never see the slow
-        // API URL. Xbox Edge times out if the audio src takes more than ~1 s to
-        // respond; Supabase CDN responds in milliseconds.
         narSlotsRef.current[slot] = audioUrl ?? "SKIP";
       }
     } catch {
+      if (narGenerationRef.current !== myGen) return;
       narSlotsRef.current[slot] = "SKIP";
     }
-    playNextInQueue();
+    if (narGenerationRef.current === myGen) playNextInQueue();
   }, [playNextInQueue]);
   // Keep the loading-screen effect's narration call up to date
   useEffect(() => { enqueueNarrationRef.current = enqueueNarration; }, [enqueueNarration]);
@@ -1603,7 +1608,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setPartyChangePending(false);
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
-    narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+    narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+    audioPlayingRef.current = false;
     narSlot0TextRef.current = null;
     try {
       const res = await fetch("/api/chat", {
@@ -1626,7 +1632,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
         }
       }
-      if (narrationEnabledRef.current && narBuf.trim().length > 10) enqueueNarration(narBuf.trim());
+      if (narrationEnabledRef.current && narBuf.trim().length > 30) enqueueNarration(narBuf.trim());
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
@@ -1965,7 +1971,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Reset narration queue unless we want to continue from a prior DM response (e.g. reconciliation after allActed)
     if (!opts?.preserveNarration) {
       if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
-      narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
       narSlot0TextRef.current   = null;
       audioPlayingRef.current   = false;
       setNarrating(false);
@@ -2129,7 +2135,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 10) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 30) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
       // Route through narration-synced reveal when voice is active; add directly to messages otherwise
       if (narrationEnabledRef.current && !campaignLoadingRef.current) {
@@ -3182,7 +3188,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       // the dropdown click, so onended never fires), silently
                       // breaking all future narration.
                       if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
-                      narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+                      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
                       narSlot0TextRef.current = null;
                       audioPlayingRef.current = false;
                       setNarrating(false);
@@ -3599,7 +3605,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           >{char.name}</span>
                         </div>
                         <div style={{ fontSize: fs(0.76), color: "#94a3b8" }}>
-                          {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · <span style={{ cursor: "help" }}
+                          {char.race} {char.class} · <span style={{ cursor: "help" }}
                             onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e)}
                             onMouseLeave={hideTooltip}>Lvl {char.level}</span>
                         </div>
