@@ -3464,10 +3464,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div key={char.id}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
                     style={{ position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
-                    {/* Party leader crown — top-right of card */}
+                    {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span
-                        style={{ position: "absolute", top: "8px", right: "10px", fontSize: fs(1.0), animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help", zIndex: 1 }}
+                        style={{ position: "absolute", top: "-10px", left: "-6px", fontSize: fs(1.1), animation: "crownPulse 2.4s ease-in-out infinite", display: "inline-block", cursor: "help", zIndex: 2, filter: "drop-shadow(0 1px 4px rgba(251,191,36,0.7))" }}
                         onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PARTY_LEADER.title, MECHANIC_TIPS.PARTY_LEADER.body, "#f59e0b"), e)}
                         onMouseLeave={hideTooltip}>👑</span>
                     )}
