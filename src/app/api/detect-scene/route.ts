@@ -73,7 +73,7 @@ const STYLE_VARIANTS: Record<string, string> = {
 
 function buildCacheKey(type: string, modifiers: string[], isCombat: boolean): string {
   const base = modifiers.length > 0
-    ? `${type}_${modifiers.sort().slice(0, 2).join("_")}`
+    ? `${type}_${modifiers.sort().slice(0, 3).join("_")}`
     : type;
   return isCombat ? `${base}_combat` : base;
 }
@@ -131,15 +131,17 @@ Examples by type:
 - temple: altar, sacred, flooded, dark, abandoned, underground, glowing, ritual
 
 CHANGE DETECTION — current scene is: "${currentScene}"
-Set shouldChange: true ONLY when the party has CLEARLY moved to a different location:
-- Entered a completely different building, room type, or outdoor area
-- The scene TYPE itself has changed (dungeon → tavern, forest → castle, etc.)
-- Combat started or ended and the visual stakes have dramatically shifted
-Set shouldChange: false when:
-- The party is still in the same general area, even if details differ
-- Only minor atmospheric details changed (lighting, mood, small description differences)
-- The narrative is a round summary or action resolution within an existing scene
-- You are uncertain — default to false. Only set true for unambiguous location changes.
+Set shouldChange: true when ANY of these apply:
+- The scene TYPE changed (dungeon → tavern, forest → castle, etc.)
+- The party moved to a different room, chamber, or sub-area (pushed through a door, climbed stairs, entered a new space)
+- A significant visual shift occurred: combat began or ended, dramatic lighting change, a major new environment element appeared
+- The narrative describes a clearly different-looking place than a moment ago
+- You are uncertain — DEFAULT TO TRUE. Fresh images enhance immersion.
+Set shouldChange: false ONLY when the party is clearly still in the exact same spot:
+- Pure dialogue exchange or NPC conversation with no movement
+- Resolving a single dice roll in the same location
+- A trivial action (picking up an object, opening a pouch) with no scene change
+IMPORTANT: Modifier words change every response. Do not let that influence shouldChange. Judge by whether a fresh image would look meaningfully different from the current one.
 
 Return ONLY valid JSON, no other text:
 {"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"]}`;
@@ -191,9 +193,12 @@ export async function POST(req: NextRequest) {
 
     const sceneName = buildCacheKey(sceneType, modifiers, isCombat);
 
-    // Skip only when scene key is identical AND AI explicitly confirmed no visual change
-    if (sceneName === currentScene && !shouldChange) {
-      return Response.json({ sceneName, imageUrl: null, sceneType, modifiers, description, shouldChange: false });
+    // If the AI explicitly said no change is needed, honour that — regardless of whether
+    // modifiers drifted (different words for the same room produce different keys but the
+    // same location). Only skip when there IS an established current scene; on first load
+    // (currentScene = "") always proceed so the opening image is generated.
+    if (!shouldChange && currentScene) {
+      return Response.json({ sceneName: currentScene, imageUrl: null, sceneType, modifiers, description, shouldChange: false });
     }
 
     // Step 2: Check cache — exact key match reuses saved image
