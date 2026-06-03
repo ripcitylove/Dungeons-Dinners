@@ -11,11 +11,12 @@ const BTN_BASE: React.CSSProperties = {
   zIndex: 9998,
   display: "flex",
   alignItems: "center",
-  gap: "5px",
+  gap: "7px",
   background: "rgba(10, 7, 24, 0.88)",
   backdropFilter: "blur(14px)",
   borderRadius: "100px",
-  padding: "5px 10px 5px 8px",
+  padding: "9px 16px 9px 12px",
+  minHeight: "42px",
   cursor: "pointer",
   userSelect: "none",
   boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
@@ -74,11 +75,11 @@ export function TooltipSizeControl() {
         onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.6)"; e.currentTarget.style.color = "#e2e8f0"; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = isDefault ? "rgba(255,255,255,0.08)" : "rgba(139,92,246,0.45)"; e.currentTarget.style.color = isDefault ? "#475569" : "#c4b5fd"; }}
       >
-        <span style={{ fontSize: "0.75rem", lineHeight: 1 }}>💬</span>
-        <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Tooltip</span>
-        <span style={{ display: "flex", gap: "2px", marginLeft: "1px" }}>
+        <span style={{ fontSize: "1rem", lineHeight: 1 }}>💬</span>
+        <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Tooltip</span>
+        <span style={{ display: "flex", gap: "3px", marginLeft: "2px" }}>
           {STEPS.map((_, i) => (
-            <span key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: i <= stepIdx ? (isDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
+            <span key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: i <= stepIdx ? (isDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
           ))}
         </span>
       </button>
@@ -87,12 +88,12 @@ export function TooltipSizeControl() {
       <button
         onClick={() => router.back()}
         title="Go back to previous page"
-        style={{ ...BTN_BASE, top: "52px", border: "1px solid rgba(255,255,255,0.08)", color: "#475569" }}
+        style={{ ...BTN_BASE, top: "62px", border: "1px solid rgba(255,255,255,0.08)", color: "#475569" }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#e2e8f0"; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#475569"; }}
       >
-        <span style={{ fontSize: "0.75rem", lineHeight: 1 }}>←</span>
-        <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Back</span>
+        <span style={{ fontSize: "1rem", lineHeight: 1 }}>←</span>
+        <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Back</span>
       </button>
 
       {/* ── Save & return to dashboard (campaign pages only) ── */}
@@ -101,12 +102,12 @@ export function TooltipSizeControl() {
           onClick={handleSave}
           disabled={saving}
           title="Save campaign and return to dashboard"
-          style={{ ...BTN_BASE, top: "92px", border: "1px solid rgba(34,197,94,0.25)", color: saving ? "#22c55e" : "#475569", opacity: saving ? 0.7 : 1 }}
+          style={{ ...BTN_BASE, top: "112px", border: "1px solid rgba(34,197,94,0.25)", color: saving ? "#22c55e" : "#475569", opacity: saving ? 0.7 : 1 }}
           onMouseEnter={e => { if (!saving) { e.currentTarget.style.borderColor = "rgba(34,197,94,0.6)"; e.currentTarget.style.color = "#4ade80"; } }}
           onMouseLeave={e => { if (!saving) { e.currentTarget.style.borderColor = "rgba(34,197,94,0.25)"; e.currentTarget.style.color = "#475569"; } }}
         >
-          <span style={{ fontSize: "0.75rem", lineHeight: 1 }}>{saving ? "✓" : "💾"}</span>
-          <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: "1rem", lineHeight: 1 }}>{saving ? "✓" : "💾"}</span>
+          <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>
             {saving ? "Saving…" : "Save"}
           </span>
         </button>

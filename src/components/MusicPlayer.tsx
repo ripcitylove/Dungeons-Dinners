@@ -574,12 +574,13 @@ export function MusicPlayer() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "8px",
+            gap: "10px",
             background: "rgba(10, 7, 24, 0.88)",
             backdropFilter: "blur(14px)",
             border: `1px solid ${loadError ? "rgba(239,68,68,0.5)" : playing ? "rgba(139, 92, 246, 0.45)" : "rgba(255,255,255,0.08)"}`,
             borderRadius: "100px",
-            padding: "7px 14px",
+            padding: "10px 18px",
+            minHeight: "48px",
             boxShadow: playing ? "0 0 16px rgba(139,92,246,0.15)" : "0 2px 12px rgba(0,0,0,0.4)",
             transition: "border 0.3s, box-shadow 0.3s",
           }}
@@ -590,7 +591,7 @@ export function MusicPlayer() {
             title={loadError ? "Music failed to load — click to retry" : playing ? "Pause" : "Play background music"}
             style={{
               background: "none", border: "none", cursor: "pointer",
-              fontSize: "0.95rem", padding: 0, lineHeight: 1,
+              fontSize: "1.3rem", padding: "0 2px", lineHeight: 1,
               color: loadError ? "#ef4444" : playing ? "var(--primary)" : "#475569",
               transition: "color 0.2s",
             }}
@@ -613,7 +614,7 @@ export function MusicPlayer() {
                 style={{
                   background: pickerOpen ? "rgba(139,92,246,0.18)" : "none",
                   border: "none", cursor: "pointer", padding: "2px 5px",
-                  borderRadius: "5px", fontSize: "0.65rem", color: playing ? "#94a3b8" : "#475569",
+                  borderRadius: "5px", fontSize: "0.78rem", color: playing ? "#94a3b8" : "#475569",
                   whiteSpace: "nowrap", transition: "all 0.15s", display: "flex", alignItems: "center", gap: "3px",
                 }}
               >
@@ -627,7 +628,7 @@ export function MusicPlayer() {
                   title="Skip track"
                   style={{
                     background: "none", border: "none", cursor: "pointer",
-                    fontSize: "0.75rem", padding: 0, lineHeight: 1,
+                    fontSize: "1.1rem", padding: "0 2px", lineHeight: 1,
                     color: "#475569", transition: "color 0.15s",
                   }}
                   onMouseEnter={e => { e.currentTarget.style.color = "#94a3b8"; }}
@@ -643,7 +644,7 @@ export function MusicPlayer() {
                   type="range" min={0} max={1} step={0.05} value={volume}
                   onChange={e => setVolume(parseFloat(e.target.value))}
                   title="Music volume"
-                  style={{ width: "48px", accentColor: "var(--primary)", cursor: "pointer" }}
+                  style={{ width: "70px", height: "18px", accentColor: "var(--primary)", cursor: "pointer" }}
                 />
               )}
             </>
@@ -657,7 +658,7 @@ export function MusicPlayer() {
                 type="range" min={0} max={1} step={0.05} value={ambianceVol}
                 onChange={e => setAmbianceVol(parseFloat(e.target.value))}
                 title="Ambiance volume"
-                style={{ width: "42px", accentColor: "#64748b", cursor: "pointer" }}
+                style={{ width: "62px", height: "18px", accentColor: "#64748b", cursor: "pointer" }}
               />
             </>
           )}
