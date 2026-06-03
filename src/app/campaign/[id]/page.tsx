@@ -3484,8 +3484,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: fs(0.95), fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: CLASS_COLORS[char.class] ?? "white" }}>{char.name}</span>
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          <span
+                            ref={el => {
+                              if (!el) return;
+                              el.style.fontSize = '';
+                              const avail = el.parentElement?.clientWidth ?? 0;
+                              if (!avail || el.scrollWidth <= avail) return;
+                              const cur = parseFloat(getComputedStyle(el).fontSize);
+                              el.style.fontSize = `${Math.max(9, cur * (avail / el.scrollWidth) * 0.96)}px`;
+                            }}
+                            style={{ fontSize: fs(0.95), fontWeight: "bold", whiteSpace: "nowrap", overflow: "hidden", color: CLASS_COLORS[char.class] ?? "white", display: "block", width: "100%" }}
+                          >{char.name}</span>
                         </div>
                         <div style={{ fontSize: fs(0.76), color: "#94a3b8" }}>
                           {char.race} {char.class} · {char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him"} · <span style={{ cursor: "help" }}
