@@ -205,8 +205,8 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Always address characters by their FIRST NAME ONLY (e.g. say "Aria" not "Aria Moonwhisper"). Never use a character's full name in narration or dialogue.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
 - CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then close with a varied call to action directed at the CURRENT TURN player. Rotate through different phrasings — never repeat the same one twice in a row. Examples: "[Name], what do you do?" / "How do you respond, [Name]?" / "The choice is yours, [Name]." / "What's your next move, [Name]?" / "Make your move, [Name]." / "You're up, [Name] — what now?" / "The moment is yours, [Name]." / "[Name], how do you proceed?"
-- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll before handing off to the next player — even though it is technically another player's turn. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — do not narrate what happens, do not continue the story. The result arrives as the player's next message. After their roll resolves, THEN address the CURRENT TURN player. Outside of that case, only ask the CURRENT TURN player to roll. Never ask two different characters to roll in the same response.
-- Do NOT include "[Name], roll a [type]" for any character other than the one described above.
+- ROLL REQUESTS: If the player who JUST ACTED needs a roll to resolve their action (attack roll, skill check, saving throw), ask THEM to roll. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — stop immediately. Do not narrate outcomes. The result arrives as the player's next message; resolve it then and only then, then address the CURRENT TURN player. If no roll is needed, narrate the result and address the CURRENT TURN player. In all cases, never ask two different characters to roll in the same response.
+- Do NOT include "[Name], roll a [type]" for any character other than the one just described. The ROLL RESTRICTION block below is the final authority on who may roll.
 - TURN ORDER: The REMAINING THIS ROUND block (when present) shows only the players who still need to act this round. Follow it exactly. Do not address anyone not listed — they have already acted or passed this round.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then set the scene for the next round. Do NOT end with "[Name], what do you do?" — the game engine automatically sends that prompt to the next player. Writing it causes the player to be asked twice.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
@@ -313,7 +313,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
       ? `${prevActingPlayerName} just submitted their dice roll result. Resolve this roll's outcome in the narrative, then address ${currentTurnPlayerName ?? prevActingPlayerName}. `
-      : `${prevActingPlayerName}'s turn is OVER — done, finished. Do NOT address ${prevActingPlayerName}, ask them a question, or continue their narrative thread. Do not end your response with ${prevActingPlayerName}'s name. `
+      : `${prevActingPlayerName} just acted. Choose EXACTLY ONE of these two paths:\n  • ROLL NEEDED — if resolving ${prevActingPlayerName}'s action requires a roll (attack hit check, ability check, saving throw): your ENTIRE response is one sentence asking ${prevActingPlayerName} to roll a d20. Stop immediately after that sentence. Do not narrate outcomes or address ${currentTurnPlayerName}.\n  • NO ROLL NEEDED — if no roll is required: narrate ${prevActingPlayerName}'s result in 1–2 sentences, then close by addressing ${currentTurnPlayerName}. Do NOT continue ${prevActingPlayerName}'s thread after that.\n`
     : "";
 
   // Who comes after the current player in explicit turn order
@@ -321,8 +321,20 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     ? (() => { const i = turnOrder.indexOf(currentTurnPlayerName); return i >= 0 ? turnOrder[(i + 1) % turnOrder.length] : null; })()
     : null;
 
+  // When prevActedLine is present it already contains the full roll/narrate decision tree.
+  // Only add the standalone turn instruction when there is no preceding player to resolve.
+  const standaloneTurnInstruction = !prevActedLine
+    ? `It is ${currentTurnPlayerName}'s turn. If resolving the current situation requires a roll from ${currentTurnPlayerName}, your ENTIRE response is that roll request — one sentence, then stop. Otherwise end your response by asking ${currentTurnPlayerName} what they want to do.\n`
+    : "";
+
+  // Roll restriction: if the previous player may still need to roll, allow either player.
+  // Once their roll result arrives (isRollResult), only the next turn player may roll.
+  const rollRestriction = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName && !isRollResult
+    ? `ROLL RESTRICTION: Ask to roll ONLY ${prevActingPlayerName} (if their action needs it) OR ONLY ${currentTurnPlayerName} (if no roll is needed for ${prevActingPlayerName}). Never ask two characters to roll in the same response. Never ask any other character.`
+    : `ROLL RESTRICTION: Only ${currentTurnPlayerName} may be asked to roll in this response. Do not ask any other character to roll.`;
+
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${nextInOrder ? `UP NEXT after ${currentTurnPlayerName}: ${nextInOrder}\n` : ""}It is ${currentTurnPlayerName}'s turn. Resolve the previous action's consequences. If that resolution requires a roll from ${currentTurnPlayerName}, your ENTIRE response is that roll request — one sentence, then stop completely. Otherwise, end your response by asking ${currentTurnPlayerName} what they want to do.\nROLL RESTRICTION: Only ${currentTurnPlayerName} may be asked to roll in this response. Do not ask any other character to roll.\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${nextInOrder ? `UP NEXT after ${currentTurnPlayerName}: ${nextInOrder}\n` : ""}${standaloneTurnInstruction}${rollRestriction}\n`
     : "";
 
   const reconcileBlock = roundSummary?.length
