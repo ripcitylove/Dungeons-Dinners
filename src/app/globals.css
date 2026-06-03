@@ -90,6 +90,57 @@ input::placeholder, textarea::placeholder {
 
 /* ── Landing page ──────────────────────────────────────────────────────────── */
 
+/* Hero full-height image panels — each occupies its half and fades toward center */
+.hero-img-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 46%;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+.hero-img-left  { left: 0; }
+.hero-img-right { right: 0; }
+
+/* Inner edge fades — blend the image into the dark background toward center */
+.hero-fade-right,
+.hero-fade-left {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hero-fade-right {
+  background: linear-gradient(to right, transparent 30%, var(--background) 92%);
+}
+.hero-fade-left {
+  background: linear-gradient(to left, transparent 30%, var(--background) 92%);
+}
+
+/* On narrow viewports (mobile / small tablet): hide side images so the text
+   isn't buried. They return at 860px+ where there's room for all three columns. */
+@media (max-width: 860px) {
+  .hero-img-panel { display: none; }
+}
+
+/* Portrait cards — rectangular with portrait aspect ratio, class-color accent */
+.portrait-card {
+  width: clamp(130px, 14vw, 175px);
+  border-radius: 13px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+  transition: transform 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+  background: rgba(15,20,40,0.8);
+}
+
+.portrait-card:hover {
+  transform: translateY(-10px) scale(1.04);
+  box-shadow: 0 24px 56px rgba(0,0,0,0.7);
+}
+
+/* Legacy circle portraits (used outside landing) */
 .portrait-ring {
   width: 120px;
   height: 120px;
@@ -104,7 +155,7 @@ input::placeholder, textarea::placeholder {
 }
 
 .feature-card-lg {
-  padding: 32px;
+  padding: 36px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -114,12 +165,12 @@ input::placeholder, textarea::placeholder {
 
 .feature-card-lg:hover {
   border-color: rgba(139, 92, 246, 0.45);
-  transform: translateY(-4px);
-  box-shadow: 0 20px 56px rgba(0,0,0,0.6);
+  transform: translateY(-5px);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.65);
 }
 
 .step-card {
-  padding: 36px 28px;
+  padding: 40px 32px;
   text-align: left;
   position: relative;
   overflow: hidden;
@@ -128,7 +179,7 @@ input::placeholder, textarea::placeholder {
 
 .step-card:hover {
   border-color: rgba(139, 92, 246, 0.35);
-  transform: translateY(-3px);
+  transform: translateY(-4px);
 }
 
 .glass-panel-hover {
