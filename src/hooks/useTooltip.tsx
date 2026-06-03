@@ -4,22 +4,31 @@ import { createPortal } from "react-dom";
 
 const MARGIN = 10;
 
+// maxWidth scales with the viewport: 50% of vw, clamped between 260px and 520px.
+// This means short text stays compact while long descriptions flow horizontally
+// rather than collapsing into a tall narrow column.
+function computeMaxW(vw: number): number {
+  return Math.min(520, Math.max(260, Math.round(vw * 0.5)));
+}
+
 type TipContent = { id: number; content: React.ReactNode; x: number; y: number };
 type TipState   = TipContent | null;
 
-// Renders a single tooltip at the correct position. Starts hidden, measures its
-// own rendered size via useLayoutEffect, then positions and reveals in the same
-// paint frame (no visible flash).
+// Renders a single tooltip. Starts invisible, measures its own rendered size via
+// useLayoutEffect (fires before paint), then positions and reveals — no flash.
 function PositionedTooltip({ tip }: { tip: TipContent }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref  = useRef<HTMLDivElement>(null);
+  // Compute maxW at mount time (always client-side; component never SSR-renders).
+  const maxW = computeMaxW(window.innerWidth);
+
   const [style, setStyle] = useState<React.CSSProperties>({
-    position: "fixed",
-    left: tip.x,
-    top: tip.y,
+    position:   "fixed",
+    left:       tip.x,
+    top:        tip.y,
     visibility: "hidden",
-    zIndex: 99999,
+    zIndex:     99999,
     pointerEvents: "none",
-    maxWidth: "380px",
+    maxWidth:   maxW,
   });
 
   useLayoutEffect(() => {
@@ -30,23 +39,23 @@ function PositionedTooltip({ tip }: { tip: TipContent }) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Horizontal: center on cursor, clamp so neither edge leaves the viewport
+    // Horizontal: center on cursor, clamp both edges inside viewport
     const left = Math.max(MARGIN, Math.min(tip.x - w / 2, vw - w - MARGIN));
 
-    // Vertical: prefer above cursor; flip below when there isn't room
+    // Vertical: prefer above cursor; flip below when there isn't enough room
     const fitsAbove = tip.y - 14 - h >= MARGIN;
     const top = fitsAbove
-      ? Math.max(MARGIN, tip.y - 14 - h)       // above: top edge of box
-      : Math.min(tip.y + 22, vh - h - MARGIN); // below: top edge of box
+      ? Math.max(MARGIN, tip.y - 14 - h)        // above: top edge of box
+      : Math.min(tip.y + 22, vh - h - MARGIN);  // below: top edge of box
 
     setStyle({
-      position: "fixed",
+      position:   "fixed",
       left,
       top,
       visibility: "visible",
-      zIndex: 99999,
+      zIndex:     99999,
       pointerEvents: "none",
-      maxWidth: "380px",
+      maxWidth:   maxW,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tip.id]);
@@ -61,8 +70,8 @@ export function TooltipPortal({ tip }: { tip: TipState }) {
 }
 
 export function useTooltip() {
-  const [tip,  setTip]  = useState<TipState>(null);
-  const idRef            = useRef(0);
+  const [tip, setTip] = useState<TipState>(null);
+  const idRef         = useRef(0);
 
   const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => {
     setTip({ id: ++idRef.current, content, x: e.clientX, y: e.clientY });
@@ -73,20 +82,22 @@ export function useTooltip() {
   return { showTooltip, hideTooltip, TooltipPortal: <TooltipPortal tip={tip} /> };
 }
 
-// Standard tooltip card — dark fantasy game aesthetic.
+// Standard tooltip card — dark fantasy aesthetic.
+// maxWidth defers to the portal container so the portal's viewport-scaled width
+// is the effective constraint. minWidth keeps short tips from being too narrow.
 export function tipBox(title: string, body: string, accent = "#8b5cf6"): React.ReactNode {
   return (
     <div style={{
-      background: "#12101f",
-      border: `1px solid ${accent}55`,
+      background:   "#12101f",
+      border:       `1px solid ${accent}55`,
       borderRadius: "8px",
-      padding: "calc(9px * var(--tooltip-font-scale, 1)) calc(13px * var(--tooltip-font-scale, 1))",
-      fontSize: "calc(0.76rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"],
-      color: "#e2e8f0",
-      lineHeight: 1.55,
-      boxShadow: "0 6px 28px rgba(0,0,0,0.85)",
-      minWidth: "calc(200px * var(--tooltip-font-scale, 1))" as React.CSSProperties["minWidth"],
-      maxWidth: "calc(380px * var(--tooltip-font-scale, 1))" as React.CSSProperties["maxWidth"],
+      padding:      "calc(9px * var(--tooltip-font-scale, 1)) calc(13px * var(--tooltip-font-scale, 1))",
+      fontSize:     "calc(0.76rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"],
+      color:        "#e2e8f0",
+      lineHeight:   1.55,
+      boxShadow:    "0 6px 28px rgba(0,0,0,0.85)",
+      minWidth:     "calc(200px * var(--tooltip-font-scale, 1))" as React.CSSProperties["minWidth"],
+      maxWidth:     "100%",
     }}>
       <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "calc(0.8rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"] }}>{title}</div>
       <div style={{ color: "#94a3b8" }}>{body}</div>
