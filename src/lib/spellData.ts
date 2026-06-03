@@ -322,6 +322,72 @@ export const SPELL_SLOT_TABLE: Partial<Record<string, number[][]>> = {
   Warlock: WARLOCK_SLOTS,
 };
 
+/**
+ * Canonical minimum slot level for common D&D 5e spells.
+ * Cantrips are absent (they use no slot). Used to determine which slot to consume
+ * when the DM narrates a spell being cast.
+ */
+export const SPELL_LEVEL_MAP: Record<string, number> = {
+  // Level 1
+  "Animal Friendship": 1, "Bane": 1, "Bless": 1, "Burning Hands": 1, "Charm Person": 1,
+  "Color Spray": 1, "Command": 1, "Comprehend Languages": 1, "Create or Destroy Water": 1,
+  "Cure Wounds": 1, "Detect Evil and Good": 1, "Detect Magic": 1, "Detect Poison and Disease": 1,
+  "Dissonant Whispers": 1, "Disguise Self": 1, "Entangle": 1, "Expeditious Retreat": 1,
+  "Faerie Fire": 1, "False Life": 1, "Feather Fall": 1, "Fog Cloud": 1, "Goodberry": 1,
+  "Grease": 1, "Guiding Bolt": 1, "Healing Word": 1, "Heroism": 1, "Hex": 1,
+  "Hunter's Mark": 1, "Ice Knife": 1, "Identify": 1, "Inflict Wounds": 1, "Jump": 1,
+  "Longstrider": 1, "Mage Armor": 1, "Magic Missile": 1, "Protection from Evil and Good": 1,
+  "Purify Food and Drink": 1, "Ray of Sickness": 1, "Sanctuary": 1, "Shield": 1,
+  "Shield of Faith": 1, "Silent Image": 1, "Sleep": 1, "Speak with Animals": 1,
+  "Tasha's Hideous Laughter": 1, "Thunderwave": 1, "Unseen Servant": 1, "Witch Bolt": 1,
+  "Wrathful Smite": 1, "Divine Favor": 1, "Searing Smite": 1, "Thunderous Smite": 1,
+  // Level 2
+  "Aid": 2, "Alter Self": 2, "Arcane Lock": 2, "Blindness/Deafness": 2, "Blur": 2,
+  "Branding Smite": 2, "Calm Emotions": 2, "Continual Flame": 2, "Crown of Madness": 2,
+  "Darkness": 2, "Darkvision": 2, "Detect Thoughts": 2, "Enlarge/Reduce": 2, "Enthrall": 2,
+  "Find Traps": 2, "Flame Blade": 2, "Flaming Sphere": 2, "Gentle Repose": 2,
+  "Heat Metal": 2, "Hold Person": 2, "Invisibility": 2, "Knock": 2, "Lesser Restoration": 2,
+  "Levitate": 2, "Locate Animals or Plants": 2, "Locate Object": 2, "Magic Mouth": 2,
+  "Magic Weapon": 2, "Mirror Image": 2, "Misty Step": 2, "Moonbeam": 2,
+  "Pass without Trace": 2, "Prayer of Healing": 2, "Protection from Poison": 2,
+  "Ray of Enfeeblement": 2, "Rope Trick": 2, "Scorching Ray": 2, "See Invisibility": 2,
+  "Shatter": 2, "Silence": 2, "Spider Climb": 2, "Spiritual Weapon": 2, "Suggestion": 2,
+  "Warding Bond": 2, "Web": 2, "Zone of Truth": 2,
+  // Level 3
+  "Animate Dead": 3, "Bestow Curse": 3, "Blink": 3, "Call Lightning": 3,
+  "Clairvoyance": 3, "Conjure Animals": 3, "Counterspell": 3, "Daylight": 3,
+  "Dispel Magic": 3, "Fear": 3, "Fireball": 3, "Fly": 3, "Gaseous Form": 3,
+  "Glyph of Warding": 3, "Haste": 3, "Hunger of Hadar": 3, "Hypnotic Pattern": 3,
+  "Lightning Bolt": 3, "Magic Circle": 3, "Major Image": 3, "Mass Healing Word": 3,
+  "Nondetection": 3, "Plant Growth": 3, "Protection from Energy": 3, "Remove Curse": 3,
+  "Sending": 3, "Sleet Storm": 3, "Slow": 3, "Speak with Dead": 3, "Speak with Plants": 3,
+  "Spirit Guardians": 3, "Stinking Cloud": 3, "Tongues": 3, "Vampiric Touch": 3,
+  "Water Breathing": 3, "Water Walk": 3, "Wind Wall": 3,
+  // Level 4
+  "Arcane Eye": 4, "Banishment": 4, "Blight": 4, "Compulsion": 4, "Confusion": 4,
+  "Conjure Minor Elementals": 4, "Conjure Woodland Beings": 4, "Control Water": 4,
+  "Death Ward": 4, "Dimension Door": 4, "Divination": 4, "Dominate Beast": 4,
+  "Evard's Black Tentacles": 4, "Fabricate": 4, "Fire Shield": 4, "Freedom of Movement": 4,
+  "Giant Insect": 4, "Greater Invisibility": 4, "Guardian of Faith": 4, "Ice Storm": 4,
+  "Locate Creature": 4, "Phantasmal Killer": 4, "Polymorph": 4, "Stone Shape": 4,
+  "Stoneskin": 4, "Wall of Fire": 4,
+  // Level 5
+  "Animate Objects": 5, "Bigby's Hand": 5, "Circle of Power": 5, "Cloudkill": 5,
+  "Commune": 5, "Commune with Nature": 5, "Cone of Cold": 5, "Conjure Elemental": 5,
+  "Conjure Volley": 5, "Contact Other Plane": 5, "Contagion": 5, "Creation": 5,
+  "Dominate Person": 5, "Dream": 5, "Geas": 5, "Greater Restoration": 5,
+  "Hold Monster": 5, "Insect Plague": 5, "Legend Lore": 5, "Mass Cure Wounds": 5,
+  "Modify Memory": 5, "Passwall": 5, "Planar Binding": 5, "Raise Dead": 5,
+  "Scrying": 5, "Seeming": 5, "Skill Empowerment": 5, "Swift Quiver": 5,
+  "Synaptic Static": 5, "Telekinesis": 5, "Teleportation Circle": 5,
+  "Tree Stride": 5, "Wall of Force": 5, "Wall of Stone": 5,
+};
+
+/** Returns the minimum slot level for a spell name, or 0 if it's a cantrip / unknown. */
+export function getSpellLevel(spellName: string): number {
+  return SPELL_LEVEL_MAP[spellName] ?? 0;
+}
+
 /** Returns { [slotLevel]: maxSlots } for a class at the given character level */
 export function getSpellSlots(cls: string, charLevel: number): Record<number, number> {
   const table = SPELL_SLOT_TABLE[cls];

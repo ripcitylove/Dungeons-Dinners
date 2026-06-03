@@ -62,10 +62,17 @@ const BUCKET = "scenes";
 // Generate TTS via ElevenLabs, upload to Supabase Storage, return the public
 // CDN URL. Xbox Edge (and other constrained browsers) can play static CDN URLs
 // but refuse audio served directly from serverless API responses.
+function normalizeForTTS(raw: string): string {
+  return raw
+    .replace(/=/g, " equals ");
+}
+
 async function synthesize(text: string, voice: string): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
   if (!text?.trim()) return new Response("No text", { status: 400 });
+
+  text = normalizeForTTS(text);
 
   const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
     ? (voice as AllowedVoice)

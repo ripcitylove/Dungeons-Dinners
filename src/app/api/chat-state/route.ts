@@ -14,13 +14,15 @@ export type StateChange = {
   status_effects_gained: string[];
   status_effects_lost:   string[];
   spell_slots_used:      number;
+  spell_slot_level:      number;
 };
 
 const ZERO_CHANGE: StateChange = {
   target_name: null,
   hp_delta: 0, gold_delta: 0,
   items_gained: [], items_lost: [], weapons_gained: [],
-  xp_award: 0, status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0,
+  xp_award: 0, status_effects_gained: [], status_effects_lost: [],
+  spell_slots_used: 0, spell_slot_level: 0,
 };
 
 const SYSTEM = `You are a D&D 5e game state extractor. Given a Dungeon Master's narrative, extract character stat changes, XP awards, status effects, and spell slot usage.
@@ -36,7 +38,8 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "xp_award":              number,    // XP earned — ALWAYS infer from the outcome described (see XP rules below). Never 0 unless nothing happened.
   "status_effects_gained": string[],  // conditions gained: "Unconscious","Poisoned","Prone","Blinded","Frightened","Paralyzed","Stunned","Charmed","Restrained","Exhausted","Petrified"
   "status_effects_lost":   string[],  // conditions that ended this turn. [] if none.
-  "spell_slots_used":      number     // number of leveled spell slots consumed (not cantrips). 0 if none.
+  "spell_slots_used":      number,    // number of leveled spell slots consumed (not cantrips). 0 if none.
+  "spell_slot_level":      number     // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast.
 }
 
 HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
@@ -63,7 +66,7 @@ HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
   Enemy attacks that miss, flavor descriptions of violence, or narration about monsters do NOT count.
 - A creature falling to 0 HP = Unconscious (if not dead).
 - Status effects: only add when DM explicitly applies the condition to a player character; always set target_name.
-- Spell slots: only count when a leveled spell is explicitly cast; ALWAYS set target_name to the exact caster name — never leave it null when spell_slots_used > 0.
+- Spell slots: count whenever a character casts, invokes, channels, unleashes, or uses ANY named leveled spell (not cantrips). ALWAYS set target_name to the exact caster's first name. Set spell_slot_level to the spell's minimum level (e.g. Fireball=3, Cure Wounds=1, Misty Step=2) or the upcast level if explicitly stated (e.g. "using a 3rd-level slot"). Never leave spell_slot_level at 0 when spell_slots_used > 0.
 - HP with "you": when the DM uses "you" / "your character" with no name, set target_name to null — but ONLY do this when a single character is clearly the recipient. For party-wide effects ("each of you") set target_name to null.
 - CRITICAL — items/weapons/gold rules: ALWAYS set target_name when awarding items, weapons, or gold to a specific character. If the DM says "Thorin finds a Potion of Healing", set target_name to "Thorin". If it is truly unclear who receives an item (e.g. "the chest contains a sword" with no recipient named), output 0/[] for that item — do NOT set target_name to null with items populated.
 - Currency: only set gold_delta when a character explicitly receives/loses gold and you set target_name; estimate value from "pouch of coins", "purse of gold", etc.
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest) {
       status_effects_gained: Array.isArray(parsed.status_effects_gained) ? parsed.status_effects_gained : [],
       status_effects_lost:   Array.isArray(parsed.status_effects_lost)   ? parsed.status_effects_lost   : [],
       spell_slots_used:      Math.max(0, Number(parsed.spell_slots_used ?? 0)),
+      spell_slot_level:      Math.max(0, Number((parsed as { spell_slot_level?: number }).spell_slot_level ?? 0)),
     };
 
     const hasChange =

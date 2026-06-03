@@ -8,13 +8,13 @@ import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
 import DiceRoller from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel } from "../../../lib/spellData";
 import {
   getItemByName, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
   type LootItem,
 } from "../../../lib/lootData";
-import { tipBox } from "../../../hooks/useTooltip";
+import { tipBox, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 
@@ -195,10 +195,11 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
     const firstName = fullName.split(" ")[0];
     if (firstName.length < 2) continue;
     const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // "[Name], what do you do/try?" or "what do you do, [Name]?" or "[Name], your move/turn"
+    // "[Name], what do you do?" or "your move, [Name]?" or any call-to-action addressed to Name
+    const actionPrompt = `what (?:do|will|would) you|what(?:'s| is) your (?:action|move|next move)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment) is yours|what now`;
     const re = new RegExp(
-      `\\b${esc}\\b[^\\n]{0,120}(?:what (?:do|will|would) you|what(?:'s| is) your (?:action|move)|your (?:move|turn|action)|you(?:'re| are) up)` +
-      `|(?:what (?:do|will|would) you|your (?:move|turn|action))[^\\n]{0,120}\\b${esc}\\b`,
+      `\\b${esc}\\b[^\\n]{0,120}(?:${actionPrompt})` +
+      `|(?:${actionPrompt})[^\\n]{0,120}\\b${esc}\\b`,
       "gi"
     );
     let m: RegExpExecArray | null;
@@ -235,7 +236,7 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-function RevealText({ text, onComplete, intervalMs = 58 }: { text: string; onComplete?: () => void; intervalMs?: number }) {
+function RevealText({ text, onComplete, intervalMs = 50 }: { text: string; onComplete?: () => void; intervalMs?: number }) {
   const [groups, setGroups] = React.useState<Array<{ id: number; chars: string }>>([]);
   const onCompleteRef = React.useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -528,8 +529,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [hoveredStatus,    setHoveredStatus]      = useState<string | null>(null);
 
   // Global tooltip portal — always renders above ALL elements regardless of stacking context
-  const [globalTooltip, setGlobalTooltip] = useState<{ content: React.ReactNode; x: number; y: number } | null>(null);
-  const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => setGlobalTooltip({ content, x: e.clientX, y: e.clientY }), []);
+  const tooltipIdRef = useRef(0);
+  const [globalTooltip, setGlobalTooltip] = useState<{ id: number; content: React.ReactNode; x: number; y: number } | null>(null);
+  const showTooltip = useCallback((content: React.ReactNode, e: React.MouseEvent) => setGlobalTooltip({ id: ++tooltipIdRef.current, content, x: e.clientX, y: e.clientY }), []);
   const hideTooltip = useCallback(() => setGlobalTooltip(null), []);
 
   // Party management
@@ -572,8 +574,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const enemiesRef             = useRef<CampaignEnemy[]>([]);
   const rollRequestedUserIdRef = useRef<string | null>(null);
   const isGroupCheckRollRef    = useRef(false);
-  const resumeNarrationRef   = useRef<string>("");
-  const autoOpenedRef        = useRef(false);
+  const resumeNarrationRef        = useRef<string>("");
+  const resumeCurrentPlayerIdRef = useRef<string | null>(null);
+  const autoOpenedRef             = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
@@ -823,6 +826,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       campaignParty.forEach(c => { if (!validOrder.includes(c.id)) validOrder.push(c.id); });
       finalOrder = validOrder;
       finalIndex = Math.min(restored.index, validOrder.length - 1);
+      // Track whose turn it is so Begin Adventure can sync the DM to that player
+      resumeCurrentPlayerIdRef.current = validOrder[finalIndex] ?? null;
     } else {
       finalOrder = [...campaignParty].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id);
       finalIndex = 0;
@@ -831,18 +836,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTurnOrder(finalOrder);
     setCurrentTurnIndex(finalIndex);
     currentTurnIndexRef.current = finalIndex;
-    // Generate suggestions only if it's actually this player's turn
-    const isMyTurn = finalOrder.length <= 1 || finalOrder[finalIndex] === characterRef.current?.id;
-    if (isMyTurn && characterRef.current) {
-      const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
-      if (lastDm) {
-        fetch("/api/suggest-actions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dmResponse: lastDm.content, character: characterRef.current }),
-        }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-      }
-    }
+    // Suggestions are handled by the unified suggestion guarantee effect below
   }, [campaignParty.length]);
 
   // When the active character index changes, sync the character sheet
@@ -1273,9 +1267,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // unblock the reveal after 1.5 s so text is never permanently stuck.
   useEffect(() => {
     if (!narRevealText || narRevealIntervalMs !== null) return;
-    const t = setTimeout(() => setNarRevealIntervalMs(65), 1500);
+    const t = setTimeout(() => setNarRevealIntervalMs(52), 1500);
     return () => clearTimeout(t);
   }, [narRevealText, narRevealIntervalMs]);
+
+  // Guarantee: whenever it's my turn, the DM isn't busy, and suggestions are empty,
+  // fetch them from the last DM message. Covers resume, turn changes, and silent fetch failures.
+  const suggestionFetchInFlightRef = useRef(false);
+  useEffect(() => {
+    const myTurn = rollRequestedUserId ? rollRequestedUserId === userId
+      : (turnOrder.length <= 1 || turnOrder[currentTurnIndex] === character?.id);
+    const busy = isTyping || narrating;
+    if (!sessionStarted || !myTurn || busy || suggestions.length > 0) return;
+    if (suggestionFetchInFlightRef.current) return;
+    const char   = characterRef.current;
+    const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
+    if (!char || !lastDm) return;
+    suggestionFetchInFlightRef.current = true;
+    fetch("/api/suggest-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dmResponse: lastDm.content, character: char }),
+    })
+      .then(r => r.json())
+      .then(({ suggestions: s }) => { if (s?.length) setSuggestions(s); })
+      .catch(() => {})
+      .finally(() => { suggestionFetchInFlightRef.current = false; });
+  // messages.length re-checks after each new DM message arrives
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStarted, rollRequestedUserId, userId, turnOrder, currentTurnIndex, character?.id, isTyping, narrating, suggestions.length, messages.length]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet
@@ -1399,7 +1419,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     // Spell slots — consume when named explicitly OR this is the acting character.
     // If the player clicked a spell in the UI, pendingSpellCastRef > 0 (slot already consumed) — just clear the pending count.
-    // Otherwise find the lowest available slot level so we never hardcode level 1.
+    // Otherwise use spell_slot_level from the AI response if > 0, falling back to the lowest available slot.
     const newSlotsUsed = { ...(char.spell_slots_used ?? {}) };
     if ((shouldApplySlots || hadPendingCast) && change.spell_slots_used > 0) {
       if (hadPendingCast) {
@@ -1408,10 +1428,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const allSlots = getSpellSlots(char.class, char.level);
         let toConsume = change.spell_slots_used;
         while (toConsume > 0) {
-          const availLevel = Object.keys(allSlots).map(Number).sort()
-            .find(lvl => (allSlots[lvl] ?? 0) - (newSlotsUsed[lvl] ?? 0) > 0);
-          const lvl = availLevel ?? 1;
-          newSlotsUsed[lvl] = (newSlotsUsed[lvl] ?? 0) + 1;
+          // Prefer the level the AI identified; fall back to lowest available
+          const preferredLvl = change.spell_slot_level > 0 ? change.spell_slot_level : null;
+          const preferredAvail = preferredLvl && (allSlots[preferredLvl] ?? 0) - (newSlotsUsed[preferredLvl] ?? 0) > 0;
+          const availLevel = preferredAvail
+            ? preferredLvl!
+            : (Object.keys(allSlots).map(Number).sort()
+                .find(lvl => (allSlots[lvl] ?? 0) - (newSlotsUsed[lvl] ?? 0) > 0) ?? 1);
+          newSlotsUsed[availLevel] = (newSlotsUsed[availLevel] ?? 0) + 1;
           toConsume--;
         }
       }
@@ -1527,10 +1551,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       el.oncanplaythrough = null;
       // When the first sentence loads, compute how fast to type so text matches the voice pace
       if (slot === 0 && narSlot0TextRef.current && el.duration > 0) {
-        const avgGroupSize = 1.5; // chars per RevealText interval tick
+        const avgGroupSize = 1.3; // chars per RevealText interval tick
         const groups = narSlot0TextRef.current.length / avgGroupSize;
         const computed = Math.round((el.duration * 1000) / groups);
-        setNarRevealIntervalMs(Math.max(28, Math.min(180, computed)));
+        setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
       }
       setNarrating(true);
       const p = el.play();
@@ -2144,30 +2168,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
       // DM-driven turn: when the DM's closing question names a player ("Aria, what do you do?"),
-      // always make that player the active turn — regardless of rotation order.
-      // Exception: if they already acted this round, only allow it for the prev actor (replay).
+      // always make that player the active turn — the DM is authoritative on who acts next.
+      // If the player already acted this round, un-record it so the round doesn't stall.
       if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
         const partyNames = campaignPartyRef.current.map(c => c.name);
         const dmTurnName = detectNextTurnPlayer(full, partyNames);
         const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
         if (dmTurnChar) {
-          const prevActorId  = prevActingCharIdRef.current;
           const alreadyActed = roundActionsRef.current.some(a => a.characterId === dmTurnChar.id);
-          // If the named player has already acted, only honour it as a replay for the prev actor
-          if (!alreadyActed || dmTurnChar.id === prevActorId) {
-            if (alreadyActed && dmTurnChar.id === prevActorId) {
-              // Replay — un-record so the round doesn't stall waiting for them to act again
-              roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevActorId);
-              setRoundActions([...roundActionsRef.current]);
-            }
-            const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
-            if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
-              setCurrentTurnIndex(dmTurnIdx);
-              currentTurnIndexRef.current = dmTurnIdx;
-              const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
-              if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
-              channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
-            }
+          if (alreadyActed) {
+            roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== dmTurnChar.id);
+            setRoundActions([...roundActionsRef.current]);
+          }
+          const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+          if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
+            setCurrentTurnIndex(dmTurnIdx);
+            currentTurnIndexRef.current = dmTurnIdx;
+            const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+            if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
           }
         }
       }
@@ -2205,6 +2224,43 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
         const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
         if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+      }
+
+      // Fast client-side spell slot detection — fire immediately so the card updates before chat-state returns.
+      // Scans the DM text for any spell name in this character's prepared list and consumes the slot instantly.
+      if (!isOpeningScene && pendingSpellCastRef.current === 0) {
+        const actingChar = characterRef.current;
+        if (actingChar && SPELLCASTING_CLASSES.has(actingChar.class)) {
+          const prepared = [
+            ...(actingChar.cantrips_known ?? []),
+            ...(actingChar.spells_prepared ?? []),
+          ];
+          // Find the first leveled spell mentioned in the DM narrative
+          const castSpell = prepared.find(spell => {
+            const slotLvl = getSpellLevel(spell);
+            if (slotLvl === 0) return false; // skip cantrips
+            return new RegExp(`\\b${spell.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(full);
+          });
+          if (castSpell) {
+            const spellLvl = getSpellLevel(castSpell);
+            const allSlots = getSpellSlots(actingChar.class, actingChar.level);
+            const used = { ...(actingChar.spell_slots_used ?? {}) };
+            if ((allSlots[spellLvl] ?? 0) - (used[spellLvl] ?? 0) > 0) {
+              used[spellLvl] = (used[spellLvl] ?? 0) + 1;
+              const fastChar = { ...actingChar, spell_slots_used: used };
+              setCharacter(fastChar);
+              setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c));
+              characterRef.current = fastChar;
+              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c);
+              // Mark as pending so applyStateChange won't double-deduct
+              pendingSpellCastRef.current++;
+              channelRef.current?.send({
+                type: "broadcast", event: "character_sync",
+                payload: { charId: actingChar.id, spell_slots_used: used },
+              });
+            }
+          }
+        }
       }
 
       // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
@@ -2986,7 +3042,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   } else {
                     // Resumed campaign: go straight in
                     setSessionStarted(true);
-                    if (resumeNarrationRef.current) enqueueNarration(resumeNarrationRef.current);
+                    const resumeCharId = resumeCurrentPlayerIdRef.current;
+                    const order = turnOrderRef.current;
+                    const isMyTurn = !resumeCharId || order.length <= 1 || resumeCharId === characterRef.current?.id;
+                    if (isMyTurn && resumeCharId) {
+                      // Sync the DM to the current turn player — trigger a new DM response
+                      const playerName = campaignPartyRef.current.find(c => c.id === resumeCharId)?.name ?? characterRef.current?.name ?? "Adventurer";
+                      setTimeout(() => {
+                        if (!isTypingRef.current) {
+                          const resumeMsg: Message = { role: "player", content: `[Campaign resumed. It is ${playerName}'s turn to act.]`, sender: "" };
+                          sendToAI([...messagesRef.current, resumeMsg]);
+                        }
+                      }, 300);
+                    } else if (resumeNarrationRef.current) {
+                      enqueueNarration(resumeNarrationRef.current);
+                    }
                   }
                 }}>
                 Begin Adventure
@@ -4718,19 +4788,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       )}
 
       {/* Global tooltip portal — always on top of everything */}
-      {typeof window !== "undefined" && globalTooltip && (() => {
-        const MAX_W = 280, EST_H = 110, M = 8;
-        const vw = window.innerWidth, vh = window.innerHeight;
-        const left = Math.max(M, Math.min(globalTooltip.x - MAX_W / 2, vw - MAX_W - M));
-        const above = globalTooltip.y - 14 > EST_H + M;
-        const top   = above ? Math.min(globalTooltip.y - 14, vh - EST_H - M) : Math.min(globalTooltip.y + 22, vh - EST_H - M);
-        return createPortal(
-          <div style={{ position: "fixed", left, top, transform: above ? "translateY(-100%)" : "none", zIndex: 99999, pointerEvents: "none", maxWidth: `${MAX_W}px` }}>
-            {globalTooltip.content}
-          </div>,
-          document.body
-        );
-      })()}
+      <TooltipPortal tip={globalTooltip} />
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
