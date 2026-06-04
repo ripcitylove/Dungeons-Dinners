@@ -750,6 +750,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { messagesRef.current         = messages;         }, [messages]);
   useEffect(() => { isTypingRef.current         = isTyping;         }, [isTyping]);
   useEffect(() => { narrationEnabledRef.current = narrationEnabled;  }, [narrationEnabled]);
+  useEffect(() => { window.__dndDuckAudio?.(narrating); }, [narrating]);
   useEffect(() => {
     if (!toastMsg) return;
     const t = setTimeout(() => setToastMsg(null), 8000);

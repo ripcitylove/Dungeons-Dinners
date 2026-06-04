@@ -313,6 +313,7 @@ declare global {
     __dndSetMusicScene?: (scene: string, sceneType?: string, modifiers?: string[]) => void;
     __dndSetAmbiance?: (url: string | null) => void;
     __dndSetAmbianceScene?: (scene: string, sceneType?: string, mods?: string[]) => void;
+    __dndDuckAudio?: (duck: boolean) => void;
   }
 }
 
@@ -421,6 +422,8 @@ export function MusicPlayer() {
   const activeAmbiancePool = useRef<string>("");
   const ambianceQueueRef   = useRef<string[]>([]);
   const ambianceErrors     = useRef(0);
+  const isDucked           = useRef(false);
+  const duckFadeTimer      = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
@@ -491,6 +494,36 @@ export function MusicPlayer() {
   const clearAmbianceFade = useCallback(() => {
     if (ambianceFade.current) { clearInterval(ambianceFade.current); ambianceFade.current = null; }
   }, []);
+
+  const clearDuckFade = useCallback(() => {
+    if (duckFadeTimer.current) { clearInterval(duckFadeTimer.current); duckFadeTimer.current = null; }
+  }, []);
+
+  const duckTo = useCallback((duck: boolean) => {
+    if (isDucked.current === duck) return;
+    isDucked.current = duck;
+    clearDuckFade();
+    // Duck to 20% of user-set volume; restore to full target on unduck
+    const DUCK_RATIO = 0.20;
+    const musicTarget = duck ? targetVolume.current * DUCK_RATIO    : targetVolume.current;
+    const ambiTarget  = duck ? targetAmbianceV.current * DUCK_RATIO : targetAmbianceV.current;
+    duckFadeTimer.current = setInterval(() => {
+      let settled = true;
+      const music = audioRef.current;
+      if (music && !music.paused) {
+        const diff = musicTarget - music.volume;
+        if (Math.abs(diff) > 0.004) { music.volume = Math.max(0, Math.min(1, music.volume + Math.sign(diff) * 0.012)); settled = false; }
+        else music.volume = musicTarget;
+      }
+      const amb = ambianceRef.current;
+      if (amb && !amb.paused) {
+        const diff = ambiTarget - amb.volume;
+        if (Math.abs(diff) > 0.004) { amb.volume = Math.max(0, Math.min(1, amb.volume + Math.sign(diff) * 0.012)); settled = false; }
+        else amb.volume = ambiTarget;
+      }
+      if (settled) clearDuckFade();
+    }, 30);
+  }, [clearDuckFade]);
 
   const fadeInAmbiance = useCallback(() => {
     const a = ambianceRef.current;
@@ -586,13 +619,16 @@ export function MusicPlayer() {
       playNextAmbiance(poolKey);
     };
 
+    window.__dndDuckAudio = duckTo;
+
     return () => {
       delete window.__dndMusicPlay;
       delete window.__dndSetMusicScene;
       delete window.__dndSetAmbiance;
       delete window.__dndSetAmbianceScene;
+      delete window.__dndDuckAudio;
     };
-  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance, playNextAmbiance]);
+  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance, playNextAmbiance, duckTo]);
 
   useEffect(() => { fadeTo(defaultPool); }, [defaultPool, fadeTo]);
 
@@ -609,12 +645,12 @@ export function MusicPlayer() {
 
   useEffect(() => {
     targetVolume.current = volume;
-    if (audioRef.current) audioRef.current.volume = volume;
+    if (audioRef.current && !isDucked.current) audioRef.current.volume = volume;
   }, [volume]);
 
   useEffect(() => {
     targetAmbianceV.current = ambianceVol;
-    if (ambianceRef.current && !ambianceRef.current.paused) ambianceRef.current.volume = ambianceVol;
+    if (ambianceRef.current && !ambianceRef.current.paused && !isDucked.current) ambianceRef.current.volume = ambianceVol;
   }, [ambianceVol]);
 
   const toggle = useCallback(() => {
