@@ -15,7 +15,7 @@ import {
   type LootItem,
 } from "../../../lib/lootData";
 import { tipBox, TooltipPortal } from "../../../hooks/useTooltip";
-import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS } from "../../../lib/tooltipData";
+import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 
 type MsgRole  = "dm" | "player" | "system";
@@ -3887,8 +3887,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   Party Pool
                 </h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {droppedItems.map(item => (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}>
+                  {droppedItems.map(item => {
+                    const poolCatalog = getItemByName(item.name);
+                    const poolWeaponTip = WEAPON_TIPS[item.name];
+                    const poolItemTip = ITEM_TIPS[item.name];
+                    return (
+                    <div key={item.id}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}
+                      onMouseEnter={e => {
+                        if (poolCatalog) {
+                          const rc = RARITY_COLORS[poolCatalog.rarity];
+                          showTooltip(<div style={{ background: "#1a1730", border: `1px solid ${rc}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}><span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{item.name}</span><span style={{ color: rc, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[poolCatalog.rarity]}</span></div>
+                            <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{poolCatalog.description}</div>
+                            {poolCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>{fx.description}</div>)}
+                          </div>, e);
+                        } else if (poolWeaponTip || poolItemTip) {
+                          const t = poolWeaponTip ?? poolItemTip!;
+                          showTooltip(tipBox(t.title, t.body), e);
+                        }
+                      }}
+                      onMouseLeave={() => hideTooltip()}
+                    >
                       <div>
                         <div style={{ fontSize: "0.8rem" }}>{item.type === "weapon" ? "⚔️" : "🎒"} {item.name}</div>
                         <div style={{ fontSize: "0.62rem", color: "#64748b" }}>from {item.fromCharacter}</div>
@@ -3900,7 +3920,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </button>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -4012,11 +4033,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div>
                         <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Inventory</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {[...(vc.inventory?.weapons ?? []), ...(vc.inventory?.items ?? [])].slice(0, 8).map((item, i) => (
-                            <div key={i} style={{ padding: "5px 8px", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", fontSize: fs(0.75), color: "#e2e8f0" }}>
+                          {[...(vc.inventory?.weapons ?? []), ...(vc.inventory?.items ?? [])].slice(0, 8).map((item, i) => {
+                            const vcCatalog = getItemByName(item);
+                            const vcWepTip = WEAPON_TIPS[item];
+                            const vcItemTip = ITEM_TIPS[item];
+                            return (
+                            <div key={i}
+                              style={{ padding: "5px 8px", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", fontSize: fs(0.75), color: "#e2e8f0", cursor: vcCatalog || vcWepTip || vcItemTip ? "help" : "default" }}
+                              onMouseEnter={e => {
+                                if (vcCatalog) {
+                                  const rc = RARITY_COLORS[vcCatalog.rarity];
+                                  showTooltip(<div style={{ background: "#1a1730", border: `1px solid ${rc}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}><span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{item}</span><span style={{ color: rc, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[vcCatalog.rarity]}</span></div>
+                                    <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{vcCatalog.description}</div>
+                                    {vcCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>{fx.description}</div>)}
+                                  </div>, e);
+                                } else if (vcWepTip || vcItemTip) {
+                                  const t = vcWepTip ?? vcItemTip!;
+                                  showTooltip(tipBox(t.title, t.body), e);
+                                }
+                              }}
+                              onMouseLeave={() => hideTooltip()}
+                            >
                               {item}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -4478,22 +4520,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div style={{ position: "relative" }}>
                           <div
                             style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: tradingItem?.name === name && tradingItem?.slot === slot ? "6px 6px 0 0" : "6px", fontSize: fs(0.82), border: `1px solid ${tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.45)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
-                            onMouseEnter={e => { setHoveredItem(itemKey); if (catalogItem) showTooltip(
-                              <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                                  <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{name}</span>
-                                  <span style={{ color: rarityColor, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
-                                </div>
-                                <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{catalogItem.description}</div>
-                                {catalogItem.effects.map((fx, fi) => fx.description && (
-                                  <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>
-                                    {fx.description}
-                                  </div>
-                                ))}
-                                {catalogItem.requiresAttunement && (
-                                  <div style={{ color: "#64748b", fontSize: fs(0.62), marginTop: "5px" }}>Requires Attunement</div>
-                                )}
-                              </div>, e); }}
+                            onMouseEnter={e => {
+                              setHoveredItem(itemKey);
+                              if (catalogItem) {
+                                showTooltip(
+                                  <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                                      <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{name}</span>
+                                      <span style={{ color: rarityColor, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
+                                    </div>
+                                    <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{catalogItem.description}</div>
+                                    {catalogItem.effects.map((fx, fi) => fx.description && (
+                                      <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>
+                                        {fx.description}
+                                      </div>
+                                    ))}
+                                    {catalogItem.requiresAttunement && (
+                                      <div style={{ color: "#64748b", fontSize: fs(0.62), marginTop: "5px" }}>Requires Attunement</div>
+                                    )}
+                                  </div>, e);
+                              } else {
+                                const fallback = WEAPON_TIPS[name] ?? ITEM_TIPS[name];
+                                if (fallback) showTooltip(tipBox(fallback.title, fallback.body), e);
+                              }
+                            }}
                             onMouseLeave={() => { setHoveredItem(null); hideTooltip(); }}
                           >
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
