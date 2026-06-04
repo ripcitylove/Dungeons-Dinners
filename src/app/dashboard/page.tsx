@@ -511,22 +511,22 @@ export default function Dashboard() {
 
         {/* ── First-time welcome banner ── */}
         {!loading && characters.length === 0 && campaigns.length === 0 && (
-          <div className="glass-panel animate-fade-in" style={{ marginBottom: "32px", padding: "28px 32px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.07)" }}>
-            <p style={{ fontSize: "0.72rem", color: "var(--primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Welcome, Adventurer</p>
-            <h2 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "20px" }}>Here&apos;s how to get started in 3 steps:</h2>
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <div className="glass-panel animate-fade-in" style={{ marginBottom: "36px", padding: "32px 36px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.07)" }}>
+            <p style={{ fontSize: "0.9rem", color: "var(--primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Welcome, Adventurer</p>
+            <h2 style={{ fontSize: "1.55rem", fontWeight: 800, marginBottom: "24px" }}>Here&apos;s how to get started in 3 steps:</h2>
+            <div style={{ display: "flex", gap: "18px", flexWrap: "wrap" }}>
               {[
                 { n: "1", icon: "⚒️", title: "Create a Character", desc: "Head to the Roster section on the right and hit Create a Character. Pick your race, class, and roll your ability scores." },
                 { n: "2", icon: "🗺️", title: "Start a Campaign",   desc: "Click + New Campaign. Set how many players are starting today, then build or import characters from your roster." },
                 { n: "3", icon: "🔗", title: "Invite Your Party",   desc: "Once inside your campaign, hit the Invite button to copy a link. Send it to friends — they join instantly." },
               ].map(({ n, icon, title, desc }) => (
-                <div key={n} style={{ flex: "1 1 200px", background: "rgba(0,0,0,0.25)", borderRadius: "10px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                    <span style={{ fontSize: "0.62rem", fontWeight: 900, color: "var(--primary)", background: "rgba(139,92,246,0.2)", borderRadius: "50%", width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
-                    <span style={{ fontSize: "1rem" }}>{icon}</span>
-                    <span style={{ fontSize: "0.9rem", fontWeight: 700 }}>{title}</span>
+                <div key={n} style={{ flex: "1 1 220px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "20px 22px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 900, color: "var(--primary)", background: "rgba(139,92,246,0.2)", borderRadius: "50%", width: "26px", height: "26px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
+                    <span style={{ fontSize: "1.3rem" }}>{icon}</span>
+                    <span style={{ fontSize: "1.05rem", fontWeight: 700 }}>{title}</span>
                   </div>
-                  <p style={{ fontSize: "0.78rem", color: "var(--subtle)", lineHeight: 1.6, margin: 0 }}>{desc}</p>
+                  <p style={{ fontSize: "0.92rem", color: "var(--subtle)", lineHeight: 1.65, margin: 0 }}>{desc}</p>
                 </div>
               ))}
             </div>
@@ -534,14 +534,14 @@ export default function Dashboard() {
         )}
 
         {/* Two-column layout */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "44px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 440px", gap: "48px", alignItems: "start" }}>
 
           {/* ── Campaigns ── */}
           <section>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Campaigns</h2>
-                <p style={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
+                <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Campaigns</h2>
+                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
               </div>
               <button
                 onClick={() => router.push("/create-campaign")}
@@ -553,10 +553,10 @@ export default function Dashboard() {
             </div>
 
             {campaigns.length === 0 ? (
-              <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
-                <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "8px" }}>No campaigns yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "0.88rem", marginBottom: "28px", maxWidth: "340px", margin: "0 auto 28px", lineHeight: 1.6 }}>
+              <div className="glass-panel" style={{ padding: "64px 48px", textAlign: "center" }}>
+                <div style={{ fontSize: "3.5rem", marginBottom: "20px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
+                <h3 style={{ fontSize: "1.4rem", fontWeight: 700, marginBottom: "10px" }}>No campaigns yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "1rem", marginBottom: "28px", maxWidth: "380px", margin: "0 auto 32px", lineHeight: 1.65 }}>
                   Start your first campaign or join one with a friend&apos;s invite link.
                 </p>
                 <button onClick={() => router.push("/create-campaign")} className="btn-primary">
@@ -575,7 +575,7 @@ export default function Dashboard() {
                     >
                       {/* Joined badge */}
                       {!camp.isOwned && (
-                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "0.65rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em", cursor: "help" }}
+                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "0.8rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em", cursor: "help" }}
                           onMouseEnter={e => showTooltip(tipBox("Joined Campaign", "You are a member of this campaign hosted by another player. You can resume and play your character here.", "#818cf8"), e)}
                           onMouseLeave={hideTooltip}>
                           Joined
@@ -593,14 +593,14 @@ export default function Dashboard() {
                       {/* Party member portraits */}
                       <div style={{ display: "flex", alignItems: "center", gap: "4px", minHeight: "32px" }}>
                         {members.length === 0 ? (
-                          <span style={{ fontSize: "0.78rem", color: "#475569", fontStyle: "italic" }}>No adventurers yet</span>
+                          <span style={{ fontSize: "0.9rem", color: "#475569", fontStyle: "italic" }}>No adventurers yet</span>
                         ) : (
                           <>
                             {members.slice(0, 9).map(m => (
                               <div
                                 key={m.id}
                                 title={`${m.name} (${m.class})`}
-                                style={{ width: "28px", height: "28px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${CLASS_COLORS[m.class] ?? "var(--border)"}`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}
+                                style={{ width: "34px", height: "34px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${CLASS_COLORS[m.class] ?? "var(--border)"}`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}
                               >
                                 {m.portrait_url
                                   ? <img src={m.portrait_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -609,11 +609,11 @@ export default function Dashboard() {
                               </div>
                             ))}
                             {members.length > 9 && (
-                              <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "rgba(255,255,255,0.07)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", color: "var(--muted)", flexShrink: 0 }}>
+                              <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "rgba(255,255,255,0.07)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", color: "var(--muted)", flexShrink: 0 }}>
                                 +{members.length - 9}
                               </div>
                             )}
-                            <span style={{ fontSize: "0.68rem", color: "var(--muted)", marginLeft: "6px" }}>
+                            <span style={{ fontSize: "0.85rem", color: "var(--muted)", marginLeft: "6px" }}>
                               {members.length} {members.length === 1 ? "adventurer" : "adventurers"}
                             </span>
                           </>
@@ -656,8 +656,8 @@ export default function Dashboard() {
           <section>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Characters</h2>
-                <p style={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
+                <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Characters</h2>
+                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
               </div>
               {characters.length > 0 && (
                 <Link href="/create-character" style={{ textDecoration: "none" }}>
@@ -666,24 +666,24 @@ export default function Dashboard() {
               )}
             </div>
             {!loading && characters.length > 0 && campaigns.length === 0 && (
-              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.78rem", color: "#c4b5fd", lineHeight: 1.6 }}>
+              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.92rem", color: "#c4b5fd", lineHeight: 1.6 }}>
                 💡 Ready to play? Hit <strong>+ New Campaign</strong> to start an adventure with your characters.
               </div>
             )}
 
             {characters.length === 0 ? (
               <div className="glass-panel" style={{ padding: "40px 24px", textAlign: "center" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "12px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
-                <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "8px" }}>No characters yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "0.82rem", marginBottom: "20px", lineHeight: 1.6 }}>
+                <div style={{ fontSize: "3rem", marginBottom: "12px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
+                <h3 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "8px" }}>No characters yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "0.95rem", marginBottom: "20px", lineHeight: 1.6 }}>
                   Create your first hero to start adventuring.
                 </p>
                 <Link href="/create-character" style={{ textDecoration: "none" }}>
-                  <button className="btn-primary" style={{ fontSize: "0.85rem" }}>Create a Character</button>
+                  <button className="btn-primary" style={{ fontSize: "1rem" }}>Create a Character</button>
                 </Link>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(175px, 1fr))", gap: "14px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "14px" }}>
                 {characters.map((char) => {
                   const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
                   const rMax = Math.max(1, char.max_hp + ib.hpMaxAdd);
@@ -703,7 +703,7 @@ export default function Dashboard() {
                           ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           : <div style={{ width: "100%", height: "100%", background: `${classColor}10` }} />
                         }
-                        <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.62rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3, cursor: "help" }}
+                        <div style={{ position: "absolute", bottom: "5px", right: "5px", background: "rgba(0,0,0,0.75)", borderRadius: "4px", padding: "2px 6px", fontSize: "0.75rem", fontWeight: "bold", color: "#f59e0b", lineHeight: 1.3, cursor: "help" }}
                           onMouseEnter={e => { e.stopPropagation(); showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e); }}
                           onMouseLeave={e => { e.stopPropagation(); hideTooltip(); }}>
                           Lv {char.level}
@@ -711,13 +711,13 @@ export default function Dashboard() {
                       </div>
 
                       {/* Name */}
-                      <div style={{ fontWeight: "bold", color: classColor, fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+                      <div style={{ fontWeight: "bold", color: classColor, fontSize: "1.1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
                         {char.name}
                       </div>
 
                       {/* Race / Class */}
                       <div
-                        style={{ fontSize: "0.82rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        style={{ fontSize: "0.95rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         onMouseEnter={e => {
                           e.stopPropagation();
                           const rt = RACE_TIPS[char.race];
@@ -739,7 +739,7 @@ export default function Dashboard() {
                       </div>
 
                       {/* HP bar */}
-                      <div style={{ height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.07)" }}>
+                      <div style={{ height: "5px", borderRadius: "2px", background: "rgba(255,255,255,0.07)" }}>
                         <div style={{ height: "100%", width: `${rPct}%`, background: hpColor, borderRadius: "2px", transition: "width 0.3s" }} />
                       </div>
                     </div>
