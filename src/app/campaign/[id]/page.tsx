@@ -196,7 +196,7 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
     if (firstName.length < 2) continue;
     const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // "[Name], what do you do?" or "your move, [Name]?" or any call-to-action addressed to Name
-    const actionPrompt = `what (?:do|will|would) you|what(?:'s| is) your (?:action|move|next move)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment) is yours|what now`;
+    const actionPrompt = `what (?:else )?(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
     const re = new RegExp(
       `\\b${esc}\\b[^\\n]{0,120}(?:${actionPrompt})` +
       `|(?:${actionPrompt})[^\\n]{0,120}\\b${esc}\\b`,
