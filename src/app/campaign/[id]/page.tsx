@@ -3437,7 +3437,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 : !isMyTurn     ? `Waiting for ${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "other players"}…`
                 : "Describe your action…"
               }
-              style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,0.5)", border: "1px solid var(--border)", borderRadius: "8px", color: "white", padding: "11px 14px", fontSize: "1.05rem", opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1 }}
+              style={{
+                flex: 1, minWidth: 0, background: "rgba(0,0,0,0.5)", borderRadius: "8px", color: "white",
+                padding: "14px 18px", fontSize: "1.25rem",
+                opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1,
+                border: (isMyTurn && !isTyping && !narrating && !showDice && !pendingDiceShow)
+                  ? "1.5px solid rgba(139,92,246,0.7)"
+                  : "1px solid var(--border)",
+                boxShadow: (isMyTurn && !isTyping && !narrating && !showDice && !pendingDiceShow)
+                  ? "0 0 14px rgba(139,92,246,0.4), 0 0 28px rgba(139,92,246,0.15), inset 0 0 8px rgba(139,92,246,0.06)"
+                  : "none",
+                transition: "border-color 0.3s, box-shadow 0.3s",
+              }}
             />
             <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0 }}>Send</button>
           </div>
