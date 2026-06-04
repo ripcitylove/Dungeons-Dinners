@@ -142,16 +142,18 @@ const SCENE_TO_POOL: Record<string, string> = {
   shop_combat: "combat", arena: "combat", arena_combat: "combat",
   // Dark underground
   dungeon: "dungeon", cave: "dungeon", prison: "dungeon",
-  // Eerie / supernatural → mystical (graveyard and swamp are atmospheric, not just dark)
+  // Eerie / supernatural
   graveyard: "mystical", swamp: "mystical",
   // Outdoor nature
-  forest: "nature", wilderness: "nature", mountain: "nature", desert: "nature",
+  forest: "nature", wilderness: "nature", mountain: "nature",
   // Arcane / sacred
   temple: "mystical", library: "mystical", ruins: "mystical",
-  // Social / urban
-  tavern: "social", shop: "social", port: "social", village: "social", street: "social",
-  // Grand / naval
-  castle: "epic", ship: "sea",
+  // Social / urban — street is ominous city at night, not warm tavern
+  tavern: "social", shop: "social", village: "social",
+  street: "dungeon",
+  // Grand / naval — port is nautical, not social; desert is vast/epic not woodland
+  castle: "epic", desert: "epic",
+  ship: "sea", port: "sea",
 };
 
 // ── Pool metadata for the picker ──────────────────────────────────────────────
@@ -195,26 +197,42 @@ function nextFrom(queue: string[], pool: string[]): { src: string; queue: string
   return { src: src ?? pool[0], queue: rest };
 }
 
-// Pure function — mirrors __dndSetMusicScene logic without side effects (used for "recommended" display)
-function computePool(scene: string, sceneType?: string, mods?: string[]): string {
+function resolvePool(scene: string, sceneType?: string, mods?: string[]): string {
   if (scene.endsWith("_combat")) return "combat";
   if (mods && mods.length > 0) {
     const modSet = new Set(mods);
-    if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial") || modSet.has("altar") || modSet.has("ritual")) return "mystical";
+    // Sacred / divine space
+    if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial") || modSet.has("altar") || modSet.has("ritual") || modSet.has("chapel") || modSet.has("shrine")) return "mystical";
+    // Nautical → sea
     if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal") || modSet.has("harbor") || modSet.has("dock") || modSet.has("port")) return "sea";
-    if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively") || modSet.has("market")) return "social";
+    // Festive / social
+    if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively") || modSet.has("market") || modSet.has("inn") || modSet.has("feast")) return "social";
+    // Eerie / supernatural
     if (modSet.has("haunted") || modSet.has("cursed") || modSet.has("ethereal") || modSet.has("ghostly") || modSet.has("spectral") || modSet.has("eerie") || modSet.has("bone") || modSet.has("crypt")) return "mystical";
+    // Arcane / magical
     if (modSet.has("arcane") || modSet.has("magical") || modSet.has("mystical") || modSet.has("glowing") || modSet.has("bioluminescent") || modSet.has("crystal")) return "mystical";
-    if (modSet.has("throne") || modSet.has("grand") || modSet.has("great_hall") || modSet.has("vaulted") || modSet.has("battlements")) return "epic";
+    // Fog / mist → ethereal/mystical
+    if (modSet.has("fog") || modSet.has("mist") || modSet.has("misty")) return "mystical";
+    // Grand / majestic castle features
+    if (modSet.has("throne") || modSet.has("grand") || modSet.has("great_hall") || modSet.has("battlements") || modSet.has("courtyard") || modSet.has("tower") || modSet.has("royal") || modSet.has("noble") || modSet.has("rampart")) return "epic";
+    // Extreme outdoor conditions
     if (modSet.has("stormy") || modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard") || modSet.has("volcanic") || modSet.has("cliff") || modSet.has("canyon")) return "nature";
-    if ((modSet.has("underground") || modSet.has("collapsed") || modSet.has("flooded") || modSet.has("iron") || modSet.has("pit")) &&
-        (sceneType === "dungeon" || sceneType === "cave" || sceneType === "prison")) return "dungeon";
+    // Outdoor nature markers — only if not an underground scene type
+    if ((modSet.has("overgrown") || modSet.has("clearing") || modSet.has("canopy") || modSet.has("meadow") || modSet.has("river") || modSet.has("hilltop") || modSet.has("marsh") || modSet.has("dawn") || modSet.has("dusk") || modSet.has("autumn"))
+        && sceneType !== "dungeon" && sceneType !== "cave" && sceneType !== "prison") return "nature";
+    // Underground / subterranean — no scene-type restriction; collapsed ruins, flooded vaults, etc. all feel dungeon
+    if (modSet.has("underground") || modSet.has("collapsed") || modSet.has("flooded") || modSet.has("iron") || modSet.has("pit") || modSet.has("buried") || modSet.has("sunken")) return "dungeon";
   }
   if (SCENE_TO_POOL[scene]) return SCENE_TO_POOL[scene];
   const baseKey = Object.keys(SCENE_TO_POOL)
     .filter(k => scene.startsWith(k + "_") || scene === k)
     .sort((a, b) => b.length - a.length)[0];
   return SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon";
+}
+
+// Pure function — mirrors __dndSetMusicScene logic without side effects (used for "recommended" display)
+function computePool(scene: string, sceneType?: string, mods?: string[]): string {
+  return resolvePool(scene, sceneType, mods);
 }
 
 export function MusicPlayer() {
@@ -357,38 +375,10 @@ export function MusicPlayer() {
     };
 
     window.__dndSetMusicScene = (scene: string, sceneType?: string, mods?: string[]) => {
-      // Store for "match scene" button in the picker
       lastSceneArgs.current = { scene, type: sceneType, mods };
-      setRecommended(computePool(scene, sceneType, mods));
-
-      // Auto-switch pool
-      if (scene.endsWith("_combat")) { fadeTo("combat"); return; }
-      if (mods && mods.length > 0) {
-        const modSet = new Set(mods);
-        // Sacred / divine → mystical
-        if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("blessed") || modSet.has("celestial") || modSet.has("altar") || modSet.has("ritual")) { fadeTo("mystical"); return; }
-        // Nautical → sea
-        if (modSet.has("nautical") || modSet.has("tidal") || modSet.has("coastal") || modSet.has("harbor") || modSet.has("dock") || modSet.has("port")) { fadeTo("sea"); return; }
-        // Social / festive
-        if (modSet.has("festive") || modSet.has("crowded") || modSet.has("celebration") || modSet.has("lively") || modSet.has("market")) { fadeTo("social"); return; }
-        // Eerie / haunted → mystical regardless of scene type
-        if (modSet.has("haunted") || modSet.has("cursed") || modSet.has("ethereal") || modSet.has("ghostly") || modSet.has("spectral") || modSet.has("eerie") || modSet.has("bone") || modSet.has("crypt")) { fadeTo("mystical"); return; }
-        // Arcane / magical → mystical
-        if (modSet.has("arcane") || modSet.has("magical") || modSet.has("mystical") || modSet.has("glowing") || modSet.has("bioluminescent") || modSet.has("crystal")) { fadeTo("mystical"); return; }
-        // Grand / castle features → epic
-        if (modSet.has("throne") || modSet.has("grand") || modSet.has("great_hall") || modSet.has("vaulted") || modSet.has("battlements")) { fadeTo("epic"); return; }
-        // Storm / nature extremes → nature
-        if (modSet.has("stormy") || modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard") || modSet.has("volcanic") || modSet.has("cliff") || modSet.has("canyon")) { fadeTo("nature"); return; }
-        // Underground / dark → dungeon
-        if (modSet.has("underground") || modSet.has("collapsed") || modSet.has("flooded") || modSet.has("iron") || modSet.has("pit")) {
-          if (sceneType === "dungeon" || sceneType === "cave" || sceneType === "prison") { fadeTo("dungeon"); return; }
-        }
-      }
-      if (SCENE_TO_POOL[scene]) { fadeTo(SCENE_TO_POOL[scene]); return; }
-      const baseKey = Object.keys(SCENE_TO_POOL)
-        .filter(k => scene.startsWith(k + "_") || scene === k)
-        .sort((a, b) => b.length - a.length)[0];
-      fadeTo(SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon");
+      const pool = resolvePool(scene, sceneType, mods);
+      setRecommended(pool);
+      fadeTo(pool);
     };
 
     window.__dndSetAmbiance = (url: string | null) => {
