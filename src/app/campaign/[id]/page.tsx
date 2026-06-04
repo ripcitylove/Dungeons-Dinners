@@ -3415,7 +3415,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               disabled={isTyping || narrating || !isMyTurn}
               title="Roll Dice"
               style={{
-                padding: "0 14px", fontSize: "1.2rem", flexShrink: 0,
+                padding: "14px 18px", fontSize: "1.4rem", flexShrink: 0,
                 ...(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn && {
                   border: "1.5px solid rgba(251,191,36,0.8)",
                   boxShadow: "0 0 16px rgba(251,191,36,0.5), 0 0 32px rgba(251,191,36,0.2)",
