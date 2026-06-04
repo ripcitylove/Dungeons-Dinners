@@ -595,7 +595,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const campaignLoadingRef      = useRef(false);
   const loadingTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enqueueNarrationRef     = useRef<((text: string) => void) | null>(null);
-  const preloadResultRef        = useRef<{ dmText: string; sceneUrl: string | null; sceneName: string; sceneType?: string; modifiers?: string[]; audioUrl: string | null } | null>(null);
+  const preloadResultRef        = useRef<{ dmText: string; sceneUrl: string | null; sceneName: string; sceneType?: string; modifiers?: string[] } | null>(null);
   const preloadPromiseRef       = useRef<Promise<void> | null>(null);
   const preloadAbortRef         = useRef<AbortController | null>(null);
 
@@ -645,8 +645,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [campaignLoading, loadFadingOut, loadDmDone, loadSceneDone, loadAmbianceDone]);
 
   // ── Pre-load opening scene while "Your adventure awaits" is displayed ────────
-  // Kicks off /api/chat + /api/detect-scene + /api/generate-scene-audio before the
-  // player clicks "Begin Adventure" so the loading screen clears much faster.
+  // Kicks off /api/chat + /api/detect-scene before the player clicks "Begin Adventure"
+  // so the loading screen clears much faster.
   useEffect(() => {
     if (sessionStarted || campaignLoading) return;
     if (!userId || !character || !campaignParty.length) return;
@@ -732,22 +732,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           sceneDesc = sd.description;
         }
 
-        // ── 3. Ambiance audio ────────────────────────────────────────────────
-        let audioUrl: string | null = null;
-        if (sceneUrl && sceneType) {
-          const audRes = await fetch("/api/generate-scene-audio", {
-            method: "POST", signal: ctrl.signal,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: sceneModifiers ?? [], description: sceneDesc ?? "", isCombat: false }),
-          });
-          if (!ctrl.signal.aborted && audRes.ok) {
-            const { audioUrl: au } = await audRes.json() as { audioUrl: string | null };
-            audioUrl = au;
-          }
-        }
-
         if (!ctrl.signal.aborted) {
-          preloadResultRef.current = { dmText, sceneUrl, sceneName, sceneType, modifiers: sceneModifiers, audioUrl };
+          preloadResultRef.current = { dmText, sceneUrl, sceneName, sceneType, modifiers: sceneModifiers };
         }
       } catch {
         // Pre-load failed silently — Begin Adventure will fall back to normal flow
@@ -999,18 +985,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             .then(r => r.json())
             .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
               if (sceneRequestIdRef.current !== loadSceneReqId) return; // superseded by a newer request
-              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as { __dndSetMusicScene?: (s: string) => void }).__dndSetMusicScene?.(sceneName); }
+              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers); }
               if (sceneName && sceneType) {
-                fetch("/api/generate-scene-audio", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: false }),
-                })
-                  .then(r => r.json())
-                  .then(({ audioUrl }: { audioUrl: string | null }) => {
-                    if (audioUrl) (window as Window & { __dndSetAmbiance?: (url: string | null) => void }).__dndSetAmbiance?.(audioUrl);
-                  })
-                  .catch(() => {});
+                (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers);
               }
             })
             .catch(() => {});
@@ -1220,11 +1197,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.imageUrl) {
           currentSceneRef.current = payload.sceneName;
           setCurrentSceneUrl(payload.imageUrl);
-          (window as Window).__dndSetMusicScene?.(payload.sceneName as string);
+          (window as Window).__dndSetMusicScene?.(payload.sceneName as string, payload.sceneType as string | undefined, payload.modifiers as string[] | undefined);
+          if (payload.sceneType) (window as Window).__dndSetAmbianceScene?.(payload.sceneName as string, payload.sceneType as string, payload.modifiers as string[] | undefined);
         }
-      })
-      .on("broadcast", { event: "ambiance_change" }, ({ payload }) => {
-        if (payload.audioUrl) (window as Window).__dndSetAmbiance?.(payload.audioUrl as string);
       })
       .subscribe();
 
@@ -2376,26 +2351,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               currentSceneRef.current = sceneName;
               setCurrentSceneUrl(imageUrl);
               if (campaignLoadingRef.current) setLoadSceneDone(true);
-              channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl } });
+              channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl, sceneType, modifiers } });
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
-              // Ambiance is tied to scene changes — only update when the image changed
-              if (sceneType) {
-                fetch("/api/generate-scene-audio", {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ sceneKey: sceneName, sceneType, modifiers: modifiers ?? [], description: description ?? "", isCombat: isCombatNow }),
-                })
-                  .then(r => r.json())
-                  .then(({ audioUrl }: { audioUrl: string | null }) => {
-                    if (audioUrl) {
-                      (window as Window).__dndSetAmbiance?.(audioUrl);
-                      channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl } });
-                    }
-                    if (campaignLoadingRef.current) setLoadAmbianceDone(true);
-                  })
-                  .catch(() => { if (campaignLoadingRef.current) setLoadAmbianceDone(true); });
-              } else {
-                if (campaignLoadingRef.current) setLoadAmbianceDone(true);
-              }
+              if (sceneType) (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers);
+              if (campaignLoadingRef.current) setLoadAmbianceDone(true);
             } else {
               // No scene change — unblock loading if waiting
               if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); }
@@ -3057,11 +3016,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       if (cached.sceneUrl) {
                         currentSceneRef.current = cached.sceneName;
                         setCurrentSceneUrl(cached.sceneUrl);
-                        channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName: cached.sceneName, imageUrl: cached.sceneUrl } });
-                        if (cached.sceneType) (window as Window).__dndSetMusicScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
-                        if (cached.audioUrl) {
-                          (window as Window).__dndSetAmbiance?.(cached.audioUrl);
-                          channelRef.current?.send({ type: "broadcast", event: "ambiance_change", payload: { audioUrl: cached.audioUrl } });
+                        channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName: cached.sceneName, imageUrl: cached.sceneUrl, sceneType: cached.sceneType, modifiers: cached.modifiers } });
+                        if (cached.sceneType) {
+                          (window as Window).__dndSetMusicScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
+                          (window as Window).__dndSetAmbianceScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
                         }
                       }
                       setOpeningRevealText(cached.dmText);

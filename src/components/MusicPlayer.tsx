@@ -10,6 +10,7 @@ const KM         = "https://archive.org/download/Incompetech/mp3-royaltyfree/";
 const DARK_AMB   = "https://archive.org/download/darkambient_201908/";
 const BATTLE_IA  = "https://archive.org/download/battle-ia-item/";
 const JAMENDO    = "https://archive.org/download/jamendo-190464/";
+const SI         = "https://soundimage.org/wp-content/uploads/";
 
 const TAVERN_TRACKS: string[] = [
   "/Tavern_Theme.mp3",
@@ -131,6 +132,139 @@ const POOLS: Record<string, string[]> = {
   ],
 };
 
+// ── Ambiance pools (atmospheric/environmental audio, played under music) ──────
+const AMBIANCE_POOLS: Record<string, string[]> = {
+  dungeon: [
+    `${SI}2023/11/Dungeon-Maze.mp3`,
+    `${SI}2023/01/Dungeons-and-Tunnels.mp3`,
+    `${SI}2015/03/Secret-Tunnels.mp3`,
+    `${SI}2014/02/The-Darkness-Below.mp3`,
+    `${SI}2020/01/Haunted-Tunnels.mp3`,
+    `${SI}2019/05/Ominous-Underground-Goings-On.mp3`,
+    `${SI}2015/11/Drafty-Places.mp3`,
+    `${SI}2014/02/Too-Quiet.mp3`,
+    `${SI}2019/05/More-Sewer-Creepers.mp3`,
+    "https://archive.org/download/d-d-ambience-generic-dungeon/D%26D%20Ambience%20-%20Generic%20Dungeon.mp3",
+  ],
+  nature: [
+    `${SI}2014/07/The-Forgotten-Forest.mp3`,
+    `${SI}2015/04/Misty-Forest.mp3`,
+    `${SI}2014/11/Enchanted-Woods.mp3`,
+    `${SI}2015/03/Home-Forest.mp3`,
+    `${SI}2014/12/Forest-of-Spells.mp3`,
+    `${SI}2023/01/The-Fabled-Forest.mp3`,
+    `${SI}2020/04/The-Enchanted-Forest-Smolders.mp3`,
+    `${SI}2014/07/Distant-Mountains.mp3`,
+    `${SI}2016/04/Unforgiving-Himalayas.mp3`,
+    `${SI}2019/10/Mystical-Highlands.mp3`,
+    `${SI}2014/02/Lost-Meadow.mp3`,
+    `${SI}2014/02/Sunrise-at-the-Stream.mp3`,
+    `${SI}2020/07/A-Meadow-of-Mysteries.mp3`,
+    `${SI}2020/02/Troubled-Lands.mp3`,
+  ],
+  mystical: [
+    `${SI}2015/11/Their-Sacred-Place.mp3`,
+    `${SI}2014/02/Deep-Peace.mp3`,
+    `${SI}2015/01/Quiet-Tension.mp3`,
+    `${SI}2015/12/Mystical-Open.mp3`,
+    `${SI}2015/08/The-Idol.mp3`,
+    `${SI}2023/05/The-Book-of-Riddles.mp3`,
+    `${SI}2019/10/The-Attic-of-Secrets.mp3`,
+    `${SI}2019/08/Secret-Spells.mp3`,
+    `${SI}2020/01/Dreamscape.mp3`,
+    `${SI}2014/07/Mysterious-Trail.mp3`,
+    `${SI}2022/01/Ancient-Game-Menu.mp3`,
+    `${SI}2023/12/Magic-Clock-Shop.mp3`,
+  ],
+  social: [
+    `${SI}2014/08/The-Village.mp3`,
+    `${SI}2020/01/Bustling-Village.mp3`,
+    `${SI}2019/07/Quirky-Villagers.mp3`,
+    `${SI}2020/08/Life-Was-Hard.mp3`,
+    `${SI}2016/01/The-Secret-Village.mp3`,
+    `${SI}2014/07/Strange-Shop.mp3`,
+    `${SI}2019/12/Fantasy-Street-Performers.mp3`,
+    `${SI}2019/07/Quirky-Magic.mp3`,
+    `${SI}2015/01/Practicing-with-Magic_v001.mp3`,
+  ],
+  epic: [
+    `${SI}2014/07/The-Castle-Beyond-the-Forest.mp3`,
+    `${SI}2015/03/Castle-of-Despair.mp3`,
+    `${SI}2015/03/Cool-Castle-in-the-Clouds.mp3`,
+    `${SI}2024/01/Contemplation-inthe-Castle.mp3`,
+    `${SI}2019/11/The-Castle-of-the-Mad-Scientist.mp3`,
+    `${SI}2014/09/Lost-Civilization.mp3`,
+    `${SI}2014/09/Foglands.mp3`,
+    `${SI}2014/09/Ominous-Goings-On.mp3`,
+    `${SI}2023/04/Kingdom-in-Despair.mp3`,
+    `${SI}2014/09/Darkness-Approaches.mp3`,
+    `${SI}2017/09/Strangeness.mp3`,
+  ],
+  sea: [
+    `${SI}2015/03/The-Seventy-Seas.mp3`,
+    `${SI}2015/04/Exotic-Island.mp3`,
+    `${SI}2015/01/Indian-Ocean-Twilight.mp3`,
+    `${SI}2017/09/Over-Ancient-Waters.mp3`,
+    `${SI}2023/07/Caribbean-Moonlight.mp3`,
+    `${SI}2016/05/Edge-of-Ocean_Looping.mp3`,
+    `${SI}2023/12/Magic-Ocean.mp3`,
+    "https://archive.org/download/d-d-ambience-to-a-port-nyanzaru/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Port%20Nyanzaru.mp3",
+  ],
+  eerie: [
+    `${SI}2019/10/Ghostly-Enchantment.mp3`,
+    `${SI}2019/10/The-Front-Door-of-a-Haunted-House.mp3`,
+    `${SI}2020/12/Haunted-Dreams.mp3`,
+    `${SI}2019/10/Creepy-Hollow.mp3`,
+    `${SI}2021/11/Night-Things.mp3`,
+    `${SI}2019/06/Melanquirky-Hollow.mp3`,
+    `${SI}2019/07/Secret-Hollow.mp3`,
+    `${SI}2023/12/Dreamy-Hollow.mp3`,
+    `${SI}2024/01/The-Bog-of-Eternal-Stink.mp3`,
+    `${SI}2014/02/Haunted-Mind.mp3`,
+    `${SI}2017/10/Into-the-Haunted-Forest.mp3`,
+    `${SI}2017/11/Someting-Freaky-This-Way-Comes.mp3`,
+  ],
+  city: [
+    `${SI}2014/02/Deserted-Streets.mp3`,
+    `${SI}2014/11/City-of-Dread.mp3`,
+    `${SI}2015/01/Walled-City-of-Doom.mp3`,
+    `${SI}2024/07/Midnight-Streets.mp3`,
+    `${SI}2019/07/Midnight-Fog.mp3`,
+    `${SI}2019/06/Midnight-Mist.mp3`,
+    `${SI}2014/07/Darkness-Approaches.mp3`,
+  ],
+  desert: [
+    `${SI}2020/05/Desert-Mystery.mp3`,
+    `${SI}2018/08/A-Thousand-Exotic-Places.mp3`,
+    `${SI}2016/04/Hypnotic-Orient.mp3`,
+    `${SI}2020/07/Exotic-Dangers.mp3`,
+    `${SI}2014/09/Ominous-Goings-On.mp3`,
+  ],
+  combat: [
+    `${SI}2016/08/Dark-Fantasy-Open.mp3`,
+    `${SI}2017/12/Kingdom-of-Darkness.mp3`,
+    `${SI}2022/06/Confrontation.mp3`,
+    `${SI}2024/08/In-the-Dead-of-Night.mp3`,
+    `${SI}2023/04/Dark-Quest.mp3`,
+    `${SI}2014/09/Darkness-Approaches.mp3`,
+    `${SI}2017/09/Strangeness.mp3`,
+    `${SI}2014/02/The-Darkness-Below.mp3`,
+  ],
+};
+
+// Scene → ambiance pool (separate from music pool — street/graveyard need different atmosphere)
+const SCENE_TO_AMBIANCE_POOL: Record<string, string> = {
+  dungeon: "dungeon", cave: "dungeon", prison: "dungeon",
+  forest: "nature", wilderness: "nature", mountain: "nature",
+  temple: "mystical", library: "mystical", shop: "mystical",
+  tavern: "social", village: "social",
+  castle: "epic", ruins: "epic", arena: "epic",
+  ship: "sea", port: "sea",
+  graveyard: "eerie", swamp: "eerie",
+  street: "city",
+  desert: "desert",
+};
+
 const SCENE_TO_POOL: Record<string, string> = {
   // All combat variants → combat pool
   tavern_combat: "combat", dungeon_combat: "combat", forest_combat: "combat",
@@ -179,6 +313,7 @@ declare global {
     __dndMusicPlay?: () => void;
     __dndSetMusicScene?: (scene: string, sceneType?: string, modifiers?: string[]) => void;
     __dndSetAmbiance?: (url: string | null) => void;
+    __dndSetAmbianceScene?: (scene: string, sceneType?: string, mods?: string[]) => void;
   }
 }
 
@@ -235,6 +370,32 @@ function computePool(scene: string, sceneType?: string, mods?: string[]): string
   return resolvePool(scene, sceneType, mods);
 }
 
+function resolveAmbiancePool(scene: string, sceneType?: string, mods?: string[]): string {
+  if (scene.endsWith("_combat")) return "combat";
+  if (mods && mods.length > 0) {
+    const modSet = new Set(mods);
+    if (modSet.has("sacred") || modSet.has("holy") || modSet.has("divine") || modSet.has("altar") || modSet.has("chapel") || modSet.has("shrine") || modSet.has("ritual")) return "mystical";
+    if (modSet.has("nautical") || modSet.has("coastal") || modSet.has("harbor") || modSet.has("dock") || modSet.has("tidal")) return "sea";
+    if (modSet.has("festive") || modSet.has("crowded") || modSet.has("market") || modSet.has("inn") || modSet.has("feast")) return "social";
+    if (modSet.has("haunted") || modSet.has("ghostly") || modSet.has("spectral") || modSet.has("bone") || modSet.has("crypt") || modSet.has("eerie")) return "eerie";
+    if (modSet.has("cursed") || modSet.has("ethereal") || modSet.has("fog") || modSet.has("mist") || modSet.has("misty")) return "eerie";
+    if (modSet.has("arcane") || modSet.has("magical") || modSet.has("glowing") || modSet.has("bioluminescent") || modSet.has("crystal")) return "mystical";
+    if (modSet.has("throne") || modSet.has("grand") || modSet.has("great_hall") || modSet.has("battlements") || modSet.has("courtyard") || modSet.has("royal")) return "epic";
+    if (modSet.has("stormy") || modSet.has("volcanic") || modSet.has("canyon") || modSet.has("cliff") || modSet.has("frozen") || modSet.has("icy") || modSet.has("blizzard")) return "nature";
+    if ((modSet.has("overgrown") || modSet.has("clearing") || modSet.has("meadow") || modSet.has("river") || modSet.has("hilltop") || modSet.has("dawn") || modSet.has("dusk"))
+        && sceneType !== "dungeon" && sceneType !== "cave" && sceneType !== "prison") return "nature";
+    if (modSet.has("underground") || modSet.has("collapsed") || modSet.has("flooded") || modSet.has("pit") || modSet.has("buried")) return "dungeon";
+    if (modSet.has("midnight") || modSet.has("shadowy") || modSet.has("desolate")) {
+      if (sceneType === "street" || sceneType === "ruins" || sceneType === "village") return "city";
+    }
+  }
+  if (SCENE_TO_AMBIANCE_POOL[scene]) return SCENE_TO_AMBIANCE_POOL[scene];
+  const baseKey = Object.keys(SCENE_TO_AMBIANCE_POOL)
+    .filter(k => scene.startsWith(k + "_") || scene === k)
+    .sort((a, b) => b.length - a.length)[0];
+  return SCENE_TO_AMBIANCE_POOL[baseKey ?? ""] ?? "dungeon";
+}
+
 export function MusicPlayer() {
   const pathname = usePathname();
   const audioRef    = useRef<HTMLAudioElement | null>(null);
@@ -257,6 +418,10 @@ export function MusicPlayer() {
   const musicQueue      = useRef<string[]>([]);
   const musicErrors     = useRef(0);
   const lastSceneArgs   = useRef<{ scene: string; type?: string; mods?: string[] } | null>(null);
+  // Ambiance pool state
+  const activeAmbiancePool = useRef<string>("");
+  const ambianceQueueRef   = useRef<string[]>([]);
+  const ambianceErrors     = useRef(0);
 
   const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
@@ -364,6 +529,27 @@ export function MusicPlayer() {
     }, 60);
   }, [clearAmbianceFade]);
 
+  // Pick next track from an ambiance pool, fading out the current one first
+  const playNextAmbiance = useCallback((poolKey: string) => {
+    const pool = AMBIANCE_POOLS[poolKey] ?? AMBIANCE_POOLS.dungeon;
+    if (activeAmbiancePool.current !== poolKey || ambianceQueueRef.current.length === 0) {
+      // New pool or exhausted — shuffle a fresh queue, excluding the currently playing URL
+      const current = ambianceRef.current?.src ?? "";
+      ambianceQueueRef.current = shuffle(pool).filter(u => u !== current);
+      activeAmbiancePool.current = poolKey;
+    }
+    const [url, ...rest] = ambianceQueueRef.current;
+    ambianceQueueRef.current = rest;
+    if (!url) return;
+    fadeOutAmbiance(() => {
+      const b = ambianceRef.current;
+      if (!b) return;
+      b.src = url;
+      b.load();
+      setAmbianceReady(true);
+    });
+  }, [fadeOutAmbiance]);
+
   // ── Expose global handles ────────────────────────────────────────────────────
   useEffect(() => {
     window.__dndMusicPlay = () => {
@@ -395,8 +581,19 @@ export function MusicPlayer() {
       });
     };
 
-    return () => { delete window.__dndMusicPlay; delete window.__dndSetMusicScene; delete window.__dndSetAmbiance; };
-  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance]);
+    window.__dndSetAmbianceScene = (scene: string, sceneType?: string, mods?: string[]) => {
+      const poolKey = resolveAmbiancePool(scene, sceneType, mods);
+      ambianceErrors.current = 0;
+      playNextAmbiance(poolKey);
+    };
+
+    return () => {
+      delete window.__dndMusicPlay;
+      delete window.__dndSetMusicScene;
+      delete window.__dndSetAmbiance;
+      delete window.__dndSetAmbianceScene;
+    };
+  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance, playNextAmbiance]);
 
   useEffect(() => { fadeTo(defaultPool); }, [defaultPool, fadeTo]);
 
@@ -467,8 +664,14 @@ export function MusicPlayer() {
       <audio
         ref={ambianceRef}
         preload="none"
-        loop
         onCanPlayThrough={() => { if (ambianceRef.current?.src) fadeInAmbiance(); }}
+        onEnded={() => { if (activeAmbiancePool.current) playNextAmbiance(activeAmbiancePool.current); }}
+        onError={() => {
+          ambianceErrors.current++;
+          if (ambianceErrors.current < MAX_SKIP && activeAmbiancePool.current) {
+            setTimeout(() => playNextAmbiance(activeAmbiancePool.current), 800);
+          }
+        }}
       />
 
       {/* Click-away backdrop */}
