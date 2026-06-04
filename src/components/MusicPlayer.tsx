@@ -25,7 +25,6 @@ const TAVERN_TRACKS: string[] = [
   `${KM}Fluffing%20a%20Duck.mp3`,
   `${KM}Blarney%20Street.mp3`,
   `${KM}Merry%20Go.mp3`,
-  `${JAMENDO}03-1720368-Sapere%20Aude-Elven%20Dance.mp3`,
   `${KM}Enchanted%20Festival.mp3`,
   `${KM}Spring%20Thaw.mp3`,
   `${KM}Folk%20Round.mp3`,
