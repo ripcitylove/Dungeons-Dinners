@@ -3450,7 +3450,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 transition: "border-color 0.3s, box-shadow 0.3s",
               }}
             />
-            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0 }}>Send</button>
+            <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0, padding: "14px 28px", fontSize: "1.1rem" }}>Send</button>
           </div>
         </div>
       </div>
