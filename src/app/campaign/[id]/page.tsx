@@ -4122,25 +4122,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         key={label}
                         style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
                         onMouseEnter={e => { setHoveredStat(label); showTooltip(
-                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "66" : "#ffffff22"}`, borderRadius: "7px", padding: "9px 11px", width: "190px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
-                            <div style={{ fontWeight: "bold", color: "#e2e8f0", marginBottom: "5px", fontSize: fs(0.75) }}>
-                              {STAT_FULL[label]}
-                              <span style={{ fontWeight: 400, color: "#475569", fontSize: fs(0.62), marginLeft: "5px" }}>{label}</span>
+                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "rgba(139,92,246,0.33)"}`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                              <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{STAT_FULL[label]}</span>
+                              <span style={{ fontWeight: 600, color: "#475569", fontSize: fs(0.65) }}>{label}</span>
                             </div>
-                            <div style={{ color: "#94a3b8", fontSize: fs(0.68), marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                            <div style={{ color: "#94a3b8", marginBottom: (hasItemBuf || guide) ? "7px" : 0, paddingBottom: (hasItemBuf || guide) ? "7px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none", fontSize: fs(0.69), lineHeight: 1.4 }}>
                               {STAT_GENERAL_DESC[label]}
                             </div>
                             {hasItemBuf && (
-                              <div style={{ marginBottom: guide ? "5px" : 0, paddingBottom: guide ? "5px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                              <div style={{ marginBottom: guide ? "7px" : 0, paddingBottom: guide ? "7px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
                                 <div style={{ color: "#94a3b8", fontSize: fs(0.65), marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
-                                {addBonus !== 0 && <div style={{ color: netDiff > 0 ? "#f59e0b" : "#ef4444" }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
-                                {setBonus > baseScore && <div style={{ color: "#f59e0b" }}>Set to minimum: {setBonus}</div>}
+                                {addBonus !== 0 && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: netDiff > 0 ? "#f59e0b" : "#ef4444", fontSize: fs(0.68) }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
+                                {setBonus > baseScore && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", color: "#f59e0b", fontSize: fs(0.68) }}>Set to minimum: {setBonus}</div>}
                               </div>
                             )}
                             {guide && tierStyle && (
                               <>
                                 <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "3px", fontSize: fs(0.72) }}>{tierStyle.label} for {character.class}</div>
-                                <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{guide.reason}</div>
+                                <div style={{ color: "#94a3b8", fontSize: fs(0.69) }}>{guide.reason}</div>
                               </>
                             )}
                           </div>, e); }}
