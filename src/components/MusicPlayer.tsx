@@ -597,6 +597,17 @@ export function MusicPlayer() {
 
   useEffect(() => { fadeTo(defaultPool); }, [defaultPool, fadeTo]);
 
+  // Clear campaign ambiance when navigating away from a campaign page
+  useEffect(() => {
+    if (!isOnCampaign) {
+      fadeOutAmbiance(() => {
+        if (ambianceRef.current) ambianceRef.current.src = "";
+        activeAmbiancePool.current = "";
+        setAmbianceReady(false);
+      });
+    }
+  }, [isOnCampaign, fadeOutAmbiance]);
+
   useEffect(() => {
     targetVolume.current = volume;
     if (audioRef.current) audioRef.current.volume = volume;
