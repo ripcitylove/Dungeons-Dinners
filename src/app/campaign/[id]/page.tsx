@@ -986,12 +986,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (lastDm) {
           resumeNarrationRef.current = lastDm.content;
           // Suggestions are generated after turn order is restored (see turn-order useEffect)
-          // Restore the scene image — detect-scene hits its DB cache so this is fast
+          // Restore the scene image — detect-scene hits its DB cache so this is fast.
+          // Use the last DM message with real scene description (>30 chars) — guards against
+          // "Roll a d20." being the most recent message and causing a wrong scene classification.
+          const sceneNarrative = ([...hist].reverse().find(m => m.role === "dm" && m.content.trim().length > 30) ?? lastDm).content;
           const loadSceneReqId = ++sceneRequestIdRef.current;
           fetch("/api/detect-scene", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ narrative: lastDm.content, currentScene: "", campaignDescription: campaignDescriptionRef.current }),
+            body: JSON.stringify({ narrative: sceneNarrative, currentScene: "", campaignDescription: campaignDescriptionRef.current }),
           })
             .then(r => r.json())
             .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
@@ -3086,21 +3089,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       }
                     }
                   } else {
-                    // Resumed campaign: go straight in
+                    // Resumed campaign: replay the last DM message so the player hears where
+                    // things left off. Never trigger a new AI call here — the AI sees the
+                    // "[Campaign resumed...]" message as player input and generates nonsense.
                     setSessionStarted(true);
-                    const resumeCharId = resumeCurrentPlayerIdRef.current;
-                    const order = turnOrderRef.current;
-                    const isMyTurn = !resumeCharId || order.length <= 1 || resumeCharId === characterRef.current?.id;
-                    if (isMyTurn && resumeCharId) {
-                      // Sync the DM to the current turn player — trigger a new DM response
-                      const playerName = campaignPartyRef.current.find(c => c.id === resumeCharId)?.name ?? characterRef.current?.name ?? "Adventurer";
-                      setTimeout(() => {
-                        if (!isTypingRef.current) {
-                          const resumeMsg: Message = { role: "player", content: `[Campaign resumed. It is ${playerName}'s turn to act.]`, sender: "" };
-                          sendToAI([...messagesRef.current, resumeMsg]);
-                        }
-                      }, 300);
-                    } else if (resumeNarrationRef.current) {
+                    if (resumeNarrationRef.current) {
                       enqueueNarration(resumeNarrationRef.current);
                     }
                   }
