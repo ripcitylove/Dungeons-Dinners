@@ -12,7 +12,7 @@ import {
 import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from '../../lib/proficiencyData';
-import { useTooltip, tipBox } from '../../hooks/useTooltip';
+import { useTooltip, tipBox, tipBoxNode } from '../../hooks/useTooltip';
 import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, ALIGNMENT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, MECHANIC_TIPS, SPELL_SCHOOL_TIPS, ARRAY_VALUE_TIPS } from '../../lib/tooltipData';
 
 type AbilityScores = {
@@ -450,14 +450,11 @@ export default function CreateCharacter() {
               const st = STAT_TIPS[label];
               if (!st) return;
               const accent = tierStyle ? tierStyle.color : "#8b5cf6";
-              showTooltip(
-                <div style={{ background: "#12101f", border: `1px solid ${accent}55`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "180px", maxWidth: "240px" }}>
-                  <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "0.8rem" }}>{st.title}</div>
-                  {guide && tierStyle && <div style={{ color: tierStyle.color, fontSize: "0.7rem", marginBottom: "4px", fontWeight: 600 }}>{tierStyle.label} for {character.class}</div>}
+              showTooltip(tipBoxNode(st.title, <>
+                  {guide && tierStyle && <div style={{ color: tierStyle.color, fontWeight: 600, marginBottom: "4px", fontSize: "0.9em" }}>{tierStyle.label} for {character.class}</div>}
                   <div style={{ color: "#94a3b8" }}>{st.body}</div>
-                  {guide && <div style={{ color: "#64748b", fontSize: "0.7rem", marginTop: "5px" }}>{guide.reason}</div>}
-                </div>, e
-              );
+                  {guide && <div style={{ color: "#64748b", fontSize: "0.9em", marginTop: "4px" }}>{guide.reason}</div>}
+                </>, accent), e);
             }}
             onMouseLeave={hideTooltip}
           >

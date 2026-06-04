@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
-import { useTooltip, tipBox } from "../../hooks/useTooltip";
+import { useTooltip, tipBox, tipBoxNode } from "../../hooks/useTooltip";
 import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, MECHANIC_TIPS } from "../../lib/tooltipData";
 import "../globals.css";
 
@@ -723,19 +723,15 @@ export default function Dashboard() {
                           const rt = RACE_TIPS[char.race];
                           const ct = CLASS_TIPS[char.class];
                           if (!rt && !ct) return;
-                          showTooltip(
-                            <div style={{ background: "#12101f", border: "1px solid #8b5cf655", borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "180px", maxWidth: "240px" }}>
-                              {rt && <>
-                                <div style={{ fontWeight: 700, color: "#c4b5fd", marginBottom: "3px", fontSize: "0.8rem" }}>{rt.title}</div>
-                                <div style={{ color: "#94a3b8", marginBottom: ct ? "8px" : 0 }}>{rt.body}</div>
-                              </>}
-                              {ct && <>
-                                <div style={{ fontWeight: 700, color: CLASS_COLORS[char.class] ?? "#c4b5fd", marginBottom: "3px", fontSize: "0.8rem" }}>{ct.title}</div>
-                                <div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "3px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div>
-                                <div style={{ color: "#94a3b8" }}>{ct.body}</div>
-                              </>}
-                            </div>, e
-                          );
+                          const clsColor = CLASS_COLORS[char.class] ?? "#c4b5fd";
+                          showTooltip(tipBoxNode(rt ? rt.title : (ct?.title ?? ""), <>
+                            {rt && <div style={{ color: "#94a3b8", marginBottom: ct ? "8px" : 0, paddingBottom: ct ? "6px" : 0, borderBottom: ct ? "1px solid rgba(255,255,255,0.08)" : "none" }}>{rt.body}</div>}
+                            {ct && <>
+                              <div style={{ fontWeight: 700, color: clsColor, marginBottom: "2px" }}>{ct.title}</div>
+                              <div style={{ color: "#64748b", fontSize: "0.9em", marginBottom: "3px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div>
+                              <div style={{ color: "#94a3b8" }}>{ct.body}</div>
+                            </>}
+                          </>, "#c4b5fd"), e);
                         }}
                         onMouseLeave={hideTooltip}
                       >

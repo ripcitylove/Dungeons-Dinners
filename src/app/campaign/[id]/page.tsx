@@ -14,7 +14,7 @@ import {
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
   type LootItem,
 } from "../../../lib/lootData";
-import { tipBox, TooltipPortal } from "../../../hooks/useTooltip";
+import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 
@@ -3680,11 +3680,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             if (maxVal === 0) return null;
                             return (
                               <div key={res.key} style={{ display: "flex", alignItems: "center", gap: "3px" }}
-                                onMouseEnter={e => showTooltip(
-                                  <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "8px", padding: "8px 11px", width: "210px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.45, boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
-                                    <div style={{ fontWeight: "bold", color: res.color, marginBottom: "3px", fontSize: fs(0.75) }}>{res.emoji} {res.name}</div>
-                                    <div style={{ color: "#94a3b8", fontSize: fs(0.68) }}>{avail}/{maxVal} {res.unit} · {res.resetOn === "shortRest" ? "Short Rest" : res.resetOn === "bardic" ? "Long/Short Rest" : "Long Rest"}</div>
-                                  </div>, e)}
+                                onMouseEnter={e => showTooltip(tipBox(`${res.emoji} ${res.name}`, `${avail}/${maxVal} ${res.unit} · ${res.resetOn === "shortRest" ? "Short Rest" : res.resetOn === "bardic" ? "Long/Short Rest" : "Long Rest"}`, res.color), e)}
                                 onMouseLeave={hideTooltip}>
                                 <span style={{ fontSize: fs(0.72) }}>{res.emoji}</span>
                                 {res.unit === "HP" ? (
@@ -3735,11 +3731,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           const hkey = `${char.id}-${s}`;
                           return (
                             <span key={s}
-                              onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
-                                <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "7px", padding: "7px 10px", width: "190px", fontSize: fs(0.68), color: "#e2e8f0", lineHeight: 1.45, textAlign: "left", boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
-                                  <span style={{ fontWeight: "bold", color: st.color, marginBottom: "3px", display: "block" }}>{s}</span>
-                                  {STATUS_DESCRIPTIONS[s]}
-                                </div>, e)}
+                              onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(tipBox(s, STATUS_DESCRIPTIONS[s], st.color), e)}
                               onMouseLeave={hideTooltip}
                             >
                               <span style={{ fontSize: fs(0.6), padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
@@ -3848,11 +3840,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       onMouseEnter={e => {
                         if (poolCatalog) {
                           const rc = RARITY_COLORS[poolCatalog.rarity];
-                          showTooltip(<div style={{ background: "#1a1730", border: `1px solid ${rc}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: "0.72rem", color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}><span style={{ fontWeight: "bold", fontSize: "0.8rem" }}>{item.name}</span><span style={{ color: rc, fontSize: "0.62rem", fontWeight: "bold" }}>{RARITY_LABELS[poolCatalog.rarity]}</span></div>
-                            <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: "0.69rem", lineHeight: 1.4 }}>{poolCatalog.description}</div>
-                            {poolCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.68rem" }}>{fx.description}</div>)}
-                          </div>, e);
+                          showTooltip(tipBoxNode(item.name, <>
+                            <div style={{ color: rc, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>{RARITY_LABELS[poolCatalog.rarity]}</div>
+                            <div style={{ color: "#94a3b8", marginBottom: poolCatalog.effects.some(fx => fx.description) ? "5px" : 0 }}>{poolCatalog.description}</div>
+                            {poolCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.9em" }}>{fx.description}</div>)}
+                          </>, rc), e);
                         } else if (poolWeaponTip || poolItemTip) {
                           const t = poolWeaponTip ?? poolItemTip!;
                           showTooltip(tipBox(t.title, t.body), e);
@@ -3994,11 +3986,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               onMouseEnter={e => {
                                 if (vcCatalog) {
                                   const rc = RARITY_COLORS[vcCatalog.rarity];
-                                  showTooltip(<div style={{ background: "#1a1730", border: `1px solid ${rc}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}><span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{item}</span><span style={{ color: rc, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[vcCatalog.rarity]}</span></div>
-                                    <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{vcCatalog.description}</div>
-                                    {vcCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>{fx.description}</div>)}
-                                  </div>, e);
+                                  showTooltip(tipBoxNode(item, <>
+                                    <div style={{ color: rc, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>{RARITY_LABELS[vcCatalog.rarity]}</div>
+                                    <div style={{ color: "#94a3b8", marginBottom: vcCatalog.effects.some(fx => fx.description) ? "5px" : 0 }}>{vcCatalog.description}</div>
+                                    {vcCatalog.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.9em" }}>{fx.description}</div>)}
+                                  </>, rc), e);
                                 } else if (vcWepTip || vcItemTip) {
                                   const t = vcWepTip ?? vcItemTip!;
                                   showTooltip(tipBox(t.title, t.body), e);
@@ -4061,11 +4053,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
                       return (
                         <span key={s}
-                          onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(
-                            <div style={{ background: "#1a1730", border: `1px solid ${st.color}55`, borderRadius: "8px", padding: "9px 12px", width: "210px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
-                              <span style={{ fontWeight: "bold", color: st.color, marginBottom: "4px", display: "block" }}>{s}</span>
-                              {STATUS_DESCRIPTIONS[s]}
-                            </div>, e)}
+                          onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(tipBox(s, STATUS_DESCRIPTIONS[s], st.color), e)}
                           onMouseLeave={hideTooltip}
                         >
                           <span style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
@@ -4121,29 +4109,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div
                         key={label}
                         style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
-                        onMouseEnter={e => { setHoveredStat(label); showTooltip(
-                          <div style={{ background: "#1a1730", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "rgba(139,92,246,0.33)"}`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, textAlign: "left", boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                              <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{STAT_FULL[label]}</span>
-                              <span style={{ fontWeight: 600, color: "#475569", fontSize: fs(0.65) }}>{label}</span>
-                            </div>
-                            <div style={{ color: "#94a3b8", marginBottom: (hasItemBuf || guide) ? "7px" : 0, paddingBottom: (hasItemBuf || guide) ? "7px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none", fontSize: fs(0.69), lineHeight: 1.4 }}>
+                        onMouseEnter={e => { setHoveredStat(label); showTooltip(tipBoxNode(`${STAT_FULL[label]} (${label})`,
+                          <>
+                            <div style={{ color: "#94a3b8", marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
                               {STAT_GENERAL_DESC[label]}
                             </div>
                             {hasItemBuf && (
-                              <div style={{ marginBottom: guide ? "7px" : 0, paddingBottom: guide ? "7px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                                <div style={{ color: "#94a3b8", fontSize: fs(0.65), marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
-                                {addBonus !== 0 && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: netDiff > 0 ? "#f59e0b" : "#ef4444", fontSize: fs(0.68) }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
-                                {setBonus > baseScore && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", color: "#f59e0b", fontSize: fs(0.68) }}>Set to minimum: {setBonus}</div>}
+                              <div style={{ marginBottom: guide ? "6px" : 0, paddingBottom: guide ? "6px" : 0, borderBottom: guide ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                                <div style={{ color: "#94a3b8", fontSize: "0.9em", marginBottom: "2px" }}>Base: {baseScore} → Effective: {effScore}</div>
+                                {addBonus !== 0 && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: netDiff > 0 ? "#f59e0b" : "#ef4444", fontSize: "0.9em" }}>Item bonus: {addBonus > 0 ? "+" : ""}{addBonus}</div>}
+                                {setBonus > baseScore && <div style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", color: "#f59e0b", fontSize: "0.9em" }}>Set to minimum: {setBonus}</div>}
                               </div>
                             )}
                             {guide && tierStyle && (
                               <>
-                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "3px", fontSize: fs(0.72) }}>{tierStyle.label} for {character.class}</div>
-                                <div style={{ color: "#94a3b8", fontSize: fs(0.69) }}>{guide.reason}</div>
+                                <div style={{ fontWeight: "bold", color: tierStyle.color, marginBottom: "2px", fontSize: "0.95em" }}>{tierStyle.label} for {character.class}</div>
+                                <div style={{ color: "#94a3b8", fontSize: "0.9em" }}>{guide.reason}</div>
                               </>
                             )}
-                          </div>, e); }}
+                          </>, tierStyle?.color ?? "#8b5cf6"), e); }}
                         onMouseLeave={() => { setHoveredStat(null); hideTooltip(); }}
                       >
                         <div style={{ fontSize: fs(0.6), color: "#94a3b8", marginBottom: "2px", lineHeight: 1.1 }}>{STAT_FULL[label]}</div>
@@ -4214,7 +4198,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               <div
                                 role="button"
                                 onClick={() => { if (!isTyping) handleSend(`I cast ${s}.`); }}
-                                onMouseEnter={e => { setHoveredSpell(`c-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: fs(0.6), color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                onMouseEnter={e => { setHoveredSpell(`c-${i}`); if (entry) showTooltip(tipBox(s, `${entry.school} · ${entry.desc}`, "#8b5cf6"), e); }}
                                 onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
                                 style={{ padding: "6px 10px", background: active ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.08)", borderRadius: "5px", fontSize: fs(0.8), cursor: isTyping ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: isTyping ? 0.55 : 1 }}
                               >
@@ -4274,7 +4258,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     pendingSpellCastRef.current += 1;
                                     handleSend(`I cast ${s}.`);
                                   }}
-                                  onMouseEnter={e => { setHoveredSpell(`p-${i}`); if (entry) showTooltip(<div style={{ background: "#1a1730", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "7px", padding: "8px 10px", minWidth: "180px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}><div style={{ fontWeight: "bold", marginBottom: "3px", color: "#c4b5fd" }}>{s} <span style={{ fontSize: fs(0.6), color: "#64748b", fontWeight: 400 }}>· {entry.school}</span></div><div style={{ color: "#94a3b8" }}>{entry.desc}</div></div>, e); }}
+                                  onMouseEnter={e => { setHoveredSpell(`p-${i}`); if (entry) showTooltip(tipBox(s, `${entry.school} · ${entry.desc}`, "#8b5cf6"), e); }}
                                   onMouseLeave={() => { setHoveredSpell(null); hideTooltip(); }}
                                   style={{ padding: "6px 10px", background: canCast && active ? "rgba(139,92,246,0.22)" : canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: fs(0.8), cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${active && canCast ? "rgba(139,92,246,0.45)" : "transparent"}`, transition: "all 0.15s", opacity: canCast ? 1 : 0.4 }}
                                 >
@@ -4310,25 +4294,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <div key={res.key} style={{ marginBottom: "12px", padding: "10px 12px", background: "rgba(0,0,0,0.25)", borderRadius: "9px", border: `1px solid ${res.color}33` }}>
                             {/* Header row */}
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}
-                              onMouseEnter={e => showTooltip(
-                                <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "8px", padding: "9px 12px", width: "230px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
-                                  <div style={{ fontWeight: "bold", color: res.color, marginBottom: "4px", fontSize: fs(0.78) }}>{res.emoji} {res.name}</div>
+                              onMouseEnter={e => showTooltip(tipBoxNode(`${res.emoji} ${res.name}`,
+                                <>
                                   <div style={{ color: "#94a3b8" }}>{res.description}</div>
-                                  {character.class === "Barbarian" && res.key === "rage" && (
-                                    <div style={{ marginTop: "5px", color: "#f97316", fontSize: fs(0.66) }}>
-                                      Damage bonus: +{getRageDamageBonus(character.level)}
-                                    </div>
-                                  )}
-                                  {character.class === "Bard" && res.key === "bardic_inspiration" && (
-                                    <div style={{ marginTop: "5px", color: "#f59e0b", fontSize: fs(0.66) }}>Die: {getBardicInspirationDie(character.level)}</div>
-                                  )}
-                                  {character.class === "Rogue" && res.key === "sneak_attack" && (
-                                    <div style={{ marginTop: "5px", color: "#a78bfa", fontSize: fs(0.66) }}>Damage: {getSneakAttackDice(character.level)}</div>
-                                  )}
-                                  {character.class === "Druid" && res.key === "wild_shape" && (
-                                    <div style={{ marginTop: "5px", color: "#22c55e", fontSize: fs(0.66) }}>Max CR: {getWildShapeCR(character.level)}</div>
-                                  )}
-                                </div>, e)}
+                                  {character.class === "Barbarian" && res.key === "rage" && <div style={{ marginTop: "5px", color: "#f97316", fontSize: "0.9em" }}>Damage bonus: +{getRageDamageBonus(character.level)}</div>}
+                                  {character.class === "Bard" && res.key === "bardic_inspiration" && <div style={{ marginTop: "5px", color: "#f59e0b", fontSize: "0.9em" }}>Die: {getBardicInspirationDie(character.level)}</div>}
+                                  {character.class === "Rogue" && res.key === "sneak_attack" && <div style={{ marginTop: "5px", color: "#a78bfa", fontSize: "0.9em" }}>Damage: {getSneakAttackDice(character.level)}</div>}
+                                  {character.class === "Druid" && res.key === "wild_shape" && <div style={{ marginTop: "5px", color: "#22c55e", fontSize: "0.9em" }}>Max CR: {getWildShapeCR(character.level)}</div>}
+                                </>, res.color), e)}
                               onMouseLeave={hideTooltip}>
                               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                                 <span style={{ fontSize: fs(1) }}>{res.emoji}</span>
@@ -4365,12 +4338,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 <button key={sa.name}
                                   disabled={!canUse}
                                   onClick={() => { handleUseClassAbility(res.key, sa.cost); handleSend(`I use ${sa.name}.`); }}
-                                  onMouseEnter={e => { if (canUse) e.currentTarget.style.background = `${res.color}33`; showTooltip(
-                                    <div style={{ background: "#1a1730", border: `1px solid ${res.color}55`, borderRadius: "7px", padding: "8px 10px", width: "210px", fontSize: fs(0.7), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 16px rgba(0,0,0,0.7)", whiteSpace: "normal" }}>
-                                      <div style={{ fontWeight: "bold", color: res.color, marginBottom: "3px" }}>{sa.name}</div>
-                                      <div style={{ color: "#94a3b8" }}>{sa.description}</div>
-                                      {sa.cost > 0 && <div style={{ color: "#64748b", marginTop: "4px", fontSize: fs(0.65) }}>Cost: {sa.cost} {res.unit}</div>}
-                                    </div>, e); }}
+                                  onMouseEnter={e => { if (canUse) e.currentTarget.style.background = `${res.color}33`; showTooltip(tipBox(sa.name, sa.description + (sa.cost > 0 ? ` · Cost: ${sa.cost} ${res.unit}` : ""), res.color), e); }}
                                   onMouseLeave={e => { e.currentTarget.style.background = canUse ? `${res.color}18` : "transparent"; hideTooltip(); }}
                                   style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "5px 8px", marginTop: "4px", borderRadius: "6px", background: canUse ? `${res.color}18` : "transparent", border: `1px solid ${canUse ? res.color + "44" : "#3f3f46"}`, cursor: canUse ? "pointer" : "default", opacity: canUse ? 1 : 0.4, transition: "all 0.15s", textAlign: "left" }}
                                 >
@@ -4474,22 +4442,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             onMouseEnter={e => {
                               setHoveredItem(itemKey);
                               if (catalogItem) {
-                                showTooltip(
-                                  <div style={{ background: "#1a1730", border: `1px solid ${rarityColor}55`, borderRadius: "8px", padding: "10px 12px", minWidth: "200px", maxWidth: "260px", fontSize: fs(0.72), color: "#e2e8f0", lineHeight: 1.5, boxShadow: "0 4px 20px rgba(0,0,0,0.7)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
-                                      <span style={{ fontWeight: "bold", fontSize: fs(0.8) }}>{name}</span>
-                                      <span style={{ color: rarityColor, fontSize: fs(0.62), fontWeight: "bold" }}>{RARITY_LABELS[catalogItem.rarity]}</span>
-                                    </div>
-                                    <div style={{ color: "#94a3b8", marginBottom: "7px", fontSize: fs(0.69), lineHeight: 1.4 }}>{catalogItem.description}</div>
-                                    {catalogItem.effects.map((fx, fi) => fx.description && (
-                                      <div key={fi} style={{ padding: "3px 7px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "3px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: fs(0.68) }}>
-                                        {fx.description}
-                                      </div>
-                                    ))}
-                                    {catalogItem.requiresAttunement && (
-                                      <div style={{ color: "#64748b", fontSize: fs(0.62), marginTop: "5px" }}>Requires Attunement</div>
-                                    )}
-                                  </div>, e);
+                                showTooltip(tipBoxNode(name, <>
+                                    <div style={{ color: rarityColor, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>{RARITY_LABELS[catalogItem.rarity]}</div>
+                                    <div style={{ color: "#94a3b8", marginBottom: catalogItem.effects.some(fx => fx.description) ? "5px" : 0 }}>{catalogItem.description}</div>
+                                    {catalogItem.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.9em" }}>{fx.description}</div>)}
+                                    {catalogItem.requiresAttunement && <div style={{ color: "#64748b", fontSize: "0.85em", marginTop: "4px" }}>Requires Attunement</div>}
+                                  </>, rarityColor), e);
                               } else {
                                 const fallback = WEAPON_TIPS[name] ?? ITEM_TIPS[name];
                                 if (fallback) showTooltip(tipBox(fallback.title, fallback.body), e);

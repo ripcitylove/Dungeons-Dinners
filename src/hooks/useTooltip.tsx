@@ -82,25 +82,41 @@ export function useTooltip() {
   return { showTooltip, hideTooltip, TooltipPortal: <TooltipPortal tip={tip} /> };
 }
 
-// Standard tooltip card — dark fantasy aesthetic.
-// maxWidth defers to the portal container so the portal's viewport-scaled width
-// is the effective constraint. minWidth keeps short tips from being too narrow.
+// Shared container style — applied to both tipBox and tipBoxNode for consistency.
+const TIP_CONTAINER = (accent: string): React.CSSProperties => ({
+  background:   "#12101f",
+  border:       `1px solid ${accent}55`,
+  borderRadius: "8px",
+  padding:      "calc(9px * var(--tooltip-font-scale, 1)) calc(13px * var(--tooltip-font-scale, 1))",
+  fontSize:     "calc(0.76rem * var(--tooltip-font-scale, 1))",
+  color:        "#e2e8f0",
+  lineHeight:   1.55,
+  boxShadow:    "0 6px 28px rgba(0,0,0,0.85)",
+  minWidth:     "calc(200px * var(--tooltip-font-scale, 1))",
+  maxWidth:     "calc(300px * var(--tooltip-font-scale, 1))",
+});
+const TIP_TITLE = (accent: string): React.CSSProperties => ({
+  fontWeight: 700, color: accent, marginBottom: "4px",
+  fontSize: "calc(0.8rem * var(--tooltip-font-scale, 1))",
+});
+
+// Standard tooltip card — string body, dark fantasy aesthetic.
 export function tipBox(title: string, body: string, accent = "#8b5cf6"): React.ReactNode {
   return (
-    <div style={{
-      background:   "#12101f",
-      border:       `1px solid ${accent}55`,
-      borderRadius: "8px",
-      padding:      "calc(9px * var(--tooltip-font-scale, 1)) calc(13px * var(--tooltip-font-scale, 1))",
-      fontSize:     "calc(0.76rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"],
-      color:        "#e2e8f0",
-      lineHeight:   1.55,
-      boxShadow:    "0 6px 28px rgba(0,0,0,0.85)",
-      minWidth:     "calc(200px * var(--tooltip-font-scale, 1))" as React.CSSProperties["minWidth"],
-      maxWidth:     "100%",
-    }}>
-      <div style={{ fontWeight: 700, color: accent, marginBottom: "4px", fontSize: "calc(0.8rem * var(--tooltip-font-scale, 1))" as React.CSSProperties["fontSize"] }}>{title}</div>
+    <div style={TIP_CONTAINER(accent)}>
+      <div style={TIP_TITLE(accent)}>{title}</div>
       <div style={{ color: "#94a3b8" }}>{body}</div>
+    </div>
+  );
+}
+
+// Rich tooltip card — accepts ReactNode body for multi-section content.
+// Uses identical container and title styles as tipBox.
+export function tipBoxNode(title: string, body: React.ReactNode, accent = "#8b5cf6"): React.ReactNode {
+  return (
+    <div style={TIP_CONTAINER(accent)}>
+      {title && <div style={TIP_TITLE(accent)}>{title}</div>}
+      {body}
     </div>
   );
 }

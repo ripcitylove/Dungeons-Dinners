@@ -12,7 +12,7 @@ import { computeInventoryBonuses } from "../../lib/lootData";
 import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from "../../lib/proficiencyData";
-import { useTooltip, tipBox } from "../../hooks/useTooltip";
+import { useTooltip, tipBox, tipBoxNode } from "../../hooks/useTooltip";
 import { RACE_TIPS, ALIGNMENT_TIPS, CLASS_TIPS, MECHANIC_TIPS, STAT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, SPELL_SCHOOL_TIPS, ARRAY_VALUE_TIPS } from "../../lib/tooltipData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -845,7 +845,10 @@ export default function CreateCampaignWizard() {
                       const clsColor = CLASS_COLORS[cls] ?? "#8b5cf6";
                       return (
                       <div key={cls} onClick={() => handleClassChange(cls)}
-                        onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(<div style={{ background: "#12101f", border: `1px solid ${clsColor}44`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: clsColor, marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
+                        onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(tipBoxNode(ct.title, <>
+                          <div style={{ color: "#64748b", fontSize: "0.9em", marginBottom: "4px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div>
+                          <div style={{ color: "#94a3b8" }}>{ct.body}</div>
+                        </>, clsColor), e); }}
                         onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
                         style={{
                           padding: "13px 6px", borderRadius: "10px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
