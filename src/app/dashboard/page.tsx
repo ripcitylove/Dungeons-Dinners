@@ -490,11 +490,11 @@ export default function Dashboard() {
       )}
 
       {/* Page wrapper */}
-      <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "28px 36px 80px" }}>
+      <div style={{ maxWidth: "1380px", margin: "0 auto", padding: "36px 48px 100px" }}>
 
         {/* Nav */}
-        <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "44px" }}>
-          <div style={{ fontSize: "1.4rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
+        <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "52px" }}>
+          <div style={{ fontSize: "1.7rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ color: "var(--primary)" }}>⬡</span>
             <span>Dungeons &amp; Dinner Legends</span>
           </div>
@@ -503,9 +503,9 @@ export default function Dashboard() {
               <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "linear-gradient(135deg, var(--primary) 0%, #6366f1 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "0.75rem", flexShrink: 0, color: "white" }}>
                 {userInitials}
               </div>
-              <span style={{ color: "var(--subtle)", fontSize: "0.82rem" }}>{displayName}</span>
+              <span style={{ color: "var(--subtle)", fontSize: "0.9rem" }}>{displayName}</span>
             </div>
-            <button onClick={signOut} className="btn-secondary" style={{ padding: "8px 18px", fontSize: "0.875rem" }}>Sign Out</button>
+            <button onClick={signOut} className="btn-secondary" style={{ padding: "10px 22px" }}>Sign Out</button>
           </div>
         </nav>
 
@@ -534,19 +534,19 @@ export default function Dashboard() {
         )}
 
         {/* Two-column layout */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "36px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "44px", alignItems: "start" }}>
 
           {/* ── Campaigns ── */}
           <section>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Campaigns</h2>
-                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
+                <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Campaigns</h2>
+                <p style={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
               </div>
               <button
                 onClick={() => router.push("/create-campaign")}
                 className="btn-primary"
-                style={{ padding: "9px 18px", fontSize: "0.85rem", flexShrink: 0 }}
+                style={{ padding: "12px 26px", flexShrink: 0 }}
               >
                 + New Campaign
               </button>
@@ -564,14 +564,14 @@ export default function Dashboard() {
                 </button>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px" }}>
                 {campaigns.map((camp) => {
                   const members = campaignMembers[camp.id] ?? [];
                   return (
                     <div
                       key={camp.id}
                       className="glass-panel animate-fade-in"
-                      style={{ padding: "22px", display: "flex", flexDirection: "column", gap: "14px", position: "relative" }}
+                      style={{ padding: "28px", display: "flex", flexDirection: "column", gap: "16px", position: "relative" }}
                     >
                       {/* Joined badge */}
                       {!camp.isOwned && (
@@ -584,8 +584,8 @@ export default function Dashboard() {
 
                       {/* Title + description */}
                       <div style={{ paddingRight: camp.isOwned ? 0 : 64 }}>
-                        <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "6px" }}>{camp.title}</h3>
-                        <p style={{ color: "var(--subtle)", fontSize: "0.82rem", lineHeight: 1.55, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                        <h3 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "8px" }}>{camp.title}</h3>
+                        <p style={{ color: "var(--subtle)", fontSize: "0.95rem", lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                           {camp.description}
                         </p>
                       </div>
@@ -626,7 +626,7 @@ export default function Dashboard() {
                           onClick={() => copyInvite(camp.id)}
                           onMouseEnter={e => showTooltip(tipBox("🔗 Invite Link", "Copies a link to your clipboard. Share it so another player can join this campaign with their account.", "#818cf8"), e)}
                           onMouseLeave={hideTooltip}
-                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", color: copiedId === camp.id ? "#22c55e" : "var(--subtle)", cursor: "pointer", fontSize: "0.78rem", padding: "6px 12px", transition: "all 0.2s", flexShrink: 0 }}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", color: copiedId === camp.id ? "#22c55e" : "var(--subtle)", cursor: "pointer", fontSize: "0.9rem", padding: "8px 16px", transition: "all 0.2s", flexShrink: 0 }}
                         >
                           {copiedId === camp.id ? "Copied!" : "🔗 Invite"}
                         </button>
@@ -634,13 +634,13 @@ export default function Dashboard() {
                           <button
                             onClick={() => deleteCampaign(camp.id, camp.title)}
                             className="btn-danger"
-                            style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                            style={{ padding: "8px 16px", fontSize: "0.9rem" }}
                           >
                             Delete
                           </button>
                         )}
                         <Link href={`/campaign/${camp.id}`} style={{ marginLeft: "auto", textDecoration: "none" }}>
-                          <button className="btn-primary" style={{ padding: "8px 18px", fontSize: "0.85rem" }}>
+                          <button className="btn-primary" style={{ padding: "10px 22px" }}>
                             Resume
                           </button>
                         </Link>
@@ -656,12 +656,12 @@ export default function Dashboard() {
           <section>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>Characters</h2>
-                <p style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
+                <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Characters</h2>
+                <p style={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
               </div>
               {characters.length > 0 && (
                 <Link href="/create-character" style={{ textDecoration: "none" }}>
-                  <button className="btn-secondary" style={{ padding: "7px 14px", fontSize: "0.78rem" }}>+ New Character</button>
+                  <button className="btn-secondary" style={{ padding: "10px 18px" }}>+ New Character</button>
                 </Link>
               )}
             </div>
@@ -683,7 +683,7 @@ export default function Dashboard() {
                 </Link>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(175px, 1fr))", gap: "14px" }}>
                 {characters.map((char) => {
                   const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
                   const rMax = Math.max(1, char.max_hp + ib.hpMaxAdd);
@@ -695,7 +695,7 @@ export default function Dashboard() {
                       key={char.id}
                       className="glass-panel glass-panel-hover animate-fade-in"
                       onClick={() => setSelectedChar(char)}
-                      style={{ padding: "10px", cursor: "pointer", display: "flex", flexDirection: "column", gap: "7px" }}
+                      style={{ padding: "14px", cursor: "pointer", display: "flex", flexDirection: "column", gap: "10px" }}
                     >
                       {/* Portrait */}
                       <div style={{ width: "100%", aspectRatio: "1", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: `2px solid ${classColor}33`, position: "relative", flexShrink: 0 }}>
@@ -711,13 +711,13 @@ export default function Dashboard() {
                       </div>
 
                       {/* Name */}
-                      <div style={{ fontWeight: "bold", color: classColor, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+                      <div style={{ fontWeight: "bold", color: classColor, fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
                         {char.name}
                       </div>
 
                       {/* Race / Class */}
                       <div
-                        style={{ fontSize: "0.68rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        style={{ fontSize: "0.82rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         onMouseEnter={e => {
                           e.stopPropagation();
                           const rt = RACE_TIPS[char.race];
@@ -750,10 +750,10 @@ export default function Dashboard() {
                 <Link href="/create-character" style={{ textDecoration: "none" }}>
                   <div
                     className="glass-panel animate-fade-in"
-                    style={{ padding: "10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", aspectRatio: "1", borderStyle: "dashed", borderColor: "rgba(139,92,246,0.3)", gap: "6px" }}
+                    style={{ padding: "14px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", aspectRatio: "1", borderStyle: "dashed", borderColor: "rgba(139,92,246,0.3)", gap: "8px" }}
                   >
-                    <span style={{ fontSize: "1.4rem", color: "var(--primary)", opacity: 0.6, lineHeight: 1 }}>+</span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--primary)", fontWeight: "bold", opacity: 0.8, textAlign: "center" }}>New Character</span>
+                    <span style={{ fontSize: "1.8rem", color: "var(--primary)", opacity: 0.6, lineHeight: 1 }}>+</span>
+                    <span style={{ fontSize: "0.88rem", color: "var(--primary)", fontWeight: "bold", opacity: 0.8, textAlign: "center" }}>New Character</span>
                   </div>
                 </Link>
               </div>

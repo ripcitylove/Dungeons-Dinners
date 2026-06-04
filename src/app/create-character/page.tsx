@@ -458,11 +458,11 @@ export default function CreateCharacter() {
             }}
             onMouseLeave={hideTooltip}
           >
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
-            <div style={{ fontWeight: 'bold', fontSize: '1.3rem', color: isRevealed ? 'white' : '#475569', transition: 'color 0.2s' }}>
+            <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
+            <div style={{ fontWeight: 'bold', fontSize: '1.55rem', color: isRevealed ? 'white' : '#475569', transition: 'color 0.2s' }}>
               {isRevealed ? val : '??'}
             </div>
-            <div style={{ fontSize: '0.75rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
+            <div style={{ fontSize: '0.82rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
               {isRevealed ? (m >= 0 ? `+${m}` : m) : '--'}
             </div>
             {isRevealed && tierStyle && (
@@ -496,7 +496,7 @@ export default function CreateCharacter() {
         </div>
       )}
 
-      <div className="glass-panel" style={{ width: '100%', maxWidth: '860px', padding: '40px', position: 'relative' }}>
+      <div className="glass-panel" style={{ width: '100%', maxWidth: '1020px', padding: '52px 56px', position: 'relative' }}>
 
         {/* Progress bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', position: 'relative' }}>
@@ -511,20 +511,20 @@ export default function CreateCharacter() {
               onMouseEnter={e => showTooltip(tipBox(`${STEP_ICONS[i-1]} Step ${i}`, stepLabels[i - 1] ?? '', step >= i ? '#8b5cf6' : '#64748b'), e)}
               onMouseLeave={hideTooltip}
               style={{
-                width: '38px', height: '38px', borderRadius: '50%',
+                width: '46px', height: '46px', borderRadius: '50%',
                 background: done ? 'linear-gradient(135deg, var(--primary), #6d28d9)' : active ? 'rgba(139,92,246,0.22)' : 'var(--card-bg)',
                 border: `2px solid ${step >= i ? 'var(--primary)' : 'var(--border)'}`,
                 boxShadow: done ? '0 0 16px rgba(139,92,246,0.6)' : active ? '0 0 10px rgba(139,92,246,0.35), 0 0 0 3px rgba(139,92,246,0.12)' : 'none',
                 display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1,
-                color: step >= i ? 'white' : '#475569', fontWeight: 'bold', fontSize: done ? '0.7rem' : '0.85rem', cursor: 'help', transition: 'all 0.3s',
+                color: step >= i ? 'white' : '#475569', fontWeight: 'bold', fontSize: done ? '0.82rem' : '1rem', cursor: 'help', transition: 'all 0.3s',
               }}>{done ? '✓' : i}</div>
             );
           })}
         </div>
 
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ fontSize: '2rem', marginBottom: '6px', lineHeight: 1 }}>{STEP_ICONS[step - 1]}</div>
-          <h1 className="shimmer-heading" style={{ fontSize: '2rem', marginBottom: 0 }}>{stepTitle}</h1>
+          <div style={{ fontSize: '2.6rem', marginBottom: '8px', lineHeight: 1 }}>{STEP_ICONS[step - 1]}</div>
+          <h1 className="shimmer-heading" style={{ fontSize: '2.6rem', marginBottom: 0 }}>{stepTitle}</h1>
           <div style={{ height: '1px', width: '80px', background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', margin: '10px auto 0' }} />
         </div>
 
@@ -537,52 +537,52 @@ export default function CreateCharacter() {
               {/* Name + Title row */}
               <div style={{ display: 'flex', gap: '12px' }}>
                 <div style={{ flex: 2 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
                     onMouseEnter={e => showTooltip(tipBox('Character Name', 'What your hero is called in the world. The DM and other players will use this name throughout your adventure.', '#c4b5fd'), e)}
                     onMouseLeave={hideTooltip}>Character Name</label>
                   <input
                     type="text" value={character.name}
                     onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
+                    style={{ width: '100%', padding: '14px 16px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1.05rem' }}
                     placeholder="e.g. Elara Moonwhisper"
                   />
                   {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
                     onMouseEnter={e => showTooltip(tipBox('Title', 'An optional honorific like "the Brave" or "Shadowbane." The DM uses it alongside your name in narration — e.g. "Aria the Brave steps forward…"', '#c4b5fd'), e)}
                     onMouseLeave={hideTooltip}>
-                    Title <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional)</span>
+                    Title <span style={{ fontSize: '0.78rem', color: '#475569' }}>(optional)</span>
                   </label>
                   <input
                     type="text" value={character.title} maxLength={40}
                     onChange={e => setCharacter(c => ({ ...c, title: e.target.value }))}
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1rem' }}
+                    style={{ width: '100%', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1.05rem' }}
                     placeholder="e.g. the Brave"
                   />
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Race', 'Your character\'s ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.', '#c4b5fd'), e)}
                   onMouseLeave={hideTooltip}>Race</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
                   {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
                     <div key={race}
                       onClick={() => setCharacter(c => ({ ...c, race }))}
                       onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
                       onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
-                      style={{ padding: '14px 10px', borderRadius: '10px', border: `1px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : hoveredRace === race ? 'rgba(139,92,246,0.08)' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.race === race ? 'translateY(-3px)' : hoveredRace === race ? 'translateY(-1px)' : 'none', boxShadow: character.race === race ? '0 6px 22px rgba(139,92,246,0.35)' : 'none' }}>
-                      <div style={{ fontSize: '1.5rem', marginBottom: '5px', lineHeight: 1 }}>{RACE_EMOJI[race] ?? '🧙'}</div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: character.race === race ? 700 : 400, color: character.race === race ? '#c4b5fd' : 'inherit' }}>{race}</div>
+                      style={{ padding: '20px 10px', borderRadius: '12px', border: `1px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : hoveredRace === race ? 'rgba(139,92,246,0.08)' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.race === race ? 'translateY(-3px)' : hoveredRace === race ? 'translateY(-1px)' : 'none', boxShadow: character.race === race ? '0 6px 22px rgba(139,92,246,0.35)' : 'none' }}>
+                      <div style={{ fontSize: '2rem', marginBottom: '7px', lineHeight: 1 }}>{RACE_EMOJI[race] ?? '🧙'}</div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: character.race === race ? 700 : 400, color: character.race === race ? '#c4b5fd' : 'inherit' }}>{race}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', cursor: 'help' }}
+                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Sex / Pronouns', 'Sets the pronouns the DM uses when narrating your character\'s actions — he/him, she/her, or they/them.', '#c4b5fd'), e)}
                   onMouseLeave={hideTooltip}>Sex</label>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -592,7 +592,7 @@ export default function CreateCharacter() {
                     <div key={s} onClick={() => setCharacter(c => ({ ...c, sex: s }))}
                       onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, '#c4b5fd'), e)}
                       onMouseLeave={hideTooltip}
-                      style={{ flex: 1, padding: '14px', borderRadius: '8px', border: `1px solid ${character.sex === s ? 'var(--primary)' : 'var(--border)'}`, background: character.sex === s ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', textTransform: 'capitalize' }}>
+                      style={{ flex: 1, padding: '16px', borderRadius: '8px', border: `1px solid ${character.sex === s ? 'var(--primary)' : 'var(--border)'}`, background: character.sex === s ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', textTransform: 'capitalize', fontSize: '0.95rem' }}>
                       {s}
                     </div>
                     );
@@ -624,20 +624,20 @@ export default function CreateCharacter() {
           {step === 2 && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Class</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem' }}>Class</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
                   {['Fighter', 'Wizard', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Barbarian', 'Druid', 'Monk', 'Sorcerer'].map(cls => {
                     const ct = CLASS_TIPS[cls];
                     const clsColor = CLASS_COLORS[cls] ?? '#8b5cf6';
                     return (
                     <div key={cls}
                       onClick={() => handleClassSelect(cls)}
-                      onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(<div style={{ background: "#12101f", border: `1px solid ${clsColor}44`, borderRadius: "8px", padding: "9px 13px", fontSize: "0.76rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "240px" }}><div style={{ fontWeight: 700, color: clsColor, marginBottom: "3px" }}>{ct.title}</div><div style={{ color: "#64748b", fontSize: "0.68rem", marginBottom: "5px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></div>, e); }}
+                      onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(tipBoxNode(ct.title, <><div style={{ color: "#64748b", fontSize: "0.9em", marginBottom: "4px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></>, clsColor), e); }}
                       onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
-                      style={{ padding: '14px 8px', borderRadius: '10px', border: `1px solid ${character.class === cls ? clsColor : hoveredClass === cls ? clsColor + '77' : 'var(--border)'}`, background: character.class === cls ? clsColor + '22' : hoveredClass === cls ? clsColor + '11' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.class === cls ? 'translateY(-3px)' : hoveredClass === cls ? 'translateY(-1px)' : 'none', boxShadow: character.class === cls ? `0 6px 22px ${clsColor}44` : 'none' }}>
-                      <div style={{ fontSize: '1.3rem', marginBottom: '4px', lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? '⚔️'}</div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: character.class === cls ? 700 : 400, color: character.class === cls ? clsColor : 'inherit' }}>{cls}</div>
-                      {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.55rem', color: '#8b5cf6', marginTop: '3px', letterSpacing: '0.05em', fontWeight: 700 }}>✦ SPELL</div>}
+                      style={{ padding: '18px 8px', borderRadius: '12px', border: `1px solid ${character.class === cls ? clsColor : hoveredClass === cls ? clsColor + '77' : 'var(--border)'}`, background: character.class === cls ? clsColor + '22' : hoveredClass === cls ? clsColor + '11' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.class === cls ? 'translateY(-3px)' : hoveredClass === cls ? 'translateY(-1px)' : 'none', boxShadow: character.class === cls ? `0 6px 22px ${clsColor}44` : 'none' }}>
+                      <div style={{ fontSize: '1.7rem', marginBottom: '6px', lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? '⚔️'}</div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: character.class === cls ? 700 : 400, color: character.class === cls ? clsColor : 'inherit' }}>{cls}</div>
+                      {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px', letterSpacing: '0.05em', fontWeight: 700 }}>✦ SPELL</div>}
                     </div>
                     );
                   })}
@@ -878,16 +878,16 @@ export default function CreateCharacter() {
           {step === 4 && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8' }}>Primary Weapon</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem' }}>Primary Weapon</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
                   {['Longsword', 'Shortbow', 'Staff', 'Daggers (x2)', 'Warhammer', 'Crossbow'].map(w => (
                     <div key={w}
                       onClick={() => setCharacter(c => ({ ...c, weapon: w }))}
                       onMouseEnter={e => { const t = WEAPON_TIPS[w]; if (t) showTooltip(tipBox(t.title, t.body, '#f59e0b'), e); }}
                       onMouseLeave={hideTooltip}
-                      style={{ padding: '18px 12px', borderRadius: '10px', border: `1px solid ${character.weapon === w ? '#f59e0b' : 'var(--border)'}`, background: character.weapon === w ? 'rgba(245,158,11,0.15)' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.weapon === w ? 'translateY(-3px)' : 'none', boxShadow: character.weapon === w ? '0 6px 22px rgba(245,158,11,0.3)' : 'none' }}>
-                      <div style={{ fontSize: '1.6rem', marginBottom: '7px', lineHeight: 1 }}>{WEAPON_EMOJI[w] ?? '⚔️'}</div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: character.weapon === w ? 700 : 400, color: character.weapon === w ? '#f59e0b' : 'inherit' }}>{w}</div>
+                      style={{ padding: '22px 12px', borderRadius: '12px', border: `1px solid ${character.weapon === w ? '#f59e0b' : 'var(--border)'}`, background: character.weapon === w ? 'rgba(245,158,11,0.15)' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.weapon === w ? 'translateY(-3px)' : 'none', boxShadow: character.weapon === w ? '0 6px 22px rgba(245,158,11,0.3)' : 'none' }}>
+                      <div style={{ fontSize: '2rem', marginBottom: '8px', lineHeight: 1 }}>{WEAPON_EMOJI[w] ?? '⚔️'}</div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: character.weapon === w ? 700 : 400, color: character.weapon === w ? '#f59e0b' : 'inherit' }}>{w}</div>
                     </div>
                   ))}
                 </div>
