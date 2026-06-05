@@ -390,6 +390,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [selectedVoice,    setSelectedVoice]     = useState<string>("bard");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
   const [testingVoice,     setTestingVoice]      = useState<string | null>(null);
+  const [narVolume,        setNarVolume]         = useState<number>(() => parseFloat(localStorage.getItem("dnd_nar_volume") ?? "1"));
+  const [narMuted,         setNarMuted]          = useState<boolean>(() => localStorage.getItem("dnd_nar_muted") === "1");
+  const narVolumeRef = useRef<number>(1);
+  const narMutedRef  = useRef<boolean>(false);
   const [passTurnOpen,     setPassTurnOpen]      = useState(false);
   const selectedVoiceRef = useRef<string>("bard");
   const previewAudioRef  = useRef<HTMLAudioElement | null>(null);
@@ -751,6 +755,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => { isTypingRef.current         = isTyping;         }, [isTyping]);
   useEffect(() => { narrationEnabledRef.current = narrationEnabled;  }, [narrationEnabled]);
   useEffect(() => { window.__dndDuckAudio?.(narrating); }, [narrating]);
+  useEffect(() => {
+    narVolumeRef.current = narVolume;
+    if (narAudioRef.current) narAudioRef.current.volume = narMutedRef.current ? 0 : narVolume;
+    localStorage.setItem("dnd_nar_volume", String(narVolume));
+  }, [narVolume]);
+  useEffect(() => {
+    narMutedRef.current = narMuted;
+    if (narAudioRef.current) narAudioRef.current.volume = narMuted ? 0 : narVolumeRef.current;
+    localStorage.setItem("dnd_nar_muted", narMuted ? "1" : "0");
+  }, [narMuted]);
   useEffect(() => {
     if (!toastMsg) return;
     const t = setTimeout(() => setToastMsg(null), 8000);
@@ -1540,6 +1554,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     el.onended = cleanup;
     el.onerror = cleanup;
+    el.volume  = narMutedRef.current ? 0 : narVolumeRef.current;
     el.src = entry as string;
     // Wait for canplaythrough (same pattern as working ambiance player) before calling play().
     // Xbox Edge requires the browser to confirm data is available; calling play() immediately
@@ -3162,6 +3177,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A+</button>
           </div>
+          {/* Narrator mute button — shown only when narration is on */}
+          {narrationEnabled && (
+            <button
+              onClick={() => setNarMuted(m => !m)}
+              title={narMuted ? "Unmute narrator" : "Mute narrator"}
+              style={{ background: narMuted ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${narMuted ? "rgba(239,68,68,0.4)" : "var(--border)"}`, borderRadius: "8px", width: "36px", height: "36px", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: narMuted ? "#f87171" : "#94a3b8", flexShrink: 0, transition: "all 0.2s" }}
+            >
+              {narMuted ? "🔇" : "🔈"}
+            </button>
+          )}
           {/* Voice/narration picker */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <button
@@ -3213,7 +3238,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </button>
                   </div>
                 ))}
-                <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", padding: "8px 10px 4px" }}>
+                  {/* Narrator volume slider */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                    <button
+                      onClick={() => setNarMuted(m => !m)}
+                      title={narMuted ? "Unmute narrator" : "Mute narrator"}
+                      style={{ flexShrink: 0, width: "22px", fontSize: "0.85rem", background: "none", border: "none", cursor: "pointer", color: narMuted ? "#f87171" : "#94a3b8", padding: 0, lineHeight: 1 }}
+                    >
+                      {narMuted ? "🔇" : narVolume < 0.4 ? "🔈" : "🔊"}
+                    </button>
+                    <input
+                      type="range" min={0} max={1} step={0.02}
+                      value={narMuted ? 0 : narVolume}
+                      onChange={e => { const v = parseFloat(e.target.value); if (narMuted && v > 0) setNarMuted(false); setNarVolume(v === 0 ? narVolume : v); if (v === 0) setNarMuted(true); }}
+                      style={{ flex: 1, accentColor: "#8b5cf6", cursor: "pointer", height: "4px" }}
+                    />
+                    <span style={{ fontSize: "0.65rem", color: "#64748b", minWidth: "28px", textAlign: "right" }}>
+                      {narMuted ? "Off" : `${Math.round(narVolume * 100)}%`}
+                    </span>
+                  </div>
                   <button onClick={() => { if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; } audioPlayingRef.current = false; setNarrating(false); setNarrationEnabled(false); setVoicePickerOpen(false); }}
                     style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", borderRadius: "7px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.75rem", color: "#64748b", transition: "color 0.15s" }}
                     onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; }}
