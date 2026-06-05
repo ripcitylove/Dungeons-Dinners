@@ -403,8 +403,10 @@ export function MusicPlayer() {
 
   const [playing,       setPlaying]       = useState(false);
   const [loadError,     setLoadError]     = useState(false);
-  const [volume,        setVolume]        = useState(0.10);
-  const [ambianceVol,   setAmbianceVol]   = useState(0.35);
+  const [volume,        setVolume]        = useState(() => parseFloat(localStorage.getItem("dnd_music_vol") ?? "0.10"));
+  const [ambianceVol,   setAmbianceVol]   = useState(() => parseFloat(localStorage.getItem("dnd_ambiance_vol") ?? "0.35"));
+  const [musicMuted,    setMusicMuted]    = useState(() => localStorage.getItem("dnd_music_muted") === "1");
+  const [ambianceMuted, setAmbianceMuted] = useState(() => localStorage.getItem("dnd_ambiance_muted") === "1");
   const [ambianceReady, setAmbianceReady] = useState(false);
   const [poolLabel,     setPoolLabel]     = useState("Tavern");
   const [pickerOpen,    setPickerOpen]    = useState(false);
@@ -424,6 +426,8 @@ export function MusicPlayer() {
   const ambianceErrors     = useRef(0);
   const isDucked           = useRef(false);
   const duckFadeTimer      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const musicMutedRef      = useRef(false);
+  const ambianceMutedRef   = useRef(false);
 
   const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
@@ -505,8 +509,8 @@ export function MusicPlayer() {
     clearDuckFade();
     // Duck to 20% of user-set volume; restore to full target on unduck
     const DUCK_RATIO = 0.20;
-    const musicTarget = duck ? targetVolume.current * DUCK_RATIO    : targetVolume.current;
-    const ambiTarget  = duck ? targetAmbianceV.current * DUCK_RATIO : targetAmbianceV.current;
+    const musicTarget = duck ? (musicMutedRef.current ? 0 : targetVolume.current * DUCK_RATIO) : (musicMutedRef.current ? 0 : targetVolume.current);
+    const ambiTarget  = duck ? (ambianceMutedRef.current ? 0 : targetAmbianceV.current * DUCK_RATIO) : (ambianceMutedRef.current ? 0 : targetAmbianceV.current);
     duckFadeTimer.current = setInterval(() => {
       let settled = true;
       const music = audioRef.current;
@@ -645,13 +649,27 @@ export function MusicPlayer() {
 
   useEffect(() => {
     targetVolume.current = volume;
-    if (audioRef.current && !isDucked.current) audioRef.current.volume = volume;
+    if (audioRef.current && !isDucked.current) audioRef.current.volume = musicMutedRef.current ? 0 : volume;
+    localStorage.setItem("dnd_music_vol", String(volume));
   }, [volume]);
 
   useEffect(() => {
     targetAmbianceV.current = ambianceVol;
-    if (ambianceRef.current && !ambianceRef.current.paused && !isDucked.current) ambianceRef.current.volume = ambianceVol;
+    if (ambianceRef.current && !ambianceRef.current.paused && !isDucked.current) ambianceRef.current.volume = ambianceMutedRef.current ? 0 : ambianceVol;
+    localStorage.setItem("dnd_ambiance_vol", String(ambianceVol));
   }, [ambianceVol]);
+
+  useEffect(() => {
+    musicMutedRef.current = musicMuted;
+    if (audioRef.current && !isDucked.current) audioRef.current.volume = musicMuted ? 0 : targetVolume.current;
+    localStorage.setItem("dnd_music_muted", musicMuted ? "1" : "0");
+  }, [musicMuted]);
+
+  useEffect(() => {
+    ambianceMutedRef.current = ambianceMuted;
+    if (ambianceRef.current && !ambianceRef.current.paused && !isDucked.current) ambianceRef.current.volume = ambianceMuted ? 0 : targetAmbianceV.current;
+    localStorage.setItem("dnd_ambiance_muted", ambianceMuted ? "1" : "0");
+  }, [ambianceMuted]);
 
   const toggle = useCallback(() => {
     const audio = audioRef.current;
@@ -878,27 +896,45 @@ export function MusicPlayer() {
                 </button>
               )}
 
-              {/* Music volume */}
+              {/* Music mute + volume */}
               {playing && (
-                <input
-                  type="range" min={0} max={1} step={0.05} value={volume}
-                  onChange={e => setVolume(parseFloat(e.target.value))}
-                  title="Music volume"
-                  style={{ width: "70px", height: "18px", accentColor: "var(--primary)", cursor: "pointer" }}
-                />
+                <>
+                  <button
+                    onClick={() => setMusicMuted(m => !m)}
+                    title={musicMuted ? "Unmute music" : "Mute music"}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.85rem", color: musicMuted ? "#f87171" : "#475569", padding: "0 1px", lineHeight: 1, flexShrink: 0, transition: "color 0.2s" }}
+                  >
+                    {musicMuted ? "🔇" : volume < 0.35 ? "🔈" : "🔊"}
+                  </button>
+                  <input
+                    type="range" min={0} max={1} step={0.05}
+                    value={musicMuted ? 0 : volume}
+                    onChange={e => { const v = parseFloat(e.target.value); if (musicMuted && v > 0) setMusicMuted(false); if (v > 0) setVolume(v); else setMusicMuted(true); }}
+                    title="Music volume"
+                    style={{ width: "62px", height: "18px", accentColor: "var(--primary)", cursor: "pointer" }}
+                  />
+                </>
               )}
             </>
           )}
 
-          {/* Ambiance volume */}
+          {/* Ambiance mute + volume */}
           {ambianceReady && (
             <>
               <span style={{ fontSize: "0.65rem", color: "#475569", whiteSpace: "nowrap" }}>🌫</span>
+              <button
+                onClick={() => setAmbianceMuted(m => !m)}
+                title={ambianceMuted ? "Unmute ambiance" : "Mute ambiance"}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.85rem", color: ambianceMuted ? "#f87171" : "#475569", padding: "0 1px", lineHeight: 1, flexShrink: 0, transition: "color 0.2s" }}
+              >
+                {ambianceMuted ? "🔇" : "🔈"}
+              </button>
               <input
-                type="range" min={0} max={1} step={0.05} value={ambianceVol}
-                onChange={e => setAmbianceVol(parseFloat(e.target.value))}
+                type="range" min={0} max={1} step={0.05}
+                value={ambianceMuted ? 0 : ambianceVol}
+                onChange={e => { const v = parseFloat(e.target.value); if (ambianceMuted && v > 0) setAmbianceMuted(false); if (v > 0) setAmbianceVol(v); else setAmbianceMuted(true); }}
                 title="Ambiance volume"
-                style={{ width: "62px", height: "18px", accentColor: "#64748b", cursor: "pointer" }}
+                style={{ width: "56px", height: "18px", accentColor: "#64748b", cursor: "pointer" }}
               />
             </>
           )}

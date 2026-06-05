@@ -196,7 +196,7 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
     if (firstName.length < 2) continue;
     const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // "[Name], what do you do?" or "your move, [Name]?" or any call-to-action addressed to Name
-    const actionPrompt = `what (?:else )?(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
+    const actionPrompt = `what (?:\\w+ ){0,4}(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|which (?:\\w+ ){0,4}(?:do|will|would|shall) you|(?:do|would|will) you (?:like|want|wish|prefer|choose|pick|decide|select)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment|decision|call) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
     const re = new RegExp(
       `\\b${esc}\\b[^\\n]{0,120}(?:${actionPrompt})` +
       `|(?:${actionPrompt})[^\\n]{0,120}\\b${esc}\\b`,
@@ -2239,6 +2239,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
             if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
             channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+          }
+        } else if (opts?.prevPlayerName) {
+          // No explicit next-player found — check if the DM's closing question is directed at the
+          // previous player (follow-up: "Shmang, what element would you like?"). If so, rewind to them.
+          const prevChar = campaignPartyRef.current.find(c => c.name === opts.prevPlayerName);
+          if (prevChar) {
+            const prevIdx = turnOrderRef.current.indexOf(prevChar.id);
+            if (prevIdx >= 0 && prevIdx !== currentTurnIndexRef.current) {
+              const tail = full.slice(-350);
+              const firstName = prevChar.name.split(" ")[0];
+              const escPrev = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              // Last ? in the tail — check if the player's name and "you/your" both appear near it
+              const lastQIdx = tail.lastIndexOf("?");
+              if (lastQIdx >= 0) {
+                const nearQ = tail.slice(Math.max(0, lastQIdx - 220), lastQIdx + 1);
+                const isFollowUp = new RegExp(`\\b${escPrev}\\b`, "i").test(nearQ)
+                  && /\byou(?:r)?\b/i.test(nearQ);
+                if (isFollowUp) {
+                  if (roundActionsRef.current.some(a => a.characterId === prevChar.id)) {
+                    roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevChar.id);
+                    setRoundActions([...roundActionsRef.current]);
+                  }
+                  setCurrentTurnIndex(prevIdx);
+                  currentTurnIndexRef.current = prevIdx;
+                  channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
+                  const partyIdx = campaignPartyRef.current.findIndex(c => c.id === prevChar.id);
+                  if (partyIdx >= 0) setActiveCharIdx(partyIdx);
+                }
+              }
+            }
           }
         }
       }
