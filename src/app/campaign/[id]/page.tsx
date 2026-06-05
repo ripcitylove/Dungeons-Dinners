@@ -3051,6 +3051,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     // Resumed campaign: replay the last DM message so the player hears where
                     // things left off. Never trigger a new AI call here — the AI sees the
                     // "[Campaign resumed...]" message as player input and generates nonsense.
+
+                    // Re-derive the active turn from the DM's last message. The DB-saved
+                    // current_turn_index reflects the pre-advance that fired before the AI
+                    // responded — if the player navigated away before the in-session correction
+                    // could persist, the wrong player ends up as "Acting" on resume.
+                    if (resumeNarrationRef.current && turnOrderRef.current.length > 1) {
+                      const partyNames = campaignPartyRef.current.map(c => c.name);
+                      const dmTurnName = detectNextTurnPlayer(resumeNarrationRef.current, partyNames);
+                      const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
+                      if (dmTurnChar) {
+                        const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+                        if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
+                          setCurrentTurnIndex(dmTurnIdx);
+                          currentTurnIndexRef.current = dmTurnIdx;
+                          const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+                          if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+                        }
+                      }
+                    }
+
                     setSessionStarted(true);
                     if (resumeNarrationRef.current) {
                       enqueueNarration(resumeNarrationRef.current);
