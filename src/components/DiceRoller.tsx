@@ -177,12 +177,12 @@ function DieFace({
         <div style={{ position: "relative", zIndex: 2 }}>
           <span style={{
             fontSize: numberSize ?? "2.8rem",
-            fontWeight: 900,
+            fontWeight: 700,
             color: numberColor ?? "rgba(255,255,255,0.95)",
             lineHeight: 1,
             textShadow: `0 0 16px ${glow}, 0 2px 6px rgba(0,0,0,0.75), 0 1px 0 rgba(0,0,0,0.9)`,
-            letterSpacing: "-0.02em",
-            fontFamily: "Georgia, 'Times New Roman', serif",
+            letterSpacing: "0.04em",
+            fontFamily: "var(--font-cinzel, 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif)",
           }}>
             {numberValue}
           </span>
@@ -199,20 +199,15 @@ export default function DiceRoller({
   requiredDice,
   requiredRollMode,
   rollContext,
-  autoRoll,
 }: {
   onRollComplete: (result: number, diceType: number, description?: string) => void;
   onCancel?: () => void;
   requiredDice?: number | null;
   requiredRollMode?: "normal" | "advantage" | "disadvantage" | null;
   rollContext?: string | null;
-  autoRoll?: boolean;
 }) {
-  // Skip idle selection when a specific die is required — go straight to rolling
-  const skipIdle = !!(autoRoll && requiredDice);
-
-  const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(skipIdle ? requiredDice as DieSides : null);
-  const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">(skipIdle ? "rolling" : "idle");
+  const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(null);
+  const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">("idle");
   const [result,       setResult]       = useState<number | null>(null);
   const [altResult,    setAltResult]    = useState<number | null>(null);
   const [displayNum,   setDisplayNum]   = useState<number | null>(null);
@@ -289,15 +284,6 @@ export default function DiceRoller({
     }
     executeRoll(sides);
   }, [phase, requiredDice, executeRoll]);
-
-  // Auto-roll: when skipIdle, trigger immediately on mount
-  useEffect(() => {
-    if (!skipIdle || !requiredDice) return;
-    if (!(DICE_SIDES as readonly number[]).includes(requiredDice)) return;
-    const t = setTimeout(() => executeRoll(requiredDice as DieSides), 300);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => () => { if (countupRef.current) clearInterval(countupRef.current); }, []);
 

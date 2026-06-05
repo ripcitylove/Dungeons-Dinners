@@ -360,7 +360,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND RECONCILIATION — ALL PLAYERS HAVE ACTED]\nEvery player has taken their action this round. Here is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nNow perform a FULL ROUND RESOLUTION:\n1. Resolve the player actions listed above — narrate each one's outcome.\n2. Each living enemy takes their turn — roll attacks against appropriate party members, state roll, hit/miss, exact damage.\n3. Apply ongoing effects, concentration checks, end-of-round conditions.\n4. Narrate the complete round outcome vividly.\n5. Close the narration naturally — set the scene for the next round. Do NOT end with "[Name], what do you do?" The turn system already knows who acts next and will prompt them automatically. Ending with that question causes the player to be asked twice.\n`
+    ? `\n[ROUND COMPLETE — ALL PLAYERS HAVE ACTED]\nHere is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nTell the story — do NOT announce you are resolving a round, do NOT number your steps, do NOT say "resolving", "processing", or any meta-commentary about game mechanics. Narrate each action's outcome vividly, have every living enemy attack an appropriate party member and state the result and exact damage, apply ongoing effects and conditions naturally, then close with the new scene setup. Do NOT end with "[Name], what do you do?" — the engine prompts the next player automatically.\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation

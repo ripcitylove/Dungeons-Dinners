@@ -2998,7 +2998,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} autoRoll={!!requiredDiceType} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}
@@ -3773,7 +3773,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             return (
                               <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "3px" }}>
                                 <span style={{ fontSize: fs(0.58), color: "#94a3b8", marginRight: "2px", fontWeight: 700 }}>L{lvl}</span>
-                                {Array.from({ length: max }, (_, i) => (
+                                {max <= 8 ? Array.from({ length: max }, (_, i) => (
                                   <div key={i} style={{
                                     width: "13px", height: "13px", borderRadius: "50%",
                                     background: i < avail ? "#8b5cf6" : "transparent",
@@ -3781,7 +3781,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     transition: "all 0.2s",
                                     boxShadow: i < avail ? "0 0 6px rgba(139,92,246,0.75)" : "none",
                                   }} />
-                                ))}
+                                )) : null}
+                                <span style={{ fontSize: fs(0.6), color: avail > 0 ? "#a78bfa" : "#ef4444", fontWeight: 700, marginLeft: "2px" }}>{avail}/{max}</span>
                               </div>
                             );
                           })}
