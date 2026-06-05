@@ -168,9 +168,10 @@ function makeSupabase(authHeader: string | null) {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization");
-    const { race, cls, sex, charId, title, alignment, background } = (await req.json()) as {
+    const { race, cls, sex, charId, title, alignment, background, force } = (await req.json()) as {
       race: string; cls: string; sex: string; charId: string;
       title?: string | null; alignment?: string | null; background?: string | null;
+      force?: boolean;
     };
 
     if (!charId?.trim()) return Response.json({ error: "Missing charId" }, { status: 400 });
@@ -178,14 +179,20 @@ export async function POST(req: NextRequest) {
     const supabaseCheck = makeSupabase(authHeader);
     const path = `${charId}.png`;
 
-    // Return cached portrait if it already exists
-    const { data: existing } = await supabaseCheck.storage.from("portraits").list("", { search: charId });
-    const cached = existing?.find(f => f.name === path);
-    if (cached) {
-      const { data: { publicUrl } } = supabaseCheck.storage.from("portraits").getPublicUrl(path);
-      // Ensure the DB row is also updated (in case a prior run uploaded but didn't update)
-      await supabaseCheck.from("characters").update({ portrait_url: publicUrl }).eq("id", charId).is("portrait_url", null);
-      return Response.json({ url: publicUrl, stored: true, cached: true });
+    if (!force) {
+      // Return cached portrait if it already exists
+      const { data: existing } = await supabaseCheck.storage.from("portraits").list("", { search: charId });
+      const cached = existing?.find(f => f.name === path);
+      if (cached) {
+        const { data: { publicUrl } } = supabaseCheck.storage.from("portraits").getPublicUrl(path);
+        // Ensure the DB row is also updated (in case a prior run uploaded but didn't update)
+        await supabaseCheck.from("characters").update({ portrait_url: publicUrl }).eq("id", charId).is("portrait_url", null);
+        return Response.json({ url: publicUrl, stored: true, cached: true });
+      }
+    } else {
+      // Force regenerate — delete existing cached file first
+      await supabaseCheck.storage.from("portraits").remove([path]);
+      await supabaseCheck.from("characters").update({ portrait_url: null }).eq("id", charId);
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

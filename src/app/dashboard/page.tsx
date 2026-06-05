@@ -73,6 +73,24 @@ function CharacterModal({
   const [editTitle, setEditTitle]         = useState(char.title ?? "");
   const [editBackground, setEditBackground] = useState(char.background ?? "");
   const [editSaving, setEditSaving]       = useState(false);
+  const [regenLoading, setRegenLoading]   = useState(false);
+  const [regenPortrait, setRegenPortrait] = useState(char.portrait_url ?? null);
+
+  const handleRegenPortrait = async () => {
+    setRegenLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/generate-portrait", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ race: char.race, cls: char.class, sex: char.sex ?? "male", charId: char.id, title: char.title, background: char.background, force: true }),
+      });
+      const json = await res.json();
+      if (json.url) { setRegenPortrait(json.url); onUpdate(char.id, { portrait_url: json.url }); }
+    } finally {
+      setRegenLoading(false);
+    }
+  };
 
   const handleEditSave = async () => {
     setEditSaving(true);
@@ -102,16 +120,26 @@ function CharacterModal({
         {/* Header */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px", marginBottom: "28px" }}>
           {/* Portrait — large and centered */}
-          <div style={{
-            width: "160px", height: "160px", flexShrink: 0, borderRadius: "50%", overflow: "hidden",
-            border: `3px solid ${CLASS_COLORS[char.class] ?? "var(--border)"}`,
-            boxShadow: `0 0 32px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}44, 0 0 80px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}18`,
-            background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            {char.portrait_url
-              ? <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-              : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[char.class] ?? "#6b7280"}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
-            }
+          <div style={{ position: "relative", width: "160px", height: "160px", flexShrink: 0 }}>
+            <div style={{
+              width: "160px", height: "160px", borderRadius: "50%", overflow: "hidden",
+              border: `3px solid ${CLASS_COLORS[char.class] ?? "var(--border)"}`,
+              boxShadow: `0 0 32px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}44, 0 0 80px ${CLASS_COLORS[char.class] ?? "#8b5cf6"}18`,
+              background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {regenPortrait
+                ? <img src={regenPortrait} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                : <div style={{ width: "100%", height: "100%", background: `${CLASS_COLORS[char.class] ?? "#6b7280"}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "4rem" }}>🧙</div>
+              }
+            </div>
+            <button
+              onClick={handleRegenPortrait}
+              disabled={regenLoading}
+              title="Regenerate portrait"
+              style={{ position: "absolute", bottom: "6px", right: "6px", width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(0,0,0,0.75)", color: "white", cursor: regenLoading ? "default" : "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, opacity: regenLoading ? 0.5 : 0.85, transition: "opacity 0.2s" }}
+            >
+              {regenLoading ? "…" : "↻"}
+            </button>
           </div>
           {/* Name + subtitle */}
           <div style={{ textAlign: "center" }}>
