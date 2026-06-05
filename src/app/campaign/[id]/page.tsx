@@ -1156,8 +1156,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         };
         const merge = (c: Character) => ({
           ...c,
-          hp:      p.hp,
-          max_hp:  p.max_hp,
+          // Only overwrite hp/max_hp when they are present — partial broadcasts (e.g. fast spell
+          // detection) only send spell_slots_used and must not wipe the existing hp values.
+          ...(p.hp               !== undefined && { hp:               p.hp               }),
+          ...(p.max_hp           !== undefined && { max_hp:           p.max_hp           }),
           ...(p.xp               !== undefined && { xp:               p.xp               }),
           ...(p.level            !== undefined && { level:            p.level            }),
           ...(p.inventory        !== undefined && { inventory:        p.inventory        }),
@@ -1363,36 +1365,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const isActingChar = wasPrevActingChar || isCurrentTurnChar;
     console.log("[applyStateChange] acting", { wasPrevActingChar, isCurrentTurnChar, isActingChar, prevActingCharId: prevActingCharIdRef.current, charId: char.id, turnLen: turnOrderRef.current.length });
 
-    // HP: null target_name means DM said "you take X damage" — only apply to the acting character.
-    // Named target must match this character. Supports first-name-only: "Aria" → "Aria Windwalker".
-    if (change.hp_delta !== 0) {
-      const hpApplies = change.target_name
-        ? charNameMatches(change.target_name, char.name)
-        : isActingChar;
-      console.log("[applyStateChange] hp_delta", change.hp_delta, "hpApplies", hpApplies, "target_name", change.target_name);
-      if (!hpApplies) change = { ...change, hp_delta: 0 };
-    }
+    // Targeting helpers — computed once, used for every field below.
+    // isExplicitTarget: DM named this exact character.
+    // isImplicitTarget: DM said "you" (no name) and this is the acting character.
+    // isEffectiveTarget: this character is the recipient (either explicit or implicit).
+    const isExplicitTarget = !!change.target_name && charNameMatches(change.target_name, char.name);
+    const isImplicitTarget = !change.target_name && isActingChar;
+    const isEffectiveTarget = isExplicitTarget || isImplicitTarget;
 
-    // Non-HP changes: skip entirely if the DM explicitly named a DIFFERENT character.
-    if (change.target_name && !charNameMatches(change.target_name, char.name)) {
-      console.log("[applyStateChange] skipping — different target", change.target_name, "vs", char.name);
-      return;
+    // HP: only applies when this character is the recipient.
+    if (change.hp_delta !== 0 && !isEffectiveTarget) {
+      change = { ...change, hp_delta: 0 };
     }
-    const isExplicitTarget = !!change.target_name;
+    console.log("[applyStateChange] hp_delta", change.hp_delta, "isEffectiveTarget", isEffectiveTarget, "target_name", change.target_name);
 
-    // Spell slots and status effects: apply when named explicitly OR this is the acting character.
-    const shouldApplySlots = isExplicitTarget || isActingChar;
-    // Check pending UI spell cast BEFORE hasChange so we don't early-return when shouldApplySlots is false
+    // Spell slots: ONLY the acting character (the caster) consumes slots.
+    // Observers learn about other players' slot changes via character_sync broadcast from the caster's client.
+    // Never gate on target_name — the target of healing is not the caster.
+    const shouldApplySlots = isActingChar;
+    // Check pending UI spell cast BEFORE hasChange so stuck pendingSpellCastRef always gets cleared.
     const hadPendingCast = pendingSpellCastRef.current > 0;
 
     const hasChange =
       change.hp_delta !== 0 ||
       (change.spell_slots_used > 0 && (shouldApplySlots || hadPendingCast)) ||
+      (isActingChar && hadPendingCast) || // always clear stuck pending cast on the acting char
       (isExplicitTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
         change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
         change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
       change.xp_award > 0;
-    console.log("[applyStateChange] hasChange", hasChange, { hp_delta: change.hp_delta, spell_slots_used: change.spell_slots_used, xp_award: change.xp_award, shouldApplySlots, hadPendingCast });
+    console.log("[applyStateChange] hasChange", hasChange, { hp_delta: change.hp_delta, spell_slots_used: change.spell_slots_used, xp_award: change.xp_award, shouldApplySlots, hadPendingCast, isEffectiveTarget, isActingChar });
     if (!hasChange) return;
 
     const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
@@ -1402,13 +1404,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const newItems   = isExplicitTarget ? [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained] : (char.inventory?.items ?? []);
     const newWeapons = isExplicitTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
 
-    // Status effects — only apply when explicitly targeting this character
+    // Status effects — unconscious tracks HP for any effective target; named conditions require explicit target.
     let newStatuses = [...(char.status_effects ?? [])];
-    if (isExplicitTarget) {
+    if (isEffectiveTarget) {
       if (newHp === 0 && change.hp_delta < 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
-      change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
-      newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+      if (isExplicitTarget) {
+        change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
+        newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+      }
     } else if (change.hp_delta !== 0) {
       if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
@@ -2300,9 +2304,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c));
               characterRef.current = fastChar;
               campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, spell_slots_used: used } : c);
-              // Mark as pending so applyStateChange won't double-deduct; record level for upcast reconciliation
+              // Mark as pending so applyStateChange won't double-deduct; record level for upcast reconciliation.
+              // Also persist to DB immediately — if applyStateChange encounters a target_name mismatch
+              // (e.g. caster healed a different character) the DB write there may be skipped.
               pendingSpellCastRef.current++;
               pendingSpellCastLevelRef.current = spellLvl;
+              charWriteRef.current?.(actingChar.id, { spell_slots_used: used });
               channelRef.current?.send({
                 type: "broadcast", event: "character_sync",
                 payload: { charId: actingChar.id, spell_slots_used: used },
