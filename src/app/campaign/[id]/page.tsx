@@ -2124,12 +2124,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         let rm: RegExpExecArray | null;
         while ((rm = rollSentRe.exec(full)) !== null) lastRollEnd = rm.index + rm[0].length;
         if (lastRollEnd > 0 && lastRollEnd < full.length - 1) {
+          // Narrate any pre-roll content still sitting in narBuf (< 40 chars, never matched
+          // the streaming regex) before clearing it — otherwise that content is silently lost.
+          if (narrationEnabledRef.current && !campaignLoadingRef.current) {
+            const rollInNarBuf = narBuf.search(/\broll\s+a\s+d\d+/i);
+            const preRoll = (rollInNarBuf > 0 ? narBuf.slice(0, rollInNarBuf) : narBuf).trim();
+            if (preRoll.length > 8) enqueueNarration(stripSystemLeaks(preRoll));
+          }
           full = full.slice(0, lastRollEnd).trim();
           narBuf = "";
         }
       }
 
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 30) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      // Enqueue any remaining narBuf — threshold is 8 chars (not 30) so short call-to-action
+      // sentences like "Your move!" or "What do you do?" are not silently dropped.
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
       // Route through narration-synced reveal when voice is active; add directly to messages otherwise
       if (narrationEnabledRef.current && !campaignLoadingRef.current) {
