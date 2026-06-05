@@ -185,6 +185,28 @@ const DAMAGE_RE = /\b\d+\s*(?:(?:slashing|piercing|bludgeoning|fire|cold|lightni
 const HEAL_RE   = /\b(?:regain[s]?|heal[s]?|restore[s]?|recover[s]?)\s+\d+\s*(?:hit\s*points?|hp)?\b|\b\d+\s*(?:hit\s*points?|hp)\s+(?:restored|recovered)\b/gi;
 // Roll math: "12 + 5 = 17", "8 + 3 + 2 = 13", or parenthetical "(d20: 12 + STR: +3)"
 const ROLL_RE   = /\b\d+(?:\s*[+\-]\s*\d+)+\s*=\s*\d+\b|\(\s*d(?:4|6|8|10|12|20):?\s*\d+[^)]{0,80}\)/gi;
+// Bonus modifier labels like [STR], [Prof], [Spell ATK], [+3 sword]
+const BONUS_LABEL_RE = /\[(?:STR|DEX|CON|INT|WIS|CHA|Prof|Spell ATK|Melee ATK|Ranged ATK|\+\d[^\]]*|-\d[^\]]*)\]/g;
+
+function getBonusTooltip(label: string): { title: string; body: string; accent: string } | null {
+  const inner = label.slice(1, -1).trim();
+  if (inner === "STR")       return { title: "Strength Modifier",      body: "Added to melee attack rolls, melee damage, and Athletics checks.",                                                          accent: "#f59e0b" };
+  if (inner === "DEX")       return { title: "Dexterity Modifier",     body: "Added to ranged/finesse attacks, initiative, Acrobatics, and Stealth.",                                                     accent: "#f59e0b" };
+  if (inner === "CON")       return { title: "Constitution Modifier",  body: "Affects hit points and saving throws to maintain concentration on spells.",                                                  accent: "#f59e0b" };
+  if (inner === "INT")       return { title: "Intelligence Modifier",  body: "Used for Arcana, History, Investigation, and Wizard spellcasting.",                                                          accent: "#f59e0b" };
+  if (inner === "WIS")       return { title: "Wisdom Modifier",        body: "Used for Perception, Insight, Medicine, and Cleric/Druid/Ranger spellcasting.",                                             accent: "#f59e0b" };
+  if (inner === "CHA")       return { title: "Charisma Modifier",      body: "Used for Persuasion, Deception, Performance, and Bard/Sorcerer/Warlock/Paladin spellcasting.",                              accent: "#f59e0b" };
+  if (inner === "Prof")      return { title: "Proficiency Bonus",      body: "+2 at levels 1–4 · +3 at 5–8 · +4 at 9–12. Added to attack rolls, skill checks, and saves you are trained in.",            accent: "#22c55e" };
+  if (inner === "Spell ATK") return { title: "Spell Attack Bonus",     body: "Spellcasting ability mod + proficiency bonus. Roll d20 + this value vs. target AC to land a spell attack.",                 accent: "#8b5cf6" };
+  if (inner === "Melee ATK") return { title: "Melee Attack Bonus",     body: "STR modifier (or DEX for finesse weapons) + proficiency bonus. Added to melee weapon attack rolls.",                        accent: "#f59e0b" };
+  if (inner === "Ranged ATK")return { title: "Ranged Attack Bonus",    body: "DEX modifier + proficiency bonus. Added to ranged weapon attack rolls.",                                                     accent: "#f59e0b" };
+  const magic = inner.match(/^([+-]\d+)(?:\s+(.+))?$/);
+  if (magic) {
+    const mod = magic[1], item = magic[2] ?? "magic item";
+    return { title: `${mod} Magic Bonus`, body: `Enchantment bonus from your ${item}. Adds ${mod} to both attack rolls and damage.`, accent: "#fbbf24" };
+  }
+  return null;
+}
 
 // Detect which player the DM is addressing at the end of a response.
 // Returns the matching full name from partyNames, or null.
@@ -269,8 +291,13 @@ function RevealText({ text, onComplete, intervalMs = 50 }: { text: string; onCom
   );
 }
 
-function ColorizedText({ text, playerColors = {} }: { text: string; playerColors?: Record<string, string> }) {
-  type Seg = { start: number; end: number; color: string; tooltip?: string };
+function ColorizedText({ text, playerColors = {}, onShowTooltip, onHideTooltip }: {
+  text: string;
+  playerColors?: Record<string, string>;
+  onShowTooltip?: (content: React.ReactNode, e: React.MouseEvent) => void;
+  onHideTooltip?: () => void;
+}) {
+  type Seg = { start: number; end: number; color: string; tooltip?: string; richTooltip?: { title: string; body: string; accent: string } };
   const segs: Seg[] = [];
   let m: RegExpExecArray | null;
   DAMAGE_RE.lastIndex = 0;
@@ -279,6 +306,11 @@ function ColorizedText({ text, playerColors = {} }: { text: string; playerColors
   while ((m = HEAL_RE.exec(text))   !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#22c55e" });
   ROLL_RE.lastIndex = 0;
   while ((m = ROLL_RE.exec(text)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, color: "#fbbf24", tooltip: `Roll breakdown: ${m[0].trim()}` });
+  BONUS_LABEL_RE.lastIndex = 0;
+  while ((m = BONUS_LABEL_RE.exec(text)) !== null) {
+    const tt = getBonusTooltip(m[0]);
+    if (tt) segs.push({ start: m.index, end: m.index + m[0].length, color: "#a78bfa", richTooltip: tt });
+  }
   for (const [name, color] of Object.entries(playerColors)) {
     if (!name.trim()) continue;
     const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
@@ -290,11 +322,14 @@ function ColorizedText({ text, playerColors = {} }: { text: string; playerColors
   for (const seg of segs) {
     if (seg.start < pos) continue;
     if (seg.start > pos) out.push(<span key={pos}>{text.slice(pos, seg.start)}</span>);
+    const hasInteraction = !!(seg.tooltip || seg.richTooltip);
     out.push(
       <span
         key={seg.start}
-        title={seg.tooltip}
-        style={{ color: seg.color, fontWeight: 600, ...(seg.tooltip && { textDecoration: "underline dotted", cursor: "help" }) }}
+        title={seg.richTooltip ? undefined : seg.tooltip}
+        onMouseEnter={seg.richTooltip && onShowTooltip ? (e => onShowTooltip(tipBox(seg.richTooltip!.title, seg.richTooltip!.body, seg.richTooltip!.accent), e)) : undefined}
+        onMouseLeave={seg.richTooltip && onHideTooltip ? onHideTooltip : undefined}
+        style={{ color: seg.color, fontWeight: 600, ...(hasInteraction && { textDecoration: "underline dotted", cursor: "help" }) }}
       >
         {text.slice(seg.start, seg.end)}
       </span>
@@ -3414,7 +3449,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
-              }}>{msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} /> : msg.content}</div>
+              }}>{msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}</div>
             </div>
           ))}
 
