@@ -19,7 +19,7 @@ import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 
 type MsgRole  = "dm" | "player" | "system";
-type Message  = { role: MsgRole; content: string; sender?: string };
+type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
 type CampaignCharacterRow = {
   id: string; campaign_id: string; character_id: string; user_id: string | null;
   hp: number; max_hp: number; xp: number; level: number;
@@ -206,6 +206,34 @@ function getBonusTooltip(label: string): { title: string; body: string; accent: 
     return { title: `${mod} Magic Bonus`, body: `Enchantment bonus from your ${item}. Adds ${mod} to both attack rolls and damage.`, accent: "#fbbf24" };
   }
   return null;
+}
+
+/** Scans DM narrative for damage dealt TO a named character. Returns total damage as a positive number. */
+function detectSelfDamage(text: string, firstName: string): number {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let total = 0;
+  let m: RegExpExecArray | null;
+
+  // "Aria takes 9" / "Aria suffers 7" / "Aria loses 6 HP"
+  const patA = new RegExp(`\\b${n}\\b[^.!?\\n]{0,60}?(?:takes?|suffers?|loses?|receives?)\\s+(\\d+)`, "gi");
+  while ((m = patA.exec(text)) !== null) total += parseInt(m[1], 10);
+
+  // "hits Aria for 9" / "rakes Aria for 5" / "catches Aria ... dealing 8"
+  const patB = new RegExp(
+    `(?:hits?|strikes?|slashes?|stabs?|rakes?|catches?|claws?|bites?|burns?|blasts?|lashes?|slices?|pierces?|attacks?)` +
+    `(?:\\s+[\\w']+){0,4}?\\s+\\b${n}\\b[^.!?\\n]{0,60}?(?:for|dealing)\\s+(\\d+)`,
+    "gi"
+  );
+  while ((m = patB.exec(text)) !== null) total += parseInt(m[1], 10);
+
+  // "Aria is struck for 9" / "Aria is hit for 7"
+  const patC = new RegExp(
+    `\\b${n}\\b[^.!?\\n]{0,20}?(?:is|was)\\s+(?:hit|struck|wounded|injured|slashed|stabbed)[^.!?\\n]{0,40}?(?:for|dealing)\\s+(\\d+)`,
+    "gi"
+  );
+  while ((m = patC.exec(text)) !== null) total += parseInt(m[1], 10);
+
+  return total;
 }
 
 // Detect which player the DM is addressing at the end of a response.
@@ -626,6 +654,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const campaignPartyRef     = useRef<Character[]>([]);
   const pendingSpellCastRef      = useRef<number>(0);
   const pendingSpellCastLevelRef = useRef<number>(0);
+  const pendingHpDeltaRef        = useRef<number>(0);
   const prevActingCharIdRef      = useRef<string | null>(null);
   const sceneRequestIdRef    = useRef(0);
   const usesCCTableRef       = useRef(false);
@@ -1104,6 +1133,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setRequiredRollMode(dmRollMode !== "normal" ? dmRollMode : null);
         // Restore the acting character so applyStateChange can gate correctly
         prevActingCharIdRef.current = (payload.actingCharId as string | null) ?? null;
+        // Fast HP detection — apply damage to this player's own character immediately.
+        if (pendingHpDeltaRef.current === 0) {
+          const myChar = characterRef.current;
+          if (myChar) {
+            const firstName = myChar.name.split(" ")[0];
+            const rawDmg = detectSelfDamage(payload.content as string, firstName);
+            if (rawDmg > 0) {
+              const ib = computeInventoryBonuses(myChar.inventory?.items ?? [], myChar.inventory?.weapons ?? []);
+              const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp - rawDmg));
+              const fastChar = { ...myChar, hp: newHp };
+              setCharacter(fastChar);
+              setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c));
+              characterRef.current = fastChar;
+              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c);
+              pendingHpDeltaRef.current = -rawDmg;
+              charWriteRef.current?.(myChar.id, { hp: newHp });
+              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp } });
+            }
+          }
+        }
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
           .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
@@ -1247,10 +1296,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
         if (payload.imageUrl) {
-          currentSceneRef.current = payload.sceneName;
-          setCurrentSceneUrl(payload.imageUrl);
+          currentSceneRef.current = payload.sceneName as string;
+          setCurrentSceneUrl(payload.imageUrl as string);
           (window as Window).__dndSetMusicScene?.(payload.sceneName as string, payload.sceneType as string | undefined, payload.modifiers as string[] | undefined);
           if (payload.sceneType) (window as Window).__dndSetAmbianceScene?.(payload.sceneName as string, payload.sceneType as string, payload.modifiers as string[] | undefined);
+        }
+        // Attach story moment illustration to the matching DM message
+        if (payload.momentImageUrl) {
+          const dmContent = payload.dmContent as string | undefined;
+          setMessages(prev => {
+            const ridx = dmContent
+              ? [...prev].reverse().findIndex(m => m.role === "dm" && m.content.slice(0, 120) === dmContent)
+              : [...prev].reverse().findIndex(m => m.role === "dm");
+            if (ridx < 0) return prev;
+            const idx = prev.length - 1 - ridx;
+            if (prev[idx].imageUrl) return prev; // already set
+            const next = [...prev];
+            next[idx] = { ...next[idx], imageUrl: payload.momentImageUrl as string };
+            return next;
+          });
         }
       })
       .subscribe();
@@ -1412,6 +1476,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (change.hp_delta !== 0 && !isEffectiveTarget) {
       change = { ...change, hp_delta: 0 };
     }
+    // Fast detection already applied this HP delta — skip to prevent double-counting.
+    if (change.hp_delta !== 0 && pendingHpDeltaRef.current !== 0) {
+      change = { ...change, hp_delta: 0 };
+    }
+    pendingHpDeltaRef.current = 0; // always clear after deciding
     console.log("[applyStateChange] hp_delta", change.hp_delta, "isEffectiveTarget", isEffectiveTarget, "target_name", change.target_name);
 
     // Spell slots: ONLY the acting character (the caster) consumes slots.
@@ -2384,6 +2453,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
+      // Fast HP detection — apply damage to this character immediately before chat-state returns.
+      if (!isOpeningScene && pendingHpDeltaRef.current === 0) {
+        const actingChar = characterRef.current;
+        if (actingChar) {
+          const firstName = actingChar.name.split(" ")[0];
+          const rawDmg = detectSelfDamage(full, firstName);
+          if (rawDmg > 0) {
+            const ib = computeInventoryBonuses(actingChar.inventory?.items ?? [], actingChar.inventory?.weapons ?? []);
+            const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp - rawDmg));
+            const fastChar = { ...actingChar, hp: newHp };
+            setCharacter(fastChar);
+            setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c));
+            characterRef.current = fastChar;
+            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c);
+            pendingHpDeltaRef.current = -rawDmg;
+            charWriteRef.current?.(actingChar.id, { hp: newHp });
+            channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp } });
+          }
+        }
+      }
+
       // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
       if (!isOpeningScene) {
         console.log("[chat-state] sending narrative:", full.slice(0, 300));
@@ -2441,20 +2531,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: isCombatNow, campaignDescription: campaignDescriptionRef.current, party: partySnap, enemies: enemySnap }),
         })
           .then(r => r.json())
-          .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
+          .then(({ sceneName, imageUrl, momentImageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; momentImageUrl?: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
             if (sceneRequestIdRef.current !== sceneReqId) return; // superseded by a newer request
-            // Only update background, music, and ambiance when the server decided a change is warranted
+            // Update background when server decided a change is warranted
             if (imageUrl) {
               currentSceneRef.current = sceneName;
               setCurrentSceneUrl(imageUrl);
               if (campaignLoadingRef.current) setLoadSceneDone(true);
-              channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName, imageUrl, sceneType, modifiers } });
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
               if (sceneType) (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers);
               if (campaignLoadingRef.current) setLoadAmbianceDone(true);
             } else {
-              // No scene change — unblock loading if waiting
               if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); }
+            }
+            // Broadcast scene update (background + moment) to all other clients
+            channelRef.current?.send({
+              type: "broadcast", event: "scene_change",
+              payload: { senderId: userId, sceneName, imageUrl, momentImageUrl: momentImageUrl ?? null, sceneType, modifiers, dmContent: full.slice(0, 120) },
+            });
+            // Attach story moment illustration to the DM message that triggered it
+            if (momentImageUrl) {
+              const matchContent = full;
+              setMessages(prev => {
+                const ridx = [...prev].reverse().findIndex(m => m.role === "dm" && m.content === matchContent);
+                if (ridx < 0) return prev;
+                const idx = prev.length - 1 - ridx;
+                const next = [...prev];
+                next[idx] = { ...next[idx], imageUrl: momentImageUrl };
+                return next;
+              });
             }
           })
           .catch(() => { if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); } })
@@ -3033,7 +3138,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} narVolume={narVolume} narMuted={narMuted} />}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}
@@ -3449,7 +3554,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
-              }}>{msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}</div>
+              }}>
+                {msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}
+                {msg.imageUrl && (
+                  <img
+                    src={msg.imageUrl}
+                    alt="Story illustration"
+                    style={{
+                      display: "block", width: "100%", maxWidth: "340px", marginTop: "12px",
+                      borderRadius: "8px", boxShadow: "0 4px 20px rgba(0,0,0,0.55)",
+                      border: "1px solid rgba(139,92,246,0.35)",
+                      animation: "fadeIn 0.8s ease",
+                    }}
+                  />
+                )}
+              </div>
             </div>
           ))}
 

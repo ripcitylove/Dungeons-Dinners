@@ -199,12 +199,16 @@ export default function DiceRoller({
   requiredDice,
   requiredRollMode,
   rollContext,
+  narVolume,
+  narMuted,
 }: {
   onRollComplete: (result: number, diceType: number, description?: string) => void;
   onCancel?: () => void;
   requiredDice?: number | null;
   requiredRollMode?: "normal" | "advantage" | "disadvantage" | null;
   rollContext?: string | null;
+  narVolume?: number;
+  narMuted?: boolean;
 }) {
   const [selectedDie,  setSelectedDie]  = useState<DieSides | null>(null);
   const [phase,        setPhase]        = useState<"idle" | "rolling" | "result">("idle");
@@ -216,6 +220,12 @@ export default function DiceRoller({
   const [flashColor,   setFlashColor]   = useState<string>("transparent");
   const countupRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const didRoll       = useRef(false);
+
+  // Sync narration volume via refs so executeRoll always reads current values
+  const narVolumeRef = useRef(narVolume ?? 1);
+  const narMutedRef  = useRef(narMuted  ?? false);
+  useEffect(() => { narVolumeRef.current = narVolume ?? 1;    }, [narVolume]);
+  useEffect(() => { narMutedRef.current  = narMuted  ?? false; }, [narMuted]);
 
   const isAdvDis = !!requiredRollMode && requiredRollMode !== "normal";
   const quality = result !== null && selectedDie !== null ? getQuality(result, selectedDie) : null;
@@ -261,6 +271,11 @@ export default function DiceRoller({
       setPhase("result");
       const q = getQuality(kept, sides);
       playResultSound(q);
+      if (q === "crit") {
+        const choir = new Audio("/angelic_choir.mp3");
+        choir.volume = narMutedRef.current ? 0 : Math.min(1, narVolumeRef.current);
+        choir.play().catch(() => {});
+      }
       const qData = QUALITY[q];
       if (qData.flashColor) {
         setFlashColor(qData.flashColor);

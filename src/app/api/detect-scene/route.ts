@@ -89,7 +89,6 @@ function buildPrompt(
   const base      = SCENE_BASE[type] ?? `a ${type} location in a dark fantasy world`;
   const combat    = isCombat ? ` ${COMBAT_SUFFIX[type] ?? "as fierce combat erupts"}` : "";
   const style     = STYLE_VARIANTS[type] ?? "dramatic dark fantasy concept art, cinematic atmosphere";
-  // Give modifiers strong visual weight in the prompt — they define what makes this scene unique
   const modStr    = modifiers.length > 0 ? ` Distinct visual character: ${modifiers.join(", ")} — make these features prominent and unmistakable.` : "";
   const narrative = description.length > 20 ? ` ${description}` : "";
 
@@ -106,6 +105,11 @@ function buildPrompt(
   return `${style}. ${base}${combat}.${modStr}${narrative}${figures} Ultra-wide cinematic landscape framing, no text, no UI, no watermarks, no modern elements. Highly detailed.`;
 }
 
+function buildMomentPrompt(description: string, sceneType: string): string {
+  const atmosphere = STYLE_VARIANTS[sceneType] ?? "dramatic dark fantasy concept art, cinematic atmosphere";
+  return `Dramatic fantasy RPG illustration. ${atmosphere}. ${description} Epic dark fantasy painterly style, intense cinematic lighting, highly detailed subject focus. No text, no UI, no watermarks, no modern elements. Centered dramatic composition.`;
+}
+
 function buildSceneSystem(currentScene: string): string {
   return `You are a scene classifier for a D&D fantasy RPG. Analyze the DM narrative and return JSON.
 
@@ -119,7 +123,7 @@ CLASSIFICATION RULES:
 - Default to dungeon for any underground or enclosed ancient setting
 
 MODIFIERS — always include 2–3:
-Pick words that make this specific scene visually DISTINCTIVE — sub-location, lighting condition, dominant feature, atmosphere, color tone. These words combine into a cache key so the background image refreshes when things change.
+Pick words that make this specific scene visually DISTINCTIVE — sub-location, lighting condition, dominant feature, atmosphere, color tone.
 
 Examples by type:
 - dungeon: crypt, vaulted, torchlit, mossy, collapsed, flooded, iron, carved, narrow, altar, spiral, pit, archway, bone, throne
@@ -131,20 +135,25 @@ Examples by type:
 - temple: altar, sacred, flooded, dark, abandoned, underground, glowing, ritual
 
 CHANGE DETECTION — current scene is: "${currentScene}"
-Set shouldChange: true when ANY of these apply:
-- The scene TYPE changed (dungeon → tavern, forest → castle, etc.)
-- The party moved to a different room, chamber, or sub-area (pushed through a door, climbed stairs, entered a new space)
-- A significant visual shift occurred: combat began or ended, dramatic lighting change, a major new environment element appeared
-- The narrative describes a clearly different-looking place than a moment ago
-- You are uncertain — DEFAULT TO TRUE. Fresh images enhance immersion.
-Set shouldChange: false ONLY when the party is clearly still in the exact same spot:
-- Pure dialogue exchange or NPC conversation with no movement
-- Resolving a single dice roll in the same location
-- A trivial action (picking up an object, opening a pouch) with no scene change
-IMPORTANT: Modifier words change every response. Do not let that influence shouldChange. Judge by whether a fresh image would look meaningfully different from the current one.
+Set shouldChange: true ONLY when the party has physically moved to a new location:
+- The scene TYPE genuinely changed (dungeon → tavern, forest → castle, etc.)
+- The party explicitly crossed into a new distinct space (through a door, down stairs, exited a building, arrived somewhere new)
+Set shouldChange: false when:
+- Same location with new events — combat, dialogue, discoveries, or action in the same room/area
+- Modifiers changed but the party is in the same place
+- When uncertain — DEFAULT TO FALSE. Background images should be stable; they only change on real location transitions.
+
+MOMENT DETECTION — key visual events worth a dedicated story illustration:
+Set "moment" to an object when the narrative contains ONE of:
+- A named NPC or creature making a dramatically described first appearance (not a generic "goblin attacks" but "the lich lord rises from his throne")
+- Discovery of a unique named artifact, weapon, or significant magical item
+- A vivid dramatic spell or power display with specific visual detail
+- A major revelation or transformation with rich visual description
+Set "moment": null for: generic combat rounds, routine movement, conversation, skill checks, or anything visually non-specific.
+Be selective — only truly cinematic, specific visual moments qualify.
 
 Return ONLY valid JSON, no other text:
-{"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"]}`;
+{"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"],"moment":{"tag":"<3_to_5_word_snake_case_unique_id>","description":"<1–2 vivid illustrative sentences of exactly what to depict>"} or null}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -158,16 +167,16 @@ export async function POST(req: NextRequest) {
     const { narrative, isCombat = false, campaignDescription, party, enemies } = body;
     currentScene = body.currentScene ?? "wilderness";
 
-    if (!narrative?.trim()) return Response.json({ sceneName: currentScene });
+    if (!narrative?.trim()) return Response.json({ sceneName: currentScene, imageUrl: null, momentImageUrl: null });
 
     const contextPrefix = campaignDescription
       ? `Campaign setting: ${campaignDescription.slice(0, 200)}\n\nCurrent narrative:\n`
       : "";
 
-    // Step 1: Classify scene, extract descriptors, and judge whether change is warranted
+    // Step 1: Classify scene, extract descriptors, detect moment, judge whether background should change
     const detect = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 280,
+      max_tokens: 400,
       system:     buildSceneSystem(currentScene.replace(/_combat$/, "")),
       messages:   [{ role: "user", content: `${contextPrefix}${narrative.slice(0, 900)}` }],
     });
@@ -177,68 +186,131 @@ export async function POST(req: NextRequest) {
     let sceneType    = currentScene.replace("_combat", "") || "wilderness";
     let modifiers:   string[] = [];
     let description  = "";
-    let shouldChange = true; // default open — only suppress when AI explicitly says false
+    let shouldChange = false; // conservative default — only change on explicit AI confirmation
+    let moment: { tag: string; description: string } | null = null;
 
     try {
       const parsed = JSON.parse(raw);
       if (parsed.type && SCENE_BASE[parsed.type]) sceneType = parsed.type;
       if (Array.isArray(parsed.modifiers)) modifiers = parsed.modifiers.map((m: unknown) => String(m).toLowerCase().replace(/[^a-z]/g, "")).filter(Boolean).slice(0, 3);
       if (parsed.description) description = String(parsed.description).slice(0, 400);
-      shouldChange = parsed.shouldChange === true; // only change when AI explicitly confirms
+      shouldChange = parsed.shouldChange === true;
+      // Parse story moment
+      if (parsed.moment && typeof parsed.moment === "object" && parsed.moment.tag && parsed.moment.description) {
+        moment = {
+          tag:         String(parsed.moment.tag).toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 60),
+          description: String(parsed.moment.description).slice(0, 300),
+        };
+      }
     } catch {
-      // JSON parse failed — extract scene type from raw text, proceed with generation
       const word = raw.toLowerCase().match(/\b(tavern|dungeon|forest|cave|ruins|castle|street|shop|temple|wilderness|ship|graveyard|prison|arena|port|desert|mountain|swamp|library|village)\b/)?.[1];
       if (word) sceneType = word;
     }
 
     const sceneName = buildCacheKey(sceneType, modifiers, isCombat);
 
-    // If the AI explicitly said no change is needed, honour that — regardless of whether
-    // modifiers drifted (different words for the same room produce different keys but the
-    // same location). Only skip when there IS an established current scene; on first load
-    // (currentScene = "") always proceed so the opening image is generated.
-    if (!shouldChange && currentScene) {
-      return Response.json({ sceneName: currentScene, imageUrl: null, sceneType, modifiers, description, shouldChange: false });
+    // If no background change needed and no moment to handle, return early
+    if (!shouldChange && currentScene && !moment) {
+      return Response.json({ sceneName: currentScene, imageUrl: null, momentImageUrl: null, sceneType, modifiers, description, shouldChange: false });
     }
 
-    // Step 2: Check cache — exact key match reuses saved image
+    // Fetch all cached entries — used for both background and moment lookups
     const { data: allCached } = await supabase.from("scenes").select("name, image_url");
     const cacheMap = new Map((allCached ?? []).map(s => [s.name as string, s.image_url as string]));
 
-    const exactUrl = cacheMap.get(sceneName);
-    if (exactUrl) return Response.json({ sceneName, imageUrl: exactUrl, sceneType, modifiers, description, shouldChange: true });
+    // ── Background image decision ─────────────────────────────────────────────
+    let bgImageUrl: string | null = null;
+    let bgSceneName: string = currentScene || sceneName;
 
-    // Step 3: Truly new scene — generate a bespoke image and save it for future reuse
-    const openai     = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const fullPrompt = buildPrompt(sceneType, modifiers, description, isCombat, party, enemies);
+    if (shouldChange || !currentScene) {
+      // Exact cache key match — reuse with no generation
+      const exactUrl = cacheMap.get(sceneName);
+      if (exactUrl) {
+        bgImageUrl = exactUrl;
+        bgSceneName = sceneName;
+      } else {
+        // Fuzzy fallback: look for any cached scene of the same type (excludes moment_ entries)
+        let fuzzyUrl: string | null = null;
+        let fuzzyName: string | null = null;
+        for (const [name, url] of cacheMap.entries()) {
+          if (!name.startsWith("moment_") && (name === sceneType || name.startsWith(`${sceneType}_`))) {
+            fuzzyUrl = url; fuzzyName = name;
+            break;
+          }
+        }
 
-    const imgResponse = await openai.images.generate({
-      model:   "gpt-image-1",
-      prompt:  fullPrompt,
-      size:    "1536x1024",
-      quality: "medium",
-      n:       1,
-    });
-
-    const b64 = imgResponse.data?.[0]?.b64_json;
-    if (!b64) return Response.json({ sceneName, imageUrl: null });
-
-    const storageKey = `${sceneName}.png`;
-    const { error: uploadError } = await supabase.storage
-      .from("scenes")
-      .upload(storageKey, Buffer.from(b64, "base64"), { contentType: "image/png", upsert: true });
-
-    if (uploadError) {
-      console.warn("[detect-scene] upload failed:", uploadError.message);
-      return Response.json({ sceneName, imageUrl: null });
+        const currentSceneType = currentScene.replace(/_combat$/, "").split("_")[0] || "";
+        if (fuzzyUrl && sceneType === currentSceneType && currentScene) {
+          // Same type, different modifiers — keep current background; no update needed
+          bgImageUrl = null;
+          bgSceneName = currentScene;
+        } else if (fuzzyUrl) {
+          // Different type but a cached image of that type exists — reuse it
+          bgImageUrl = fuzzyUrl;
+          bgSceneName = fuzzyName!;
+        } else {
+          // Truly new scene type with no cached image — generate a bespoke background
+          const openai     = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          const fullPrompt = buildPrompt(sceneType, modifiers, description, isCombat, party, enemies);
+          const imgResponse = await openai.images.generate({
+            model: "gpt-image-1", prompt: fullPrompt, size: "1536x1024", quality: "medium", n: 1,
+          });
+          const b64 = imgResponse.data?.[0]?.b64_json;
+          if (b64) {
+            const storageKey = `${sceneName}.png`;
+            const { error: uploadError } = await supabase.storage
+              .from("scenes").upload(storageKey, Buffer.from(b64, "base64"), { contentType: "image/png", upsert: true });
+            if (!uploadError) {
+              const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(storageKey);
+              await supabase.from("scenes").upsert({ name: sceneName, image_url: publicUrl });
+              bgImageUrl   = publicUrl;
+              bgSceneName  = sceneName;
+            }
+          }
+        }
+      }
     }
 
-    const { data: { publicUrl } } = supabase.storage.from("scenes").getPublicUrl(storageKey);
-    await supabase.from("scenes").upsert({ name: sceneName, image_url: publicUrl });
+    // ── Story moment image ────────────────────────────────────────────────────
+    let momentImageUrl: string | null = null;
+    if (moment) {
+      const momentKey = `moment_${moment.tag}`;
+      const cachedMoment = cacheMap.get(momentKey);
+      if (cachedMoment) {
+        momentImageUrl = cachedMoment;
+      } else {
+        // Generate a focused story illustration (1024×1024, portrait)
+        const openai        = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const momentPrompt  = buildMomentPrompt(moment.description, sceneType);
+        const momentRes     = await openai.images.generate({
+          model: "gpt-image-1", prompt: momentPrompt, size: "1024x1024", quality: "medium", n: 1,
+        });
+        const momentB64 = momentRes.data?.[0]?.b64_json;
+        if (momentB64) {
+          const momentKey2 = `moment_${moment.tag}.png`;
+          const { error: momentUploadErr } = await supabase.storage
+            .from("scenes").upload(momentKey2, Buffer.from(momentB64, "base64"), { contentType: "image/png", upsert: true });
+          if (!momentUploadErr) {
+            const { data: { publicUrl: mUrl } } = supabase.storage.from("scenes").getPublicUrl(momentKey2);
+            await supabase.from("scenes").upsert({ name: momentKey, image_url: mUrl });
+            momentImageUrl = mUrl;
+          }
+        }
+      }
+    }
 
-    return Response.json({ sceneName, imageUrl: publicUrl, sceneType, modifiers, description, shouldChange: true });
+    return Response.json({
+      sceneName:      bgSceneName,
+      imageUrl:       bgImageUrl,
+      momentImageUrl,
+      sceneType,
+      modifiers,
+      description,
+      shouldChange:   bgImageUrl !== null,
+    });
+
   } catch (err) {
     console.error("[detect-scene]", err);
-    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null, shouldChange: false });
+    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null, momentImageUrl: null, shouldChange: false });
   }
 }
