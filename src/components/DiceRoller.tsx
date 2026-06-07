@@ -137,39 +137,57 @@ function DieFace({
 }) {
   const inset = Math.round(size * 0.09);
   return (
-    <div style={{ position: "relative", width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      {/* Cast shadow on the surface */}
+    <div style={{
+      position: "relative", width: size, height: size,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      animation: animName,
+      transformStyle: "preserve-3d",
+    }}>
+      {/* Cast shadow — offset to simulate light from top-left */}
       <div style={{
         position: "absolute",
         inset: inset + 4,
         clipPath: DIE_CLIP[sides],
-        background: "rgba(0,0,0,0.55)",
-        filter: "blur(8px)",
-        transform: "translate(5px, 8px)",
-        animation: animName,
+        background: "rgba(0,0,0,0.65)",
+        filter: "blur(10px)",
+        transform: "translate(7px, 11px)",
+        pointerEvents: "none",
       }} />
       {/* Base die face */}
       <div style={{
         position: "absolute", inset,
         clipPath: DIE_CLIP[sides],
         background: bg,
-        filter: `drop-shadow(0 0 ${size * 0.16}px ${glow}) drop-shadow(0 4px 12px rgba(0,0,0,0.7))`,
-        animation: animName,
+        filter: `drop-shadow(0 0 ${size * 0.18}px ${glow}) drop-shadow(0 6px 18px rgba(0,0,0,0.85))`,
       }} />
-      {/* Top-left light sheen — simulates 3D surface lighting */}
+      {/* Worn surface texture — subtle cross-hatching */}
       <div style={{
         position: "absolute", inset,
         clipPath: DIE_CLIP[sides],
-        background: "linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 30%, transparent 60%, rgba(0,0,0,0.22) 100%)",
-        animation: animName,
+        background: `repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 7px),
+                     repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 7px)`,
         pointerEvents: "none",
       }} />
-      {/* Edge bevel highlight */}
+      {/* Strong top-left light face — makes the die look truly lit from one side */}
       <div style={{
         position: "absolute", inset,
         clipPath: DIE_CLIP[sides],
-        boxShadow: "inset 0 2px 0 rgba(255,255,255,0.25), inset 2px 0 0 rgba(255,255,255,0.12), inset 0 -2px 0 rgba(0,0,0,0.45), inset -2px 0 0 rgba(0,0,0,0.25)",
-        animation: animName,
+        background: "linear-gradient(140deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.14) 28%, transparent 55%, rgba(0,0,0,0.35) 100%)",
+        pointerEvents: "none",
+      }} />
+      {/* Center depth shadow — gives the face a slight concave bowl look */}
+      <div style={{
+        position: "absolute",
+        inset: inset + Math.round(size * 0.12),
+        clipPath: DIE_CLIP[sides],
+        background: "radial-gradient(ellipse at 60% 40%, transparent 35%, rgba(0,0,0,0.18) 100%)",
+        pointerEvents: "none",
+      }} />
+      {/* Edge bevel — thick raised rim */}
+      <div style={{
+        position: "absolute", inset,
+        clipPath: DIE_CLIP[sides],
+        boxShadow: "inset 0 3px 0 rgba(255,255,255,0.35), inset 3px 0 0 rgba(255,255,255,0.18), inset 0 -3px 0 rgba(0,0,0,0.6), inset -3px 0 0 rgba(0,0,0,0.4)",
         pointerEvents: "none",
       }} />
       {/* Number */}
@@ -178,9 +196,9 @@ function DieFace({
           <span style={{
             fontSize: numberSize ?? "2.8rem",
             fontWeight: 700,
-            color: numberColor ?? "rgba(255,255,255,0.95)",
+            color: numberColor ?? "rgba(255,255,255,0.97)",
             lineHeight: 1,
-            textShadow: `0 0 16px ${glow}, 0 2px 6px rgba(0,0,0,0.75), 0 1px 0 rgba(0,0,0,0.9)`,
+            textShadow: `0 0 20px ${glow}, 0 3px 8px rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.95)`,
             letterSpacing: "0.04em",
             fontFamily: "var(--font-cinzel, 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif)",
           }}>
@@ -432,7 +450,7 @@ export default function DiceRoller({
                   transition: "transform 0.18s ease, opacity 0.15s",
                 }}
                 onMouseEnter={e => {
-                  if (!isDimmed) e.currentTarget.style.transform = "perspective(220px) rotateX(-10deg) rotateY(8deg) scale(1.14) translateY(-4px)";
+                  if (!isDimmed) e.currentTarget.style.transform = "perspective(280px) rotateX(-12deg) rotateY(10deg) scale(1.15) translateY(-4px)";
                 }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
               >
@@ -493,7 +511,7 @@ export default function DiceRoller({
       {/* ── Rolling Phase ── */}
       {phase === "rolling" && selectedDie && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "36px" }}>
-          <div style={{ position: "relative", width: "200px", height: "200px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "relative", width: "200px", height: "200px", display: "flex", alignItems: "center", justifyContent: "center", perspective: "480px", perspectiveOrigin: "50% 40%" }}>
 
             {/* Outer atmosphere ring */}
             <div style={{
@@ -543,7 +561,7 @@ export default function DiceRoller({
               sides={selectedDie}
               bg={rollingBg}
               glow={rollingGlow}
-              animName="dieRoll3d 0.44s cubic-bezier(0.45,0.05,0.55,0.95) infinite"
+              animName="dieRoll3d 0.9s ease-in-out infinite"
               size={160}
               numberValue={displayNum}
             />
@@ -683,15 +701,15 @@ export default function DiceRoller({
 
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes dieRoll3d {
-          0%   { transform: perspective(280px) rotateX(0deg)   rotateY(0deg)   rotateZ(0deg);   }
-          12%  { transform: perspective(280px) rotateX(108deg) rotateY(72deg)  rotateZ(45deg);  }
-          25%  { transform: perspective(280px) rotateX(216deg) rotateY(144deg) rotateZ(135deg); }
-          37%  { transform: perspective(280px) rotateX(144deg) rotateY(252deg) rotateZ(90deg);  }
-          50%  { transform: perspective(280px) rotateX(288deg) rotateY(36deg)  rotateZ(180deg); }
-          62%  { transform: perspective(280px) rotateX(72deg)  rotateY(288deg) rotateZ(252deg); }
-          75%  { transform: perspective(280px) rotateX(324deg) rotateY(180deg) rotateZ(315deg); }
-          87%  { transform: perspective(280px) rotateX(252deg) rotateY(324deg) rotateZ(270deg); }
-          100% { transform: perspective(280px) rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
+          0%   { transform: rotateX(0deg)   rotateY(0deg)   rotateZ(0deg)   scale(1);    }
+          10%  { transform: rotateX(80deg)  rotateY(55deg)  rotateZ(30deg)  scale(0.92); }
+          22%  { transform: rotateX(185deg) rotateY(130deg) rotateZ(110deg) scale(1.05); }
+          34%  { transform: rotateX(130deg) rotateY(230deg) rotateZ(75deg)  scale(0.94); }
+          47%  { transform: rotateX(260deg) rotateY(30deg)  rotateZ(160deg) scale(1.06); }
+          59%  { transform: rotateX(65deg)  rotateY(270deg) rotateZ(225deg) scale(0.93); }
+          71%  { transform: rotateX(300deg) rotateY(165deg) rotateZ(285deg) scale(1.04); }
+          84%  { transform: rotateX(235deg) rotateY(305deg) rotateZ(245deg) scale(0.95); }
+          100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg) scale(1);    }
         }
         @keyframes outerPulse {
           from { transform: scale(0.93); opacity: 0.7; }

@@ -42,6 +42,8 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "spell_slot_level":      number     // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast.
 }
 
+HP TAG PRIORITY: If the narrative contains [HP:FirstName:N] tags, use them for hp_delta — they are authoritative. [HP:Aria:-9] → target_name="Aria", hp_delta=-9. [HP:Thorin:+5] → target_name="Thorin", hp_delta=5.
+
 HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
 - HP/loot only count when the DM narrates the resolved result.
 - CRITICAL — DAMAGE DIRECTION: hp_delta only applies when a player character RECEIVES damage or healing. Players frequently DEAL damage to enemies — this does NOT affect the player's hp_delta.

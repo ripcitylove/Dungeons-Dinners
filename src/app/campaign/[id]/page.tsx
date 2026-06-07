@@ -208,31 +208,13 @@ function getBonusTooltip(label: string): { title: string; body: string; accent: 
   return null;
 }
 
-/** Scans DM narrative for damage dealt TO a named character. Returns total damage as a positive number. */
-function detectSelfDamage(text: string, firstName: string): number {
+/** Parses [HP:FirstName:N] tags from DM text for the named character. Returns HP delta (negative = damage, positive = healing). */
+function parseHpTag(text: string, firstName: string): number {
   const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[HP:${n}:([+-]?\\d+)\\]`, "gi");
   let total = 0;
   let m: RegExpExecArray | null;
-
-  // "Aria takes 9" / "Aria suffers 7" / "Aria loses 6 HP"
-  const patA = new RegExp(`\\b${n}\\b[^.!?\\n]{0,60}?(?:takes?|suffers?|loses?|receives?)\\s+(\\d+)`, "gi");
-  while ((m = patA.exec(text)) !== null) total += parseInt(m[1], 10);
-
-  // "hits Aria for 9" / "rakes Aria for 5" / "catches Aria ... dealing 8"
-  const patB = new RegExp(
-    `(?:hits?|strikes?|slashes?|stabs?|rakes?|catches?|claws?|bites?|burns?|blasts?|lashes?|slices?|pierces?|attacks?)` +
-    `(?:\\s+[\\w']+){0,4}?\\s+\\b${n}\\b[^.!?\\n]{0,60}?(?:for|dealing)\\s+(\\d+)`,
-    "gi"
-  );
-  while ((m = patB.exec(text)) !== null) total += parseInt(m[1], 10);
-
-  // "Aria is struck for 9" / "Aria is hit for 7"
-  const patC = new RegExp(
-    `\\b${n}\\b[^.!?\\n]{0,20}?(?:is|was)\\s+(?:hit|struck|wounded|injured|slashed|stabbed)[^.!?\\n]{0,40}?(?:for|dealing)\\s+(\\d+)`,
-    "gi"
-  );
-  while ((m = patC.exec(text)) !== null) total += parseInt(m[1], 10);
-
+  while ((m = re.exec(text)) !== null) total += parseInt(m[1], 10);
   return total;
 }
 
@@ -1133,21 +1115,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setRequiredRollMode(dmRollMode !== "normal" ? dmRollMode : null);
         // Restore the acting character so applyStateChange can gate correctly
         prevActingCharIdRef.current = (payload.actingCharId as string | null) ?? null;
-        // Fast HP detection — apply damage to this player's own character immediately.
+        // Fast HP detection — apply HP change to this player's own character immediately.
         if (pendingHpDeltaRef.current === 0) {
           const myChar = characterRef.current;
           if (myChar) {
             const firstName = myChar.name.split(" ")[0];
-            const rawDmg = detectSelfDamage(payload.content as string, firstName);
-            if (rawDmg > 0) {
+            const hpDelta = parseHpTag(payload.content as string, firstName);
+            if (hpDelta !== 0) {
               const ib = computeInventoryBonuses(myChar.inventory?.items ?? [], myChar.inventory?.weapons ?? []);
-              const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp - rawDmg));
+              const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp + hpDelta));
               const fastChar = { ...myChar, hp: newHp };
               setCharacter(fastChar);
               setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c));
               characterRef.current = fastChar;
               campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c);
-              pendingHpDeltaRef.current = -rawDmg;
+              pendingHpDeltaRef.current = hpDelta;
               charWriteRef.current?.(myChar.id, { hp: newHp });
               channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp } });
             }
@@ -2003,6 +1985,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[ROUND RECONCILIATION[^\]]*\]/gi, "")
       .replace(/\[ALL PLAYERS HAVE ACTED[^\]]*\]/gi, "")
       .replace(/\[CURRENT TURN[^\]]*\]/gi, "")
+      .replace(/\[HP:[^\]]+\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -2453,21 +2436,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      // Fast HP detection — apply damage to this character immediately before chat-state returns.
+      // Fast HP detection — apply HP change to this character immediately before chat-state returns.
       if (!isOpeningScene && pendingHpDeltaRef.current === 0) {
         const actingChar = characterRef.current;
         if (actingChar) {
           const firstName = actingChar.name.split(" ")[0];
-          const rawDmg = detectSelfDamage(full, firstName);
-          if (rawDmg > 0) {
+          const hpDelta = parseHpTag(full, firstName);
+          if (hpDelta !== 0) {
             const ib = computeInventoryBonuses(actingChar.inventory?.items ?? [], actingChar.inventory?.weapons ?? []);
-            const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp - rawDmg));
+            const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp + hpDelta));
             const fastChar = { ...actingChar, hp: newHp };
             setCharacter(fastChar);
             setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c));
             characterRef.current = fastChar;
             campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c);
-            pendingHpDeltaRef.current = -rawDmg;
+            pendingHpDeltaRef.current = hpDelta;
             charWriteRef.current?.(actingChar.id, { hp: newHp });
             channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp } });
           }
