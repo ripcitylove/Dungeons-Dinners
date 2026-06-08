@@ -53,10 +53,19 @@ const CRIT_STAR_POSITIONS = [
 ];
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
+// Single shared context — created on first user gesture and reused for all calls.
+// Creating a new context inside setTimeout loses the gesture activation window and
+// Chrome auto-suspends it, which silences all Web Audio output.
+let _audioCtx: AudioContext | null = null;
+
 function getCtx(): AudioContext | null {
   try {
-    const Ctx = window.AudioContext ?? (window as unknown as Record<string, unknown>).webkitAudioContext as typeof AudioContext;
-    return new Ctx();
+    if (!_audioCtx || _audioCtx.state === "closed") {
+      const Ctx = window.AudioContext ?? (window as unknown as Record<string, unknown>).webkitAudioContext as typeof AudioContext;
+      _audioCtx = new Ctx();
+    }
+    if (_audioCtx.state === "suspended") _audioCtx.resume().catch(() => {});
+    return _audioCtx;
   } catch { return null; }
 }
 
@@ -291,7 +300,7 @@ export default function DiceRoller({
       playResultSound(q);
       if (q === "crit") {
         const choir = new Audio("/angelic_choir.mp3");
-        choir.volume = narMutedRef.current ? 0 : Math.min(1, narVolumeRef.current);
+        choir.volume = 0.75;
         choir.play().catch(() => {});
       }
       const qData = QUALITY[q];

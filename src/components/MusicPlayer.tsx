@@ -403,10 +403,10 @@ export function MusicPlayer() {
 
   const [playing,       setPlaying]       = useState(false);
   const [loadError,     setLoadError]     = useState(false);
-  const [volume,        setVolume]        = useState(() => parseFloat(localStorage.getItem("dnd_music_vol") ?? "0.10"));
-  const [ambianceVol,   setAmbianceVol]   = useState(() => parseFloat(localStorage.getItem("dnd_ambiance_vol") ?? "0.35"));
-  const [musicMuted,    setMusicMuted]    = useState(() => localStorage.getItem("dnd_music_muted") === "1");
-  const [ambianceMuted, setAmbianceMuted] = useState(() => localStorage.getItem("dnd_ambiance_muted") === "1");
+  const [volume,        setVolume]        = useState(() => typeof window !== "undefined" ? parseFloat(localStorage.getItem("dnd_music_vol")      ?? "0.10") : 0.10);
+  const [ambianceVol,   setAmbianceVol]   = useState(() => typeof window !== "undefined" ? parseFloat(localStorage.getItem("dnd_ambiance_vol")  ?? "0.35") : 0.35);
+  const [musicMuted,    setMusicMuted]    = useState(() => typeof window !== "undefined" ? localStorage.getItem("dnd_music_muted")    === "1" : false);
+  const [ambianceMuted, setAmbianceMuted] = useState(() => typeof window !== "undefined" ? localStorage.getItem("dnd_ambiance_muted") === "1" : false);
   const [ambianceReady, setAmbianceReady] = useState(false);
   const [poolLabel,     setPoolLabel]     = useState("Tavern");
   const [pickerOpen,    setPickerOpen]    = useState(false);
