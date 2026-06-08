@@ -36,8 +36,8 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "items_lost":            string[],  // items spent or destroyed. [] if none.
   "weapons_gained":        string[],  // weapons or armor obtained. [] if none.
   "xp_award":              number,    // XP earned — ALWAYS infer from the outcome described (see XP rules below). Never 0 unless nothing happened.
-  "status_effects_gained": string[],  // conditions gained: "Unconscious","Poisoned","Prone","Blinded","Frightened","Paralyzed","Stunned","Charmed","Restrained","Exhausted","Petrified"
-  "status_effects_lost":   string[],  // conditions that ended this turn. [] if none.
+  "status_effects_gained": string[],  // effects gained — use canonical names with optional duration in parens. Format: "Name" or "Name (duration)". Conditions: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated. Buffs: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary. Debuffs: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark. Diseases: Diseased, Infected, Fevered, Sewer Plague. Enchantments: Attuned, Empowered, Enchanted, Mage Armor, Mirror Image.
+  "status_effects_lost":   string[],  // effects that ended this turn — use same canonical names as gained. [] if none.
   "spell_slots_used":      number,    // number of leveled spell slots consumed (not cantrips). 0 if none.
   "spell_slot_level":      number     // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast.
 }
@@ -67,7 +67,7 @@ HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
   If the amount is not stated as a number, set hp_delta to 0.
   Enemy attacks that miss, flavor descriptions of violence, or narration about monsters do NOT count.
 - A creature falling to 0 HP = Unconscious (if not dead).
-- Status effects: only add when DM explicitly applies the condition to a player character; always set target_name.
+- Status effects: only add when DM explicitly applies an effect to a player character; always set target_name to the affected character. Include duration in parens when the DM states it, e.g. "Poisoned (1 minute)". For status_effects_lost, match the base name exactly as it was gained (e.g. "Poisoned", not "the poison").
 - Spell slots: count whenever a character casts, invokes, channels, unleashes, or uses ANY named leveled spell (not cantrips). This includes paraphrased descriptions — "channels healing energy", "weaves a protective barrier", "calls forth divine light", "unleashes arcane force" are all leveled spell uses. ALWAYS set target_name to the exact CASTER's first name (the one casting), NOT the recipient of healing or buffing. Set spell_slot_level to the spell's minimum level (e.g. Fireball=3, Cure Wounds=1, Misty Step=2, Bless=1, Hold Person=2) or the upcast level if explicitly stated (e.g. "using a 3rd-level slot"). Never leave spell_slot_level at 0 when spell_slots_used > 0. CRITICAL: target_name must be the CASTER, not the person being healed or buffed.
 - HP with "you": when the DM uses "you" / "your character" with no name, set target_name to null — but ONLY do this when a single character is clearly the recipient. For party-wide effects ("each of you") set target_name to null.
 - CRITICAL — items/weapons/gold rules: ALWAYS set target_name when awarding items, weapons, or gold to a specific character. If the DM says "Thorin finds a Potion of Healing", set target_name to "Thorin". If it is truly unclear who receives an item (e.g. "the chest contains a sword" with no recipient named), output 0/[] for that item — do NOT set target_name to null with items populated.

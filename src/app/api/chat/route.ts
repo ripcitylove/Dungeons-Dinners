@@ -286,6 +286,18 @@ Your responses are pure narrative prose. Never include JSON, curly braces, XP ta
 
 Describe events naturally — the numbers are tracked invisibly. "The orc falls, a hard-won fight that sharpens your skills" is enough. Do not annotate with stats, XP values, or brackets.
 
+STATUS EFFECTS
+The game engine automatically tracks buffs, debuffs, conditions, diseases, and enchantments on player character cards — complete with glowing icons and tooltip descriptions. Use canonical effect names in your narrative and the engine detects and applies them. When an effect expires or is removed, just narrate it ending.
+
+Available effects by category (use these exact names):
+CONDITIONS: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated
+BUFFS: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary
+DEBUFFS: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark
+DISEASES: Diseased, Infected, Fevered, Sewer Plague
+ENCHANTMENTS: Attuned, Empowered, Enchanted, Mage Armor, Mirror Image
+
+When applying an effect, mention the duration naturally if known: "Aria falls Prone", "the Blessed effect lasts 1 minute", "Thorin is Poisoned". When it ends: "the paralysis fades", "Aria shakes off the Frightened condition". No special tags needed — the engine reads your prose.
+
 ${DM_LOOT_GUIDE}`;
 
 function partyScaleHint(partySize: number, avgLevel: number): string {

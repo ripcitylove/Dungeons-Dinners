@@ -17,6 +17,7 @@ import {
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
+import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -369,35 +370,7 @@ const CLASS_SAVES: Record<string, string[]> = {
   Sorcerer: ["CON","CHA"], Warlock: ["WIS","CHA"], Wizard: ["INT","WIS"],
 };
 
-const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
-  Unconscious:   { bg: "rgba(239,68,68,0.25)",   color: "#ef4444" },
-  Dead:          { bg: "rgba(31,31,31,0.6)",      color: "#6b7280" },
-  Poisoned:      { bg: "rgba(168,85,247,0.25)",   color: "#a855f7" },
-  Blinded:       { bg: "rgba(100,116,139,0.2)",   color: "#94a3b8" },
-  Frightened:    { bg: "rgba(249,115,22,0.25)",   color: "#f97316" },
-  Paralyzed:     { bg: "rgba(139,92,246,0.25)",   color: "#8b5cf6" },
-  Stunned:       { bg: "rgba(234,179,8,0.25)",    color: "#eab308" },
-  Prone:         { bg: "rgba(148,163,184,0.15)",  color: "#94a3b8" },
-  Charmed:       { bg: "rgba(236,72,153,0.25)",   color: "#ec4899" },
-  Exhausted:     { bg: "rgba(245,158,11,0.25)",   color: "#f59e0b" },
-  Restrained:    { bg: "rgba(132,204,22,0.2)",    color: "#84cc16" },
-  Petrified:     { bg: "rgba(163,163,163,0.2)",   color: "#a3a3a3" },
-};
-
-const STATUS_DESCRIPTIONS: Record<string, string> = {
-  Unconscious: "Incapacitated, can't move or speak. Fails all STR/DEX saves. Attacks against have advantage; hits within 5ft are crits.",
-  Dead:        "The character has died. Only Revivify, Raise Dead, or Resurrection can bring them back.",
-  Poisoned:    "Disadvantage on attack rolls and ability checks.",
-  Blinded:     "Can't see. Attack rolls have disadvantage; attacks against have advantage.",
-  Frightened:  "Disadvantage on ability checks and attacks while the source of fear is in sight. Can't move closer to it.",
-  Paralyzed:   "Incapacitated, can't move or speak. Fails STR/DEX saves. Attacks within 5ft are automatic crits.",
-  Stunned:     "Incapacitated, can't move, and can only speak falteringly. Fails STR/DEX saves. Attacks have advantage.",
-  Prone:       "Must crawl to move; standing costs half speed. Melee attacks have advantage; ranged attacks have disadvantage.",
-  Charmed:     "Can't attack the charmer. The charmer has advantage on social ability checks against the target.",
-  Exhausted:   "Stacking penalties: 1=disadv. on checks, 3=disadv. on attacks & saves, 5=max HP halved, 6=death.",
-  Restrained:  "Speed becomes 0. Attack rolls have disadvantage; attacks against have advantage. Disadvantage on DEX saves.",
-  Petrified:   "Transformed to stone. Incapacitated, immune to poison & disease, resistance to all damage.",
-};
+// Status effect colors and descriptions live in src/lib/statusEffects.ts
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function CampaignSession(props: { params: Promise<{ id: string }> }) {
@@ -3790,13 +3763,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const pct          = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
                 const color        = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
                 const classEmoji   = CLASS_EMOJI[char.class] ?? "⚔️";
-                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : "var(--border)";
+                const dominantEff  = getDominantEffect(char.status_effects ?? []);
+                const effectGlow   = getCardEffectGlow(char.status_effects ?? []);
+                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : dominantEff ? dominantEff.badgeColor : "var(--border)";
                 const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.3)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
+                const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
                 return (
                   <div key={char.id}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
-                    style={{ position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span
@@ -3986,16 +3962,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     )}
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
-                        {char.status_effects!.map(s => {
-                          const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
-                          const hkey = `${char.id}-${s}`;
+                        {char.status_effects!.map(raw => {
+                          const { name, duration } = parseStatusEffect(raw);
+                          const eff = STATUS_EFFECTS[name];
+                          if (!eff) {
+                            return (
+                              <span key={raw} style={{ fontSize: fs(0.6), padding: "1px 6px", borderRadius: "10px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700, cursor: "help" }}
+                                onMouseEnter={e => showTooltip(tipBox(name, name, "#94a3b8"), e)}
+                                onMouseLeave={hideTooltip}
+                              >{name}</span>
+                            );
+                          }
+                          const durationLine = duration ? `Duration: ${duration}` : `Duration: ${eff.defaultDuration}`;
                           return (
-                            <span key={s}
-                              onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(tipBox(s, STATUS_DESCRIPTIONS[s], st.color), e)}
+                            <div key={raw}
+                              style={{ width: fs(1.7), height: fs(1.7), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.0), flexShrink: 0 }}
+                              onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\n${durationLine}`, eff.badgeColor), e)}
                               onMouseLeave={hideTooltip}
-                            >
-                              <span style={{ fontSize: fs(0.6), padding: "1px 6px", borderRadius: "10px", background: st.bg, color: st.color, fontWeight: 700, letterSpacing: "0.03em", cursor: "help" }}>{s}</span>
-                            </span>
+                            >{eff.icon}</div>
                           );
                         })}
                       </div>
@@ -4160,10 +4144,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{vc.race} {vc.class} · Lvl {vc.level}</div>
                     </div>
                     {(vc.status_effects?.length ?? 0) > 0 && (
-                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        {vc.status_effects!.map(s => {
-                          const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
-                          return <span key={s} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40` }}>{s}</span>;
+                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                        {vc.status_effects!.map(raw => {
+                          const { name, duration } = parseStatusEffect(raw);
+                          const eff = STATUS_EFFECTS[name];
+                          if (!eff) return <span key={raw} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700 }}>{name}</span>;
+                          return (
+                            <div key={raw}
+                              style={{ width: fs(1.8), height: fs(1.8), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.05), flexShrink: 0 }}
+                              onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\nDuration: ${duration ?? eff.defaultDuration}`, eff.badgeColor), e)}
+                              onMouseLeave={hideTooltip}
+                            >{eff.icon}</div>
+                          );
                         })}
                       </div>
                     )}
@@ -4309,15 +4301,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 {/* Status effects */}
                 {(character.status_effects?.length ?? 0) > 0 && (
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    {character.status_effects!.map(s => {
-                      const st = STATUS_COLORS[s] ?? { bg: "rgba(100,116,139,0.2)", color: "#94a3b8" };
+                    {character.status_effects!.map(raw => {
+                      const { name, duration } = parseStatusEffect(raw);
+                      const eff = STATUS_EFFECTS[name];
+                      if (!eff) return <span key={raw} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700 }}>{name}</span>;
                       return (
-                        <span key={s}
-                          onMouseEnter={e => STATUS_DESCRIPTIONS[s] && showTooltip(tipBox(s, STATUS_DESCRIPTIONS[s], st.color), e)}
+                        <div key={raw}
+                          style={{ width: fs(1.9), height: fs(1.9), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 8px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.1), flexShrink: 0 }}
+                          onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\nDuration: ${duration ?? eff.defaultDuration}`, eff.badgeColor), e)}
                           onMouseLeave={hideTooltip}
-                        >
-                          <span style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: st.bg, color: st.color, fontWeight: 700, border: `1px solid ${st.color}40`, cursor: "help", display: "block" }}>{s}</span>
-                        </span>
+                        >{eff.icon}</div>
                       );
                     })}
                   </div>
