@@ -307,6 +307,9 @@ const POOL_LABELS: Record<string, string> = {
 
 const MAX_SKIP = 6;
 
+// Ambiance pools that contain music tracks — mute background music when active
+const MUSICAL_AMBIANCE_POOLS = new Set(["combat", "epic", "social"]);
+
 declare global {
   interface Window {
     __dndMusicPlay?: () => void;
@@ -424,10 +427,12 @@ export function MusicPlayer() {
   const activeAmbiancePool = useRef<string>("");
   const ambianceQueueRef   = useRef<string[]>([]);
   const ambianceErrors     = useRef(0);
-  const isDucked           = useRef(false);
-  const duckFadeTimer      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const musicMutedRef      = useRef(false);
-  const ambianceMutedRef   = useRef(false);
+  const isDucked               = useRef(false);
+  const duckFadeTimer          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const musicMutedRef          = useRef(false);
+  const ambianceMutedRef       = useRef(false);
+  const ambianceMusicSuppressed = useRef(false);
+  const suppressFadeRef         = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isOnLanding  = pathname === "/";
   const isOnCampaign = !!pathname?.startsWith("/campaign");
@@ -517,13 +522,40 @@ export function MusicPlayer() {
     if (duckFadeTimer.current) { clearInterval(duckFadeTimer.current); duckFadeTimer.current = null; }
   }, []);
 
+  const clearSuppressFade = useCallback(() => {
+    if (suppressFadeRef.current) { clearInterval(suppressFadeRef.current); suppressFadeRef.current = null; }
+  }, []);
+
+  const setMusicSuppressed = useCallback((suppress: boolean) => {
+    ambianceMusicSuppressed.current = suppress;
+    clearSuppressFade();
+    const audio = audioRef.current;
+    if (!audio) return;
+    const targetV = suppress ? 0 : (musicMutedRef.current ? 0 : targetVolume.current);
+    if (Math.abs(audio.volume - targetV) < 0.005) return;
+    const start = audio.volume;
+    const STEP = 30;
+    const duration = 1600;
+    let elapsed = 0;
+    suppressFadeRef.current = setInterval(() => {
+      elapsed += STEP;
+      const prog = Math.min(1, elapsed / duration);
+      const v = start + (targetV - start) * Math.sin((prog * Math.PI) / 2);
+      const a = audioRef.current;
+      if (a) a.volume = Math.max(0, Math.min(1, v));
+      if (prog >= 1) clearSuppressFade();
+    }, STEP);
+  }, [clearSuppressFade]);
+
   const duckTo = useCallback((duck: boolean) => {
     if (isDucked.current === duck) return;
     isDucked.current = duck;
     clearDuckFade();
     // Duck to 20% of user-set volume; restore to full target on unduck
     const DUCK_RATIO = 0.20;
-    const musicTarget = duck ? (musicMutedRef.current ? 0 : targetVolume.current * DUCK_RATIO) : (musicMutedRef.current ? 0 : targetVolume.current);
+    const musicTarget = duck
+      ? (musicMutedRef.current ? 0 : targetVolume.current * DUCK_RATIO)
+      : (ambianceMusicSuppressed.current || musicMutedRef.current ? 0 : targetVolume.current);
     const ambiTarget  = duck ? (ambianceMutedRef.current ? 0 : targetAmbianceV.current * DUCK_RATIO) : (ambianceMutedRef.current ? 0 : targetAmbianceV.current);
     duckFadeTimer.current = setInterval(() => {
       let settled = true;
@@ -620,7 +652,7 @@ export function MusicPlayer() {
     window.__dndSetAmbiance = (url: string | null) => {
       const a = ambianceRef.current;
       if (!a) return;
-      if (!url) { fadeOutAmbiance(() => { if (ambianceRef.current) ambianceRef.current.src = ""; setAmbianceReady(false); }); return; }
+      if (!url) { setMusicSuppressed(false); fadeOutAmbiance(() => { if (ambianceRef.current) ambianceRef.current.src = ""; setAmbianceReady(false); }); return; }
       if (a.src === url) return;
       fadeOutAmbiance(() => {
         const b = ambianceRef.current;
@@ -634,6 +666,7 @@ export function MusicPlayer() {
     window.__dndSetAmbianceScene = (scene: string, sceneType?: string, mods?: string[]) => {
       const poolKey = resolveAmbiancePool(scene, sceneType, mods);
       ambianceErrors.current = 0;
+      setMusicSuppressed(MUSICAL_AMBIANCE_POOLS.has(poolKey));
       playNextAmbiance(poolKey);
     };
 
@@ -646,24 +679,26 @@ export function MusicPlayer() {
       delete window.__dndSetAmbianceScene;
       delete window.__dndDuckAudio;
     };
-  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance, playNextAmbiance, duckTo]);
+  }, [playNextMusic, fadeTo, fadeInAmbiance, fadeOutAmbiance, playNextAmbiance, duckTo, setMusicSuppressed]);
 
   useEffect(() => { fadeTo(defaultPool); }, [defaultPool, fadeTo]);
 
   // Clear campaign ambiance when navigating away from a campaign page
   useEffect(() => {
     if (!isOnCampaign) {
+      setMusicSuppressed(false);
       fadeOutAmbiance(() => {
         if (ambianceRef.current) ambianceRef.current.src = "";
         activeAmbiancePool.current = "";
         setAmbianceReady(false);
       });
     }
-  }, [isOnCampaign, fadeOutAmbiance]);
+  }, [isOnCampaign, fadeOutAmbiance, setMusicSuppressed]);
 
   useEffect(() => {
     targetVolume.current = volume;
-    if (audioRef.current && !isDucked.current) audioRef.current.volume = musicMutedRef.current ? 0 : volume;
+    if (audioRef.current && !isDucked.current && !ambianceMusicSuppressed.current)
+      audioRef.current.volume = musicMutedRef.current ? 0 : volume;
     localStorage.setItem("dnd_music_vol", String(volume));
   }, [volume]);
 
@@ -675,7 +710,8 @@ export function MusicPlayer() {
 
   useEffect(() => {
     musicMutedRef.current = musicMuted;
-    if (audioRef.current && !isDucked.current) audioRef.current.volume = musicMuted ? 0 : targetVolume.current;
+    if (audioRef.current && !isDucked.current && !ambianceMusicSuppressed.current)
+      audioRef.current.volume = musicMuted ? 0 : targetVolume.current;
     localStorage.setItem("dnd_music_muted", musicMuted ? "1" : "0");
   }, [musicMuted]);
 

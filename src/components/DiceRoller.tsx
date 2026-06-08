@@ -137,84 +137,79 @@ function playResultSound(q: Quality) {
   }
 }
 
-// ── Die face — shared between rolling and result phases ───────────────────────
+// ── Die face — 3D cube, shared between rolling and result phases ──────────────
 function DieFace({
-  sides, bg, glow, animName, size = 128, numberValue, numberColor, numberSize,
+  sides: _sides, bg, glow, animName, size = 128, numberValue, numberColor, numberSize,
 }: {
   sides: number; bg: string; glow: string; animName?: string; size?: number;
   numberValue?: number | null; numberColor?: string; numberSize?: string;
 }) {
-  const inset = Math.round(size * 0.09);
+  const half = Math.round(size / 2);
+  const br   = `${Math.round(size * 0.08)}px`;
+  const face = {
+    position:           "absolute"  as const,
+    width:              "100%",
+    height:             "100%",
+    background:         bg,
+    borderRadius:       br,
+    border:             "1.5px solid rgba(255,255,255,0.14)",
+    backfaceVisibility: "hidden"    as const,
+    overflow:           "hidden"    as const,
+  };
   return (
     <div style={{
       position: "relative", width: size, height: size,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      animation: animName,
-      transformStyle: "preserve-3d",
+      filter: `drop-shadow(0 0 ${Math.round(size * 0.13)}px ${glow}) drop-shadow(0 8px 24px rgba(0,0,0,0.88))`,
     }}>
-      {/* Cast shadow — offset to simulate light from top-left */}
+      {/* 3D cube */}
       <div style={{
-        position: "absolute",
-        inset: inset + 4,
-        clipPath: DIE_CLIP[sides],
-        background: "rgba(0,0,0,0.65)",
-        filter: "blur(10px)",
-        transform: "translate(7px, 11px)",
-        pointerEvents: "none",
-      }} />
-      {/* Base die face */}
-      <div style={{
-        position: "absolute", inset,
-        clipPath: DIE_CLIP[sides],
-        background: bg,
-        filter: `drop-shadow(0 0 ${size * 0.18}px ${glow}) drop-shadow(0 6px 18px rgba(0,0,0,0.85))`,
-      }} />
-      {/* Worn surface texture — subtle cross-hatching */}
-      <div style={{
-        position: "absolute", inset,
-        clipPath: DIE_CLIP[sides],
-        background: `repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 7px),
-                     repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(0,0,0,0.04) 6px, rgba(0,0,0,0.04) 7px)`,
-        pointerEvents: "none",
-      }} />
-      {/* Strong top-left light face — makes the die look truly lit from one side */}
-      <div style={{
-        position: "absolute", inset,
-        clipPath: DIE_CLIP[sides],
-        background: "linear-gradient(140deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.14) 28%, transparent 55%, rgba(0,0,0,0.35) 100%)",
-        pointerEvents: "none",
-      }} />
-      {/* Center depth shadow — gives the face a slight concave bowl look */}
-      <div style={{
-        position: "absolute",
-        inset: inset + Math.round(size * 0.12),
-        clipPath: DIE_CLIP[sides],
-        background: "radial-gradient(ellipse at 60% 40%, transparent 35%, rgba(0,0,0,0.18) 100%)",
-        pointerEvents: "none",
-      }} />
-      {/* Edge bevel — thick raised rim */}
-      <div style={{
-        position: "absolute", inset,
-        clipPath: DIE_CLIP[sides],
-        boxShadow: "inset 0 3px 0 rgba(255,255,255,0.35), inset 3px 0 0 rgba(255,255,255,0.18), inset 0 -3px 0 rgba(0,0,0,0.6), inset -3px 0 0 rgba(0,0,0,0.4)",
-        pointerEvents: "none",
-      }} />
-      {/* Number */}
-      {numberValue !== null && numberValue !== undefined && (
-        <div style={{ position: "relative", zIndex: 2 }}>
-          <span style={{
-            fontSize: numberSize ?? "2.8rem",
-            fontWeight: 700,
-            color: numberColor ?? "rgba(255,255,255,0.97)",
-            lineHeight: 1,
-            textShadow: `0 0 20px ${glow}, 0 3px 8px rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.95)`,
-            letterSpacing: "0.04em",
-            fontFamily: "var(--font-cinzel, 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif)",
-          }}>
-            {numberValue}
-          </span>
+        position:       "absolute", inset: 0,
+        width:          size, height: size,
+        transformStyle: "preserve-3d",
+        transform:      animName ? undefined : `perspective(${size * 4}px) rotateX(-20deg) rotateY(28deg)`,
+        animation:      animName,
+      }}>
+        {/* Front face — lit, shows number */}
+        <div style={{ ...face, transform: `translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.10) 32%, transparent 58%, rgba(0,0,0,0.22) 100%)", borderRadius: br, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(0,0,0,0.025) 6px,rgba(0,0,0,0.025) 7px),repeating-linear-gradient(-45deg,transparent,transparent 6px,rgba(0,0,0,0.025) 6px,rgba(0,0,0,0.025) 7px)", borderRadius: br, pointerEvents: "none" }} />
+          {numberValue !== null && numberValue !== undefined && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{
+                fontSize:   numberSize ?? "2.8rem",
+                fontWeight: 700,
+                color:      numberColor ?? "rgba(255,255,255,0.97)",
+                lineHeight: 1,
+                textShadow: `0 0 20px ${glow}, 0 3px 8px rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.95)`,
+                letterSpacing: "0.04em",
+                fontFamily: "var(--font-cinzel, 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif)",
+              }}>
+                {numberValue}
+              </span>
+            </div>
+          )}
         </div>
-      )}
+        {/* Back face */}
+        <div style={{ ...face, transform: `rotateY(180deg) translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.40)", borderRadius: br }} />
+        </div>
+        {/* Right face */}
+        <div style={{ ...face, transform: `rotateY(90deg) translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right,rgba(0,0,0,0.18),rgba(0,0,0,0.32))", borderRadius: br }} />
+        </div>
+        {/* Left face */}
+        <div style={{ ...face, transform: `rotateY(-90deg) translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to left,rgba(0,0,0,0.18),rgba(0,0,0,0.32))", borderRadius: br }} />
+        </div>
+        {/* Top face */}
+        <div style={{ ...face, transform: `rotateX(90deg) translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.09)", borderRadius: br }} />
+        </div>
+        {/* Bottom face */}
+        <div style={{ ...face, transform: `rotateX(-90deg) translateZ(${half}px)` }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.52)", borderRadius: br }} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -436,30 +431,65 @@ export default function DiceRoller({
 
       {/* ── Idle: Die Selector ── */}
       {phase === "idle" && (
-        <div style={{
-          display: "flex", gap: "18px", flexWrap: "wrap", justifyContent: "center",
-          maxWidth: "580px", padding: "0 20px",
-          animation: wrongDie ? "diceShake 0.45s ease-in-out" : "none",
-        }}>
-          {DICE_SIDES.map(sides => {
-            const isRequired = requiredDice === sides;
-            const isDimmed   = !!requiredDice && !isRequired;
-            return (
+        requiredDice ? (
+          /* Single required die — skip the grid, just show the one die */
+          <button
+            onClick={() => handleDieClick(requiredDice as DieSides)}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 0,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: "20px",
+              animation: "dieBob 1.9s ease-in-out infinite",
+              transition: "transform 0.18s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.07)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+          >
+            <div style={{ position: "relative" }}>
+              {/* Beacon glow ring */}
+              <div style={{
+                position: "absolute", inset: "-28px", borderRadius: "50%",
+                background: "radial-gradient(circle, rgba(139,92,246,0.45) 0%, transparent 65%)",
+                animation: "beaconPulse 1.5s ease-in-out infinite",
+                pointerEvents: "none",
+              }} />
+              <DieFace
+                sides={requiredDice}
+                bg="linear-gradient(145deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%)"
+                glow="rgba(139,92,246,0.85)"
+                size={130}
+                numberValue={null}
+              />
+            </div>
+            <span style={{
+              fontSize: "1.1rem", fontWeight: 800, color: "#c4b5fd",
+              letterSpacing: "0.06em", textShadow: "0 0 18px rgba(139,92,246,0.75)",
+            }}>
+              Roll {DIE_LABEL[requiredDice]}
+              {isAdvDis && <span style={{ fontSize: "0.82rem", color: "#64748b", marginLeft: "10px", fontWeight: 600 }}>({requiredRollMode})</span>}
+            </span>
+          </button>
+        ) : (
+          /* Full 7-die grid — freestyle roll */
+          <div style={{
+            display: "flex", gap: "18px", flexWrap: "wrap", justifyContent: "center",
+            maxWidth: "580px", padding: "0 20px",
+            animation: wrongDie ? "diceShake 0.45s ease-in-out" : "none",
+          }}>
+            {DICE_SIDES.map(sides => (
               <button
                 key={sides}
                 onClick={() => handleDieClick(sides)}
                 style={{
                   width: "84px", height: "96px",
                   background: "none", border: "none",
-                  cursor: isDimmed ? "default" : "pointer",
+                  cursor: "pointer",
                   display: "flex", flexDirection: "column",
                   alignItems: "center", justifyContent: "center",
                   gap: "10px", padding: 0,
-                  opacity: isDimmed ? 0.11 : 1,
-                  transition: "transform 0.18s ease, opacity 0.15s",
+                  transition: "transform 0.18s ease",
                 }}
                 onMouseEnter={e => {
-                  if (!isDimmed) e.currentTarget.style.transform = "perspective(280px) rotateX(-12deg) rotateY(10deg) scale(1.15) translateY(-4px)";
+                  e.currentTarget.style.transform = "perspective(280px) rotateX(-12deg) rotateY(10deg) scale(1.15) translateY(-4px)";
                 }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
               >
@@ -467,17 +497,7 @@ export default function DiceRoller({
                   position: "relative",
                   width: "60px", height: "60px",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  animation: isRequired ? "dieBob 1.9s ease-in-out infinite" : "none",
                 }}>
-                  {isRequired && (
-                    <div style={{
-                      position: "absolute", inset: "-14px",
-                      borderRadius: "50%",
-                      background: "radial-gradient(circle, rgba(139,92,246,0.5) 0%, transparent 65%)",
-                      animation: "beaconPulse 1.5s ease-in-out infinite",
-                      pointerEvents: "none",
-                    }} />
-                  )}
                   {/* Shadow */}
                   <div style={{
                     position: "absolute", inset: 4,
@@ -490,11 +510,7 @@ export default function DiceRoller({
                   <div style={{
                     position: "absolute", inset: 0,
                     clipPath: DIE_CLIP[sides],
-                    background: isRequired
-                      ? "linear-gradient(145deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%)"
-                      : "linear-gradient(145deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 100%)",
-                    filter: isRequired ? "drop-shadow(0 0 12px rgba(139,92,246,0.7))" : "none",
-                    transition: "all 0.18s",
+                    background: "linear-gradient(145deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 100%)",
                   }} />
                   {/* Sheen */}
                   <div style={{
@@ -506,15 +522,15 @@ export default function DiceRoller({
                 </div>
                 <span style={{
                   fontSize: "0.78rem", fontWeight: 700,
-                  color: isRequired ? "#c4b5fd" : "#475569",
+                  color: "#475569",
                   letterSpacing: "0.05em",
                 }}>
                   {DIE_LABEL[sides]}
                 </span>
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )
       )}
 
       {/* ── Rolling Phase ── */}
