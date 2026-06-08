@@ -2183,8 +2183,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
-      let full   = "";
-      let narBuf = "";
+      let full    = "";
+      let narBuf  = "";
+      let narDone = false; // set true once we've enqueued enough narration for this response
 
       while (true) {
         const { done, value } = await reader.read();
@@ -2194,15 +2195,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         narBuf += chunk;
         setStreamingContent(full);
         // Sentence-level streaming narration — suppressed during opening loading screen
-        if (narrationEnabledRef.current && !campaignLoadingRef.current) {
+        if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) {
             // Stop streaming narration at a roll request — post-roll text may be truncated
             // from the display, so we must not narrate it
-            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; }
+            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; narDone = true; }
             else {
               const narSentence = stripSystemLeaks(m[1]);
-              if (narSentence) enqueueNarration(narSentence);
+              if (narSentence) {
+                enqueueNarration(narSentence);
+                // For roll-result responses narrate only the first sentence (the immediate
+                // outcome). The follow-up turn prompts and mechanical detail appear as text
+                // only — they should not keep the story paused while audio finishes.
+                if (opts?.isRollResult) narDone = true;
+              }
               narBuf = narBuf.slice(m[0].length);
             }
           }
@@ -2218,19 +2225,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (lastRollEnd > 0 && lastRollEnd < full.length - 1) {
           // Narrate any pre-roll content still sitting in narBuf (< 40 chars, never matched
           // the streaming regex) before clearing it — otherwise that content is silently lost.
-          if (narrationEnabledRef.current && !campaignLoadingRef.current) {
+          if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
             const rollInNarBuf = narBuf.search(/\broll\s+a\s+d\d+/i);
             const preRoll = (rollInNarBuf > 0 ? narBuf.slice(0, rollInNarBuf) : narBuf).trim();
             if (preRoll.length > 8) enqueueNarration(stripSystemLeaks(preRoll));
           }
           full = full.slice(0, lastRollEnd).trim();
           narBuf = "";
+          narDone = true;
         }
       }
 
       // Enqueue any remaining narBuf — threshold is 8 chars (not 30) so short call-to-action
       // sentences like "Your move!" or "What do you do?" are not silently dropped.
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
       // Route through narration-synced reveal when voice is active; add directly to messages otherwise
       if (narrationEnabledRef.current && !campaignLoadingRef.current) {
