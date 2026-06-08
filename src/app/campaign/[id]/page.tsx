@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
-import DiceRoller from "../../../components/DiceRoller";
+import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
 import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel } from "../../../lib/spellData";
 import {
@@ -3016,7 +3016,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>← Tavern</div>
                 <div style={{ flex: 1, padding: "6px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", color: "#64748b", fontSize: "0.78rem" }}>My Campaign</div>
                 <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>🔇</div>
-                <div style={{ padding: "8px 14px", background: "rgba(251,191,36,0.2)", border: "1.5px solid rgba(251,191,36,0.7)", borderRadius: "8px", color: "#fbbf24", fontSize: "1rem", fontWeight: "bold", boxShadow: "0 0 12px rgba(251,191,36,0.3)" }}>🎲</div>
+                <div style={{ padding: "8px 14px", background: "rgba(251,191,36,0.2)", border: "1.5px solid rgba(251,191,36,0.7)", borderRadius: "8px", color: "#fbbf24", display:"inline-flex", alignItems:"center", boxShadow: "0 0 12px rgba(251,191,36,0.3)" }}><D20Icon size={22} color="#fbbf24"/></div>
               </div>
               <div style={{ color: "#f59e0b", fontSize: "0.68rem", marginTop: "8px" }}>↑ Click here or press D to roll</div>
             </div>
@@ -3430,7 +3430,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <span style={{ color: "#8b5cf6" }}>⏳ DM is responding…</span>
             ) : rollRequestedUserId ? (
               <>
-                <span style={{ animation: "blink 1s step-end infinite" }}>🎲</span>
+                <span style={{ animation: "blink 1s step-end infinite", display:"inline-flex",alignItems:"center" }}><D20Icon size={16} color="#fbbf24"/></span>
                 <span style={{ color: isMyTurn ? "#fbbf24" : "#94a3b8", fontWeight: "bold" }}>
                   {isMyTurn ? "Your roll!" : `${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "A player"} is rolling…`}
                 </span>
@@ -3664,7 +3664,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   color: "#fbbf24",
                 }),
               }}
-            >🎲</button>
+            ><D20Icon size={22} color={(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn) ? "#fbbf24" : "currentColor"}/></button>
             <input
               type="text" value={input}
               onChange={e => setInput(e.target.value)}
@@ -3852,7 +3852,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       </div>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         {isDiceTarget && (
-                          <span style={{ fontSize: fs(0.62), color: "#fbbf24", fontWeight: "bold", animation: "blink 1s step-end infinite" }}>🎲 Roll!</span>
+                          <span style={{ display:"inline-flex",alignItems:"center",gap:"3px",color:"#fbbf24",fontWeight:"bold",fontSize:fs(0.62),animation:"blink 1s step-end infinite" }}><D20Icon size={13} color="#fbbf24"/> Roll!</span>
                         )}
                         {campaignParty.length > 1 && !isDiceTarget && (
                           <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
