@@ -1701,10 +1701,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setStreamingContent(full);
         if (narrationEnabledRef.current) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
-          if (m) { enqueueNarration(m[1]); narBuf = narBuf.slice(m[0].length); }
+          if (m) {
+            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; } // stop at roll request
+            else { const s = stripSystemLeaks(m[1]); if (s) enqueueNarration(s); narBuf = narBuf.slice(m[0].length); }
+          }
         }
       }
-      if (narrationEnabledRef.current && narBuf.trim().length > 30) enqueueNarration(narBuf.trim());
+      if (narrationEnabledRef.current && narBuf.trim().length > 30) enqueueNarration(stripSystemLeaks(narBuf.trim()));
       setMessages(prev => [...prev, { role: "dm", content: full }]);
       setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
@@ -1963,6 +1966,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
       .replace(/^PARTY —[^\n]*/gim, "")
+      // Strip attack-roll math lines — e.g. "11 + 3 [STR] + 2 [Prof] = 16 — hits AC 14!"
+      // Identified by bracket-enclosed stat/modifier labels specific to these math displays
+      .replace(/\b\d+[^.!?\n]*\[(?:STR|DEX|CON|INT|WIS|CHA|Prof|Spell ATK|\+\d[^\]]*)\][^.!?\n]*[.!?]?/gi, "")
+      // Strip "Roll a dN." game-mechanic instructions — these are not DM narration
+      .replace(/\bRoll\s+a\s+d\d+[^.!?]*[.!?]/gi, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }, []);
@@ -2189,9 +2197,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (narrationEnabledRef.current && !campaignLoadingRef.current) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) {
-            const narSentence = stripSystemLeaks(m[1]);
-            if (narSentence) enqueueNarration(narSentence);
-            narBuf = narBuf.slice(m[0].length);
+            // Stop streaming narration at a roll request — post-roll text may be truncated
+            // from the display, so we must not narrate it
+            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; }
+            else {
+              const narSentence = stripSystemLeaks(m[1]);
+              if (narSentence) enqueueNarration(narSentence);
+              narBuf = narBuf.slice(m[0].length);
+            }
           }
         }
       }
