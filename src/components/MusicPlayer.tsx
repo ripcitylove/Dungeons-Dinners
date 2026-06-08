@@ -455,6 +455,26 @@ export function MusicPlayer() {
     loadAndPlay(src, startVol);
   }, [loadAndPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Smooth fade between two volume levels using equal-power curve.
+  // onDone fires when fade-out reaches 0; resolves the fade-in itself.
+  const smoothFade = useCallback((
+    fromVol: number, toVol: number, durationMs: number,
+    onStep: (v: number) => void, onDone: () => void,
+  ) => {
+    clearFade();
+    const STEP = 16;
+    let elapsed = 0;
+    fadeTimer.current = setInterval(() => {
+      elapsed += STEP;
+      const prog = Math.min(1, elapsed / durationMs);
+      const vol = fromVol > toVol
+        ? fromVol * Math.cos((prog * Math.PI) / 2)         // equal-power fade-out
+        : toVol   * Math.sin((prog * Math.PI) / 2);        // equal-power fade-in
+      onStep(Math.max(0, Math.min(1, vol)));
+      if (prog >= 1) { clearFade(); onDone(); }
+    }, STEP);
+  }, [clearFade]);
+
   const fadeTo = useCallback((targetPool: string) => {
     if (activePoolKey.current === targetPool) return;
     const pool  = getPool(targetPool);
@@ -467,33 +487,27 @@ export function MusicPlayer() {
 
     if (!audio || audio.paused) return;
 
-    clearFade();
-    fadeTimer.current = setInterval(() => {
+    // Pick next track and start pre-buffering it in parallel with the fade-out
+    const { src, queue } = nextFrom(musicQueue.current, pool);
+    musicQueue.current = queue;
+    const preload = new Audio();
+    preload.preload = "auto";
+    preload.src = src;
+    preload.load();
+
+    const startVol = audio.volume;
+    smoothFade(startVol, 0, 1600, v => { if (audioRef.current) audioRef.current.volume = v; }, () => {
       const a = audioRef.current;
-      if (!a) { clearFade(); return; }
-      if (a.volume > 0.04) {
-        a.volume = Math.max(0, a.volume - 0.04);
-      } else {
-        clearFade();
-        const { src, queue } = nextFrom(musicQueue.current, pool);
-        musicQueue.current = queue;
-        a.src    = src;
-        a.volume = 0;
-        a.load();
-        a.play().catch(() => {});
-        fadeTimer.current = setInterval(() => {
-          const b = audioRef.current;
-          if (!b) { clearFade(); return; }
-          if (b.volume < targetVolume.current - 0.03) {
-            b.volume = Math.min(targetVolume.current, b.volume + 0.04);
-          } else {
-            b.volume = targetVolume.current;
-            clearFade();
-          }
-        }, 40);
-      }
-    }, 40);
-  }, [clearFade]); // eslint-disable-line react-hooks/exhaustive-deps
+      if (!a) return;
+      a.src = src;
+      a.volume = 0;
+      a.load();
+      a.play().catch(() => {});
+      smoothFade(0, targetVolume.current, 1200, v => { if (audioRef.current) audioRef.current.volume = v; }, () => {
+        if (audioRef.current) audioRef.current.volume = targetVolume.current;
+      });
+    });
+  }, [smoothFade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearAmbianceFade = useCallback(() => {
     if (ambianceFade.current) { clearInterval(ambianceFade.current); ambianceFade.current = null; }
@@ -687,8 +701,14 @@ export function MusicPlayer() {
   const skip = useCallback(() => {
     if (!audioRef.current || audioRef.current.paused) return;
     musicErrors.current = 0;
-    playNextMusic(targetVolume.current);
-  }, [playNextMusic]);
+    const startVol = audioRef.current.volume;
+    smoothFade(startVol, 0, 350, v => { if (audioRef.current) audioRef.current.volume = v; }, () => {
+      playNextMusic(0);
+      smoothFade(0, targetVolume.current, 700, v => { if (audioRef.current) audioRef.current.volume = v; }, () => {
+        if (audioRef.current) audioRef.current.volume = targetVolume.current;
+      });
+    });
+  }, [smoothFade, playNextMusic]);
 
   const selectPool = useCallback((key: string) => {
     fadeTo(key);
