@@ -2614,7 +2614,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Player send ───────────────────────────────────────────────────────────────
   const handleSend = async (actionText?: string, bypassTurn = false) => {
     const text = (actionText ?? input).trim();
-    if (!text || isTyping || narrating) return;
+    if (!text || isTyping || (narrating && !bypassTurn)) return;
     const order       = turnOrderRef.current;
     const rollReq     = rollRequestedUserIdRef.current;
     const isRollSubmit = rollReq === userId; // capture before clearing
@@ -2890,6 +2890,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   const handleDiceResult = (result: number, diceType: number, description?: string) => {
+    // Stop any in-flight narration immediately — roll submission takes priority
+    if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
+    setNarrating(false);
+    narGenerationRef.current++;
+    narSlotCounterRef.current = 0;
+    narSlotsRef.current = [];
+    narPlaySlotRef.current = 0;
     setShowDice(false);
     setRequiredDiceType(null);
     setRequiredRollMode(null);
