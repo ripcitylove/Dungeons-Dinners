@@ -2346,29 +2346,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
       // DM-driven turn: when the DM's closing question names a player ("Aria, what do you do?"),
-      // always make that player the active turn — the DM is authoritative on who acts next.
-      // If the player already acted this round, un-record it so the round doesn't stall.
+      // advance the turn to that player — but ONLY if they haven't acted yet this round.
+      // Never erase a completed action: that causes already-acted players to get a repeat turn.
       if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
         const partyNames = campaignPartyRef.current.map(c => c.name);
         const dmTurnName = detectNextTurnPlayer(full, partyNames);
         const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
         if (dmTurnChar) {
           const alreadyActed = roundActionsRef.current.some(a => a.characterId === dmTurnChar.id);
-          if (alreadyActed) {
-            roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== dmTurnChar.id);
-            setRoundActions([...roundActionsRef.current]);
+          if (!alreadyActed) {
+            // Only advance to players who haven't taken their turn yet
+            const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+            if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
+              setCurrentTurnIndex(dmTurnIdx);
+              currentTurnIndexRef.current = dmTurnIdx;
+              const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+              if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+              channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+            }
           }
-          const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
-          if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
-            setCurrentTurnIndex(dmTurnIdx);
-            currentTurnIndexRef.current = dmTurnIdx;
-            const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
-            if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
-            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
-          }
+          // If alreadyActed: silently ignore — do not rewind their turn
         } else if (opts?.prevPlayerName) {
           // No explicit next-player found — check if the DM's closing question is directed at the
           // previous player (follow-up: "Shmang, what element would you like?"). If so, rewind to them.
+          // This is a within-turn follow-up, not a repeated turn, so it is always allowed.
           const prevChar = campaignPartyRef.current.find(c => c.name === opts.prevPlayerName);
           if (prevChar) {
             const prevIdx = turnOrderRef.current.indexOf(prevChar.id);
@@ -2383,10 +2384,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const isFollowUp = new RegExp(`\\b${escPrev}\\b`, "i").test(nearQ)
                   && /\byou(?:r)?\b/i.test(nearQ);
                 if (isFollowUp) {
-                  if (roundActionsRef.current.some(a => a.characterId === prevChar.id)) {
-                    roundActionsRef.current = roundActionsRef.current.filter(a => a.characterId !== prevChar.id);
-                    setRoundActions([...roundActionsRef.current]);
-                  }
+                  // Don't erase the previous action — handleSend will replace it when they answer
                   setCurrentTurnIndex(prevIdx);
                   currentTurnIndexRef.current = prevIdx;
                   channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
