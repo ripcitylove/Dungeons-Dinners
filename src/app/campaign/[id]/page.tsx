@@ -1698,7 +1698,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         full += chunk; narBuf += chunk;
-        setStreamingContent(full);
+        if (full.length >= 15 || /[.!?…]/.test(full)) setStreamingContent(full);
         if (narrationEnabledRef.current) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
           if (m) {
@@ -2195,7 +2195,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const chunk = decoder.decode(value, { stream: true });
         full   += chunk;
         narBuf += chunk;
-        setStreamingContent(full);
+        // Only surface content once we have a meaningful fragment — prevents bare "PlayerName," flashes
+        if (full.length >= 15 || /[.!?…]/.test(full)) setStreamingContent(full);
         // Sentence-level streaming narration — suppressed during opening loading screen
         if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
           const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
