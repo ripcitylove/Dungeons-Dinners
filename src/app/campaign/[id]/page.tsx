@@ -1324,6 +1324,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return () => clearTimeout(t);
   }, [narRevealText, narRevealIntervalMs]);
 
+  // Global narration watchdog — if narrating stays true for 45 s the audio never ended; unlock the game.
+  useEffect(() => {
+    if (!narrating) return;
+    const t = setTimeout(() => {
+      if (!audioPlayingRef.current) return;
+      console.warn("[narration] global watchdog — narrating stuck, force-resetting");
+      const el = narAudioRef.current;
+      if (el) { el.pause(); el.src = ""; }
+      audioPlayingRef.current = false;
+      narSlotCounterRef.current = 0;
+      narSlotsRef.current = [];
+      narPlaySlotRef.current = 0;
+      setNarrating(false);
+    }, 45000);
+    return () => clearTimeout(t);
+  }, [narrating]);
+
   // Guarantee: whenever it's my turn, the DM isn't busy, and suggestions are empty,
   // fetch them from the last DM message. Covers resume, turn changes, and silent fetch failures.
   const suggestionFetchInFlightRef = useRef(false);
@@ -1606,7 +1623,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     audioPlayingRef.current = true;
 
+    // Per-clip stuck-audio failsafe — cleared as soon as onended/onerror fire normally
+    let stuckTimer: ReturnType<typeof setTimeout> | null = null;
+
     const cleanup = () => {
+      if (stuckTimer) { clearTimeout(stuckTimer); stuckTimer = null; }
       el.oncanplaythrough = null;
       el.onerror          = null;
       el.onended          = null;
@@ -1631,6 +1652,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const computed = Math.round((el.duration * 1000) / groups);
         setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
       }
+      // If onended never fires (CDN stall, browser quirk), force-cleanup after duration + 8 s buffer
+      const clipMs = el.duration > 0 ? Math.ceil(el.duration * 1000) + 8000 : 30000;
+      stuckTimer = setTimeout(() => {
+        if (audioPlayingRef.current) {
+          console.warn("[narration] clip stuck — forcing cleanup");
+          el.pause();
+          cleanup();
+        }
+      }, clipMs);
       setNarrating(true);
       const p = el.play();
       if (p instanceof Promise) p.catch(() => cleanup());
