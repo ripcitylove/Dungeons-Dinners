@@ -230,10 +230,11 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Player messages are prefixed with [CharacterName]: to identify the speaker.
 - Always address characters by their FIRST NAME ONLY (e.g. say "Aria" not "Aria Moonwhisper"). Never use a character's full name in narration or dialogue.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
-- CURRENT TURN tells you exactly who is acting. Address ONLY that player. Narrate consequences of the previous action, then close with a varied call to action directed at the CURRENT TURN player. Rotate through different phrasings — never repeat the same one twice in a row. Examples: "[Name], what do you do?" / "How do you respond, [Name]?" / "The choice is yours, [Name]." / "What's your next move, [Name]?" / "Make your move, [Name]." / "You're up, [Name] — what now?" / "The moment is yours, [Name]." / "[Name], how do you proceed?"
-- ROLL REQUESTS: The CURRENT TURN block names a previous player who just submitted their action. If resolving THAT player's action requires a roll (attack, skill check, saving throw), ask ONLY THAT PLAYER to roll. Format: "[FirstName], roll a d20." Your response ENDS with that sentence — stop immediately. The CURRENT TURN player is the NEXT player in sequence who has NOT yet acted — never ask them to roll, never invent an action for them. The ROLL RESTRICTION block below is the absolute final authority on who may roll in each response.
-- Do NOT include "[Name], roll a [type]" for any character other than the one named in ROLL RESTRICTION as permitted to roll. Asking the wrong character to roll is a critical error.
-- TURN ORDER: The REMAINING THIS ROUND block (when present) shows only the players who still need to act this round. Follow it exactly. Do not address anyone not listed — they have already acted or passed this round.
+- CURRENT TURN names who will act NEXT once any pending business resolves. End your response by asking that player what they do — unless the ROLL RESTRICTION says someone else must roll first (in which case, ask only that person to roll and stop).
+- ROLL RESTRICTION is the absolute authority on who may roll. Follow it exactly. Ask no other character to roll in any response. Asking the wrong character to roll is a critical error.
+- When a previous player's action resolves with a roll: one sentence asking only that player to roll a d20, then STOP. Zero words after the period. The ROLL RESTRICTION block names the permitted roller.
+- Rotate your closing call-to-action phrasing — never repeat the same one twice in a row. Examples: "[Name], what do you do?" / "How do you respond, [Name]?" / "The choice is yours, [Name]." / "What's your next move, [Name]?" / "Make your move, [Name]." / "You're up, [Name] — what now?"
+- TURN ORDER: The REMAINING THIS ROUND block (when present) shows which players still need to declare their next action. It does NOT restrict who may roll — a player may still be asked to roll their dice even if they already submitted their action this round (e.g. an attack roll resolves after the action is submitted). The ROLL RESTRICTION block is the final authority on who rolls. The CURRENT TURN block is the final authority on who acts next.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then set the scene for the next round. Do NOT end with "[Name], what do you do?" — the game engine automatically sends that prompt to the next player. Writing it causes the player to be asked twice.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 - PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted. If a player has not acted this turn, they have not acted — full stop.
@@ -350,29 +351,22 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   // Suppress prevActedLine during reconciliation — the round summary supersedes individual turn transitions
   const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
-      ? `${prevActingPlayerName} just submitted their dice roll result. Resolve this roll's outcome in the narrative, then address ${currentTurnPlayerName ?? prevActingPlayerName}. `
-      : `${prevActingPlayerName} just acted. Choose EXACTLY ONE of these two paths:\n  • ROLL NEEDED — if resolving ${prevActingPlayerName}'s action requires a roll (attack hit check, ability check, saving throw): your ENTIRE response is one sentence asking ${prevActingPlayerName} to roll a d20. Stop immediately after that sentence. Do not narrate outcomes or address ${currentTurnPlayerName}.\n  • NO ROLL NEEDED — if no roll is required: narrate ${prevActingPlayerName}'s result in 1–2 sentences, then ask ${currentTurnPlayerName} what they want to do. Do NOT ask ${currentTurnPlayerName} to roll — they have not yet declared an action.\n`
+      ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome in 1–2 sentences, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
+      : `${prevActingPlayerName} just acted. Does it need a dice roll? YES → ask ${prevActingPlayerName} to roll a d20, STOP immediately. NO → narrate the outcome in 1–2 sentences, then ask ${currentTurnPlayerName} what they do. `
     : "";
 
-  // Who comes after the current player in explicit turn order
-  const nextInOrder = turnOrder && turnOrder.length > 1 && currentTurnPlayerName
-    ? (() => { const i = turnOrder.indexOf(currentTurnPlayerName); return i >= 0 ? turnOrder[(i + 1) % turnOrder.length] : null; })()
-    : null;
-
-  // When prevActedLine is present it already contains the full roll/narrate decision tree.
   // Only add the standalone turn instruction when there is no preceding player to resolve.
   const standaloneTurnInstruction = !prevActedLine
-    ? `It is ${currentTurnPlayerName}'s turn. If resolving the current situation requires a roll from ${currentTurnPlayerName}, your ENTIRE response is that roll request — one sentence, then stop. Otherwise end your response by asking ${currentTurnPlayerName} what they want to do.\n`
+    ? `It is ${currentTurnPlayerName}'s turn. If a roll is needed ask for it and stop. Otherwise ask what they want to do.\n`
     : "";
 
-  // Roll restriction: if a previous player's action is still unresolved, ONLY they may roll.
-  // The current turn player has not yet declared an action and must never be asked to roll.
+  // Roll restriction: concise single-line authority on who may roll.
   const rollRestriction = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName && !isRollResult
-    ? `ROLL RESTRICTION: ${prevActingPlayerName}'s action may require a dice roll. If it does, ask ONLY ${prevActingPlayerName} to roll a d20 — then STOP immediately. ${currentTurnPlayerName} has NOT yet declared their action and must NOT be asked to roll under any circumstances. Never ask any character other than ${prevActingPlayerName} to roll in this response.`
-    : `ROLL RESTRICTION: Only ${currentTurnPlayerName} may be asked to roll in this response. Do not ask any other character to roll.`;
+    ? `ROLL RESTRICTION: Only ${prevActingPlayerName} may roll this response. Do not ask ${currentTurnPlayerName} to roll.`
+    : `ROLL RESTRICTION: Only ${currentTurnPlayerName} may roll.`;
 
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${nextInOrder ? `UP NEXT after ${currentTurnPlayerName}: ${nextInOrder}\n` : ""}${standaloneTurnInstruction}${rollRestriction}\n`
+    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${standaloneTurnInstruction}${rollRestriction}\n`
     : "";
 
   const reconcileBlock = roundSummary?.length
@@ -388,7 +382,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const partyLeaderBlock = party && party.length > 1
-    ? `\nGROUP ROLLS — When the situation calls for the entire party to make a check (Perception, Stealth, saving throws, etc.), address the CURRENT TURN player by name and say it is a group/party check. Example: "${currentTurnPlayerName ?? "the active player"}, roll a d20 for the party." This roll does NOT consume that player's individual turn — after the result resolves it is STILL their turn to act. Never ask each party member individually for the same group roll.\n`
+    ? `\nGROUP ROLLS — For whole-party checks (Perception, Stealth, saving throws), ask the CURRENT TURN player to roll a d20 for the party. This does NOT use their individual turn action — they still act after the result.\n`
     : "";
 
   const groupCheckBlock = isGroupCheckResult && currentTurnPlayerName
@@ -396,7 +390,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const turnOrderBlock = turnOrder && turnOrder.length > 1
-    ? `\nREMAINING THIS ROUND: ${turnOrder.join(" → ")}. Address them in this exact sequence — do not ask anyone outside this list to act.\n`
+    ? `\nREMAINING THIS ROUND: ${turnOrder.join(" → ")}.\n`
     : "";
 
   const turnSkipBlock = isTurnSkip && currentTurnPlayerName

@@ -111,18 +111,40 @@ const GEOM: Record<number, Geom> = {
     gx:33,gy:19,
     nx:50,ny:54,nSize:22,
   },
-  // d20 — icosahedron: triangle subdivided into 4 sub-triangles (like the real die face)
+  // d20 — icosahedron: pentagon outer + 5 surrounding faces + front triangular face w/ 4 sub-triangles
+  // Pentagon: P1(50,5) P2(93,34) P3(76,88) P4(24,88) P5(7,34)
+  // Inner triangle: T1(50,20) T2(75,65) T3(25,65)  — centroid at (50,50)
+  // Sub-midpoints: M_TR(63,43) M_TL(38,43) M_B(50,65)
   20: {
-    outer: "M50,5 L95,84 L5,84 Z",
+    outer: "M50,5 L93,34 L76,88 L24,88 L7,34 Z",
     faces: [
-      { p:"M50,5  L28,44 L72,44 Z",   dark:-0.10 }, // top sub-triangle (most lit)
-      { p:"M5,84  L28,44 L50,84 Z",   dark:0.04  }, // lower-left
-      { p:"M95,84 L72,44 L50,84 Z",   dark:0.08  }, // lower-right
-      { p:"M28,44 L72,44 L50,84 Z",   dark:0.16  }, // centre (inverted, darkest)
+      // 5 outer faces between pentagon rim and inner triangle
+      { p:"M7,34 L50,5 L50,20 L25,65 Z",    dark:-0.08 }, // top-left outer (lit)
+      { p:"M50,5 L93,34 L75,65 L50,20 Z",   dark:0.02  }, // top-right outer
+      { p:"M93,34 L76,88 L75,65 Z",          dark:0.12  }, // right outer
+      { p:"M76,88 L24,88 L25,65 L75,65 Z",  dark:0.22  }, // bottom outer (darkest)
+      { p:"M24,88 L7,34 L25,65 Z",           dark:0.16  }, // left outer
+      // 4 sub-triangles of the front face
+      { p:"M50,20 L38,43 L63,43 Z",         dark:-0.10 }, // top sub (most lit)
+      { p:"M25,65 L38,43 L50,65 Z",         dark:0.06  }, // left sub
+      { p:"M75,65 L63,43 L50,65 Z",         dark:0.08  }, // right sub
+      { p:"M38,43 L63,43 L50,65 Z",         dark:0.14  }, // centre inverted (darkest)
     ],
-    inner: ["M28,44 L72,44","M28,44 L50,84","M72,44 L50,84"],
-    gx:34,gy:22,
-    nx:50,ny:69,nSize:20,
+    inner: [
+      "M50,5 L50,20",    // P1 → T1
+      "M50,20 L25,65",   // T1 → T3 (left triangle edge)
+      "M50,20 L75,65",   // T1 → T2 (right triangle edge)
+      "M75,65 L25,65",   // T2 → T3 (bottom triangle edge)
+      "M93,34 L75,65",   // P2 → T2
+      "M76,88 L75,65",   // P3 → T2
+      "M24,88 L25,65",   // P4 → T3
+      "M7,34 L25,65",    // P5 → T3
+      "M38,43 L63,43",   // sub-triangle horizontal divider
+      "M38,43 L50,65",   // sub-triangle left diagonal
+      "M63,43 L50,65",   // sub-triangle right diagonal
+    ],
+    gx:34,gy:20,
+    nx:50,ny:50,nSize:18,
   },
   // d100 — circle die
   100: {
