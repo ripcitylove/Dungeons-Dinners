@@ -2044,7 +2044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[] }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; _retried?: boolean }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -2236,6 +2236,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Enqueue any remaining narBuf — threshold is 8 chars (not 30) so short call-to-action
       // sentences like "Your move!" or "What do you do?" are not silently dropped.
       if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+
+      // Guard: if the response has no sentence-ending punctuation it's a bare fragment (e.g. "Ekko,").
+      // Retry once automatically — the prompt fix should prevent recurrence, but this catches edge cases.
+      if (!opts?._retried && !/[.!?…]/.test(full.trim())) {
+        console.warn("[sendToAI] Degenerate response detected, retrying once:", JSON.stringify(full));
+        setTimeout(() => sendToAI(allMessages, isOpeningScene, { ...opts, _retried: true }), 400);
+        return;
+      }
 
       // Route through narration-synced reveal when voice is active; add directly to messages otherwise
       if (narrationEnabledRef.current && !campaignLoadingRef.current) {

@@ -351,8 +351,8 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   // Suppress prevActedLine during reconciliation — the round summary supersedes individual turn transitions
   const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
-      ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome in 1–2 sentences, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
-      : `${prevActingPlayerName} just acted. Does it need a dice roll? YES → ask ${prevActingPlayerName} to roll a d20, STOP immediately. NO → narrate the outcome in 1–2 sentences, then ask ${currentTurnPlayerName} what they do. `
+      ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
+      : `${prevActingPlayerName} just acted. Does it need a dice roll? → If yes: write one complete sentence — "Roll a d20." — then end your response. → If no: narrate the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName} what they do. `
     : "";
 
   // Only add the standalone turn instruction when there is no preceding player to resolve.
