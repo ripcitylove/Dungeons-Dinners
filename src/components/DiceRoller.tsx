@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
 type DieSides = typeof DICE_SIDES[number];
@@ -454,11 +454,10 @@ export default function DiceRoller({
     }, 1380);
   }, [requiredRollMode, isAdvDis, onRollComplete]);
 
-  // Auto-roll when DM has already called for a specific die
-  useEffect(() => {
+  // Auto-roll before first paint — no idle phase when the DM has specified a die
+  useLayoutEffect(() => {
     if (requiredDice && DICE_SIDES.includes(requiredDice as DieSides)) {
-      const t = setTimeout(() => executeRoll(requiredDice as DieSides), 180);
-      return () => clearTimeout(t);
+      executeRoll(requiredDice as DieSides);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

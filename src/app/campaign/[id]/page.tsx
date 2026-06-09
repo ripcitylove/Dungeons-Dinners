@@ -1078,6 +1078,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
+        // Skip empty broadcasts — these occur when the sender suppressed a degenerate response
+        if (!(payload.content as string)?.trim()) return;
         setIsTyping(false); setStreamingContent("");
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "dm", content: payload.content }]);
@@ -2269,9 +2271,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // sentences like "Your move!" or "What do you do?" are not silently dropped.
       if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
-      // Guard: if the response has no sentence-ending punctuation it's a bare fragment (e.g. "Shmang,").
-      // Retry up to 3 times. On the 3rd failure fall back to a silent empty message so nothing is shown.
-      if (!/[.!?…]/.test(full.trim())) {
+      // Guard: catch two classes of degenerate response:
+      // 1. Raw fragment — no sentence-ending punctuation (e.g. "Shmang,")
+      // 2. Strip-degenerate — passes the raw check but stripSystemLeaks reduces it to a bare
+      //    fragment at display time (e.g. "Randiezel, roll a d20." → display shows "Randiezel,")
+      const displayFull = stripSystemLeaks(full).trim();
+      const isDegenerate = !/[.!?…]/.test(full.trim())  // raw fragment
+        || !displayFull                                    // strips to empty (e.g. "Roll a d20.")
+        || (displayFull.length < 20 && !/[.!?…]/.test(displayFull)); // strips to short bare fragment
+      if (isDegenerate) {
         const retryCount = (opts?._retryCount ?? 0) + 1;
         if (retryCount <= 3) {
           console.warn(`[sendToAI] Degenerate response (attempt ${retryCount}), retrying:`, JSON.stringify(full));
@@ -2415,15 +2423,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Only persist the triggering player message when it's new — not when the last message is already a DM
       // response (e.g. triggerReconciliation or handleTurnSkip pass messages ending with a DM msg).
       const lastMsg = allMessages[allMessages.length - 1];
-      const toInsert = lastMsg.role === "player"
-        ? [
-            { campaign_id: params.id, role: lastMsg.role, content: lastMsg.content, sender: lastMsg.sender ?? null },
-            { campaign_id: params.id, role: "dm",         content: full,            sender: null },
-          ]
-        : [{ campaign_id: params.id, role: "dm", content: full, sender: null }];
-      supabase.from("campaign_messages").insert(toInsert).then(({ error }) => { if (error) console.error("[campaign] save:", error); });
-
-      channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userId, content: full, actingCharId: characterRef.current?.id ?? null } });
+      if (full) {
+        const toInsert = lastMsg.role === "player"
+          ? [
+              { campaign_id: params.id, role: lastMsg.role, content: lastMsg.content, sender: lastMsg.sender ?? null },
+              { campaign_id: params.id, role: "dm",         content: full,            sender: null },
+            ]
+          : [{ campaign_id: params.id, role: "dm", content: full, sender: null }];
+        supabase.from("campaign_messages").insert(toInsert).then(({ error }) => { if (error) console.error("[campaign] save:", error); });
+        channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userId, content: full, actingCharId: characterRef.current?.id ?? null } });
+      } else if (lastMsg.role === "player") {
+        // DM response suppressed — still persist the player's action so it survives session reload
+        supabase.from("campaign_messages")
+          .insert([{ campaign_id: params.id, role: "player", content: lastMsg.content, sender: lastMsg.sender ?? null }])
+          .then(({ error }) => { if (error) console.error("[campaign] save player:", error); });
+      }
 
       // Focus the party panel on the character whose turn the DM just announced
       if (campaignPartyRef.current.length > 1) {
