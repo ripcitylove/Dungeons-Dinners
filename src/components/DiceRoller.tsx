@@ -41,17 +41,17 @@ type Geom = {
 };
 
 const GEOM: Record<number, Geom> = {
-  // d4 — tetrahedron: flat triangle, altitude-line interior, number at base
+  // d4 — tetrahedron: equilateral triangle, Y from centroid creates 3 equal triangular faces
   4: {
     outer: "M50,6 L94,87 L6,87 Z",
     faces: [
-      { p:"M50,6 L72,46 L50,87 Z",    dark:-0.10 },  // left-centre sub (lit)
-      { p:"M50,6 L72,46 L94,87 Z",    dark:0.06  },  // right sub
-      { p:"M6,87 L50,87 L72,46 L50,6 Z", dark:0.12}, // left-bottom sub (shadow)
+      { p:"M50,6 L6,87 L50,60 Z",   dark:-0.10 }, // upper-left (most lit)
+      { p:"M50,6 L50,60 L94,87 Z",  dark:0.04  }, // upper-right
+      { p:"M6,87 L94,87 L50,60 Z",  dark:0.16  }, // bottom (darkest)
     ],
-    inner: ["M50,6 L50,87","M6,87 L72,46","M94,87 L28,46"],
+    inner: ["M50,6 L50,60","M6,87 L50,60","M94,87 L50,60"],
     gx:36,gy:28,
-    nx:50,ny:74,nSize:20,
+    nx:50,ny:78,nSize:20,
   },
   // d6 — isometric cube: hexagon, Y of inner lines points UP to top vertices,
   // center at (50,50). 3 visible faces: top (lit), right (mid), left (dark).
@@ -79,72 +79,85 @@ const GEOM: Record<number, Geom> = {
     gx:32,gy:22,
     nx:50,ny:56,nSize:26,
   },
-  // d10 — pentagonal trapezohedron: 5-sided kite, radiating face lines
+  // d10 — pentagonal trapezohedron: wide diamond silhouette, 5 kite faces
+  // Outer: 4-point diamond T(50,7) R(91,48) B(50,93) L(9,48)
+  // Inner: UI(50,28) LI(50,72) LE(36,48) RE(64,48)
   10: {
-    outer: "M50,5 L90,37 L76,88 L24,88 L10,37 Z",
+    outer: "M50,7 L91,48 L50,93 L9,48 Z",
     faces: [
-      { p:"M50,5 L10,37 L50,60 Z",    dark:-0.08 }, // upper-left (lit)
-      { p:"M50,5 L90,37 L50,60 Z",    dark:0.02  }, // upper-right
-      { p:"M10,37 L24,88 L50,60 Z",   dark:0.10  }, // lower-left
-      { p:"M90,37 L76,88 L50,60 Z",   dark:0.14  }, // lower-right
-      { p:"M76,88 L24,88 L50,60 Z",   dark:0.20  }, // bottom (darkest)
+      { p:"M50,7 L9,48 L36,48 L50,28 Z",   dark:-0.08 }, // upper-left kite (lit)
+      { p:"M50,7 L50,28 L64,48 L91,48 Z",   dark:0.02  }, // upper-right kite
+      { p:"M50,28 L36,48 L50,72 L64,48 Z",  dark:-0.04 }, // center front kite
+      { p:"M9,48 L36,48 L50,72 L50,93 Z",   dark:0.14  }, // lower-left kite
+      { p:"M64,48 L91,48 L50,93 L50,72 Z",  dark:0.20  }, // lower-right kite (darkest)
     ],
-    inner: ["M10,37 L90,37","M50,5 L50,60","M50,60 L76,88","M50,60 L24,88"],
+    inner: [
+      "M9,48 L36,48","M64,48 L91,48",
+      "M50,7 L50,28","M50,28 L36,48","M50,28 L64,48",
+      "M36,48 L50,72","M64,48 L50,72","M50,72 L50,93",
+    ],
     gx:30,gy:18,
     nx:50,ny:65,nSize:22,
   },
-  // d12 — dodecahedron: outer pentagon + inner pentagon + connecting radii
+  // d12 — dodecahedron: circular 10-gon outer, inner pentagon, 5 surrounding pentagon faces
+  // Outer ring (CW): V0(50,6) V9(76,14) V8(92,36) V7(92,64) V6(76,86) V5(50,94) V4(24,86) V3(8,64) V2(8,36) V1(24,14)
+  // Inner pentagon: P0(50,28) P1(71,43) P2(63,68) P3(37,68) P4(29,43)
   12: {
-    outer: "M50,7 L88,35 L74,79 L26,79 L12,35 Z",
+    outer: "M50,6 L76,14 L92,36 L92,64 L76,86 L50,94 L24,86 L8,64 L8,36 L24,14 Z",
     faces: [
-      { p:"M50,7  L88,35 L67,42 L50,29 Z",          dark:-0.10 }, // top trapezoid (lit)
-      { p:"M12,35 L50,7  L50,29 L33,42 Z",           dark:-0.04 }, // top-left trapezoid
-      { p:"M88,35 L74,79 L61,62 L67,42 Z",           dark:0.08  }, // right trapezoid
-      { p:"M26,79 L12,35 L33,42 L39,62 Z",           dark:0.10  }, // left trapezoid
-      { p:"M74,79 L26,79 L39,62 L61,62 Z",           dark:0.20  }, // bottom trapezoid (darkest)
-      { p:"M50,29 L67,42 L61,62 L39,62 L33,42 Z",   dark:0.06  }, // inner pentagon
+      { p:"M50,28 L71,43 L63,68 L37,68 L29,43 Z",         dark: 0.06 }, // center pentagon
+      { p:"M29,43 L50,28 L50,6 L24,14 L8,36 Z",            dark:-0.06 }, // upper-left face (lit)
+      { p:"M50,28 L71,43 L92,36 L76,14 L50,6 Z",           dark: 0.02 }, // upper-right face
+      { p:"M71,43 L63,68 L76,86 L92,64 L92,36 Z",          dark: 0.14 }, // right face
+      { p:"M63,68 L37,68 L24,86 L50,94 L76,86 Z",          dark: 0.22 }, // bottom face (darkest)
+      { p:"M37,68 L29,43 L8,36 L8,64 L24,86 Z",            dark: 0.10 }, // left face
     ],
     inner: [
-      "M50,29 L67,42","M67,42 L61,62","M61,62 L39,62","M39,62 L33,42","M33,42 L50,29",
-      "M50,7 L50,29","M88,35 L67,42","M74,79 L61,62","M26,79 L39,62","M12,35 L33,42",
+      // 5 spokes: inner pentagon vertex → outer ring vertex
+      "M50,28 L50,6","M71,43 L92,36","M63,68 L76,86","M37,68 L24,86","M29,43 L8,36",
+      // 5 inner pentagon edges
+      "M50,28 L71,43","M71,43 L63,68","M63,68 L37,68","M37,68 L29,43","M29,43 L50,28",
     ],
-    gx:33,gy:19,
-    nx:50,ny:54,nSize:22,
+    gx:32,gy:16,
+    nx:50,ny:54,nSize:20,
   },
-  // d20 — icosahedron: pentagon outer + 5 surrounding faces + front triangular face w/ 4 sub-triangles
-  // Pentagon: P1(50,5) P2(93,34) P3(76,88) P4(24,88) P5(7,34)
-  // Inner triangle: T1(50,20) T2(75,65) T3(25,65)  — centroid at (50,50)
-  // Sub-midpoints: M_TR(63,43) M_TL(38,43) M_B(50,65)
+  // d20 — icosahedron vertex-on "wheel" projection
+  // C=(50,50) center vertex; inner ring V0-V4; outer ring O0-O4
+  // 15 faces: 5 top-cap (lit) + 5 up-belt (mid) + 5 gap (dark)
   20: {
-    outer: "M50,5 L93,34 L76,88 L24,88 L7,34 Z",
+    outer: "M76,14 L92,64 L50,94 L8,64 L24,14 Z",
     faces: [
-      // 5 outer faces between pentagon rim and inner triangle
-      { p:"M7,34 L50,5 L50,20 L25,65 Z",    dark:-0.08 }, // top-left outer (lit)
-      { p:"M50,5 L93,34 L75,65 L50,20 Z",   dark:0.02  }, // top-right outer
-      { p:"M93,34 L76,88 L75,65 Z",          dark:0.12  }, // right outer
-      { p:"M76,88 L24,88 L25,65 L75,65 Z",  dark:0.22  }, // bottom outer (darkest)
-      { p:"M24,88 L7,34 L25,65 Z",           dark:0.16  }, // left outer
-      // 4 sub-triangles of the front face
-      { p:"M50,20 L38,43 L63,43 Z",         dark:-0.10 }, // top sub (most lit)
-      { p:"M25,65 L38,43 L50,65 Z",         dark:0.06  }, // left sub
-      { p:"M75,65 L63,43 L50,65 Z",         dark:0.08  }, // right sub
-      { p:"M38,43 L63,43 L50,65 Z",         dark:0.14  }, // centre inverted (darkest)
+      // 5 top-cap faces (centre vertex C → inner ring) — brightest
+      { p:"M50,50 L27,43 L50,26 Z", dark:-0.12 },
+      { p:"M50,50 L50,26 L73,43 Z", dark:-0.08 },
+      { p:"M50,50 L73,43 L64,69 Z", dark: 0.04 },
+      { p:"M50,50 L36,69 L27,43 Z", dark:-0.02 },
+      { p:"M50,50 L64,69 L36,69 Z", dark: 0.10 },
+      // 5 up-belt faces (outer ring → inner ring) — medium
+      { p:"M24,14 L27,43 L50,26 Z", dark:-0.04 },
+      { p:"M76,14 L50,26 L73,43 Z", dark: 0.04 },
+      { p:"M92,64 L73,43 L64,69 Z", dark: 0.14 },
+      { p:"M8,64  L36,69 L27,43 Z", dark: 0.18 },
+      { p:"M50,94 L64,69 L36,69 Z", dark: 0.24 },
+      // 5 gap faces (outer ring edge triangles) — darkest
+      { p:"M24,14 L76,14 L50,26 Z", dark: 0.22 },
+      { p:"M76,14 L92,64 L73,43 Z", dark: 0.26 },
+      { p:"M92,64 L50,94 L64,69 Z", dark: 0.30 },
+      { p:"M50,94 L8,64  L36,69 Z", dark: 0.28 },
+      { p:"M8,64  L24,14 L27,43 Z", dark: 0.22 },
     ],
     inner: [
-      "M50,5 L50,20",    // P1 → T1
-      "M50,20 L25,65",   // T1 → T3 (left triangle edge)
-      "M50,20 L75,65",   // T1 → T2 (right triangle edge)
-      "M75,65 L25,65",   // T2 → T3 (bottom triangle edge)
-      "M93,34 L75,65",   // P2 → T2
-      "M76,88 L75,65",   // P3 → T2
-      "M24,88 L25,65",   // P4 → T3
-      "M7,34 L25,65",    // P5 → T3
-      "M38,43 L63,43",   // sub-triangle horizontal divider
-      "M38,43 L50,65",   // sub-triangle left diagonal
-      "M63,43 L50,65",   // sub-triangle right diagonal
+      // 5 spokes C → inner ring
+      "M50,50 L50,26","M50,50 L73,43","M50,50 L64,69","M50,50 L36,69","M50,50 L27,43",
+      // 5 inner pentagon edges
+      "M50,26 L73,43","M73,43 L64,69","M64,69 L36,69","M36,69 L27,43","M27,43 L50,26",
+      // 10 outer spokes inner → outer ring
+      "M50,26 L76,14","M73,43 L76,14","M73,43 L92,64","M64,69 L92,64",
+      "M64,69 L50,94","M36,69 L50,94","M36,69 L8,64","M27,43 L8,64",
+      "M27,43 L24,14","M50,26 L24,14",
     ],
-    gx:34,gy:20,
-    nx:50,ny:50,nSize:18,
+    gx:28,gy:20,
+    nx:50,ny:63,nSize:18,
   },
   // d100 — circle die
   100: {
@@ -341,24 +354,29 @@ function DieSVG({
 }
 
 // ── D20 toolbar icon ──────────────────────────────────────────────────────────
-// Shows an icosahedron face-on: outer pentagon silhouette (the die body)
-// with the front triangular face and its 4-sub-triangle subdivision visible.
+// Vertex-on icosahedron "wheel": outer pentagon + inner pentagon + spokes
 export function D20Icon({ size = 22, color = "currentColor" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      {/* Pentagon body of the icosahedron */}
-      <path d="M50,4 L94,33 L77,88 L23,88 L6,33 Z"
-        fill="rgba(88,28,196,0.38)" stroke={color} strokeWidth="4.5" strokeLinejoin="round"/>
-      {/* Front triangular face (slightly lighter) */}
-      <path d="M50,20 L80,74 L20,74 Z"
-        fill="rgba(167,139,250,0.28)"/>
-      {/* Front-face subdivision lines (d20 sub-triangle pattern) */}
-      <line x1="35" y1="47" x2="65" y2="47" stroke={color} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.72"/>
-      <line x1="35" y1="47" x2="50" y2="74" stroke={color} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.72"/>
-      <line x1="65" y1="47" x2="50" y2="74" stroke={color} strokeWidth="2" strokeLinecap="round" strokeOpacity="0.72"/>
-      {/* Outer triangle edge */}
-      <path d="M50,20 L80,74 L20,74 Z"
-        fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeOpacity="0.80"/>
+      <path d="M76,14 L92,64 L50,94 L8,64 L24,14 Z"
+        fill="rgba(88,28,196,0.40)" stroke={color} strokeWidth="4.5" strokeLinejoin="round"/>
+      <path d="M50,26 L73,43 L64,69 L36,69 L27,43 Z"
+        fill="rgba(167,139,250,0.22)" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeOpacity="0.70"/>
+      <line x1="50" y1="50" x2="50" y2="26" stroke={color} strokeWidth="1.5" strokeOpacity="0.55"/>
+      <line x1="50" y1="50" x2="73" y2="43" stroke={color} strokeWidth="1.5" strokeOpacity="0.55"/>
+      <line x1="50" y1="50" x2="64" y2="69" stroke={color} strokeWidth="1.5" strokeOpacity="0.55"/>
+      <line x1="50" y1="50" x2="36" y2="69" stroke={color} strokeWidth="1.5" strokeOpacity="0.55"/>
+      <line x1="50" y1="50" x2="27" y2="43" stroke={color} strokeWidth="1.5" strokeOpacity="0.55"/>
+      <line x1="50" y1="26" x2="76" y2="14" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="73" y1="43" x2="76" y2="14" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="73" y1="43" x2="92" y2="64" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="64" y1="69" x2="92" y2="64" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="64" y1="69" x2="50" y2="94" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="36" y1="69" x2="50" y2="94" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="36" y1="69" x2="8"  y2="64" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="27" y1="43" x2="8"  y2="64" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="27" y1="43" x2="24" y2="14" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
+      <line x1="50" y1="26" x2="24" y2="14" stroke={color} strokeWidth="1" strokeOpacity="0.40"/>
     </svg>
   );
 }
