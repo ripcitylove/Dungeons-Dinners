@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
         ? `Weapons: ${character.inventory.weapons.map((w: { name: string }) => w.name).join(", ")}.`
         : "";
       const hpPct = character.max_hp > 0 ? Math.round((character.hp / character.max_hp) * 100) : 100;
-      charLine = `Character: ${character.name}, Level ${character.level} ${character.race} ${character.class}. HP ${character.hp}/${character.max_hp} (${hpPct}%). ${weapons} ${cantrips} ${prepared}`.trim();
+      const pronouns = character.sex === "female" ? "she/her" : character.sex === "non-binary" ? "they/them" : "he/him";
+      charLine = `Character: ${character.name} (${pronouns}), Level ${character.level} ${character.race} ${character.class}. HP ${character.hp}/${character.max_hp} (${hpPct}%). ${weapons} ${cantrips} ${prepared}`.trim();
     }
 
     const response = await anthropic.messages.create({
@@ -34,6 +35,8 @@ Read the DM's message first. Every suggestion must make sense for the current mo
 - EXPLORATION: suggest investigating the scene, interacting with objects, using skills, or preparing for danger.
 - Never suggest something the DM just narrated as already done. Be specific to this scene, not generic.
 - If HP is below 40%, include at least one option focused on survival or healing.
+
+PRONOUN RULE: The character line includes pronouns in parentheses (she/her, he/him, they/them). Use those exact pronouns if you refer to the character in a suggestion. Never assume gender from a name or class.
 
 CRITICAL SPELL RULE: Only suggest spells the character actually has. Non-spellcasters get zero spell suggestions.`,
       messages: [

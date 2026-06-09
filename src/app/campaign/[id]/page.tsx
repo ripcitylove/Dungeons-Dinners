@@ -222,7 +222,7 @@ function parseHpTag(text: string, firstName: string): number {
 // Detect which player the DM is addressing at the end of a response.
 // Returns the matching full name from partyNames, or null.
 function detectNextTurnPlayer(text: string, partyNames: string[]): string | null {
-  const tail = text.slice(-280);
+  const tail = text.slice(-350);
   let lastMatch: { idx: number; name: string } | null = null;
   for (const fullName of partyNames) {
     const firstName = fullName.split(" ")[0];
@@ -1318,6 +1318,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return () => clearTimeout(t);
   }, [messages, suggestions, isTyping, streamingContent, openingRevealText, narRevealText]);
 
+  // When suggestions appear they shrink the messages container — scroll after the browser
+  // has reflowed so the last message isn't hidden behind the suggestions panel.
+  useEffect(() => {
+    if (!suggestions.length) return;
+    let raf2: number;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = msgContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [suggestions.length]);
+
   // Fallback: if narRevealText is set but audio never fires canplaythrough (quota, error, disabled mid-flight),
   // unblock the reveal after 1.5 s so text is never permanently stuck.
   useEffect(() => {
@@ -1426,7 +1440,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const applyStateChange = useCallback(async (change: StateChange) => {
     const char = characterRef.current;
-    console.log("[applyStateChange] called", { char: char?.name ?? "NULL", change });
     if (!char) return;
 
     // Determine if this character was the acting character for this DM response.
@@ -1436,8 +1449,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // isCurrentTurnChar would wrongly flag the NEXT player as the acting char.
     const isCurrentTurnChar = turnOrderRef.current.length <= 1;
     const isActingChar = wasPrevActingChar || isCurrentTurnChar;
-    console.log("[applyStateChange] acting", { wasPrevActingChar, isCurrentTurnChar, isActingChar, prevActingCharId: prevActingCharIdRef.current, charId: char.id, turnLen: turnOrderRef.current.length });
-
     // Targeting helpers — computed once, used for every field below.
     // isExplicitTarget: DM named this exact character.
     // isImplicitTarget: DM said "you" (no name) and this is the acting character.
@@ -1455,7 +1466,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       change = { ...change, hp_delta: 0 };
     }
     pendingHpDeltaRef.current = 0; // always clear after deciding
-    console.log("[applyStateChange] hp_delta", change.hp_delta, "isEffectiveTarget", isEffectiveTarget, "target_name", change.target_name);
 
     // Spell slots: ONLY the acting character (the caster) consumes slots.
     // Observers learn about other players' slot changes via character_sync broadcast from the caster's client.
@@ -1472,7 +1482,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
         change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
       change.xp_award > 0;
-    console.log("[applyStateChange] hasChange", hasChange, { hp_delta: change.hp_delta, spell_slots_used: change.spell_slots_used, xp_award: change.xp_award, shouldApplySlots, hadPendingCast, isEffectiveTarget, isActingChar });
     if (!hasChange) return;
 
     const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
@@ -1568,7 +1577,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
       inventory: { gold: newGold, items: newItems, weapons: newWeapons },
     };
-    console.log("[applyStateChange] APPLYING", { oldHp: char.hp, newHp, oldSlots: char.spell_slots_used, newSlots: newSlotsUsed });
     setCharacter(updatedChar);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updatedChar : c));
 
@@ -1794,6 +1802,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
     await charWrite(char.id, { hp: newHp, spell_slots_used: newSlotsUsed, class_resources: newClassResources, status_effects: newStatuses });
+    channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: { charId: char.id, hp: newHp, max_hp: char.max_hp, xp: char.xp, level: char.level, inventory: char.inventory, spell_slots_used: newSlotsUsed, class_resources: newClassResources, status_effects: newStatuses },
+    });
     const notice = `Short Rest: d${hitDie} rolled ${roll} + CON ${conMod >= 0 ? "+" : ""}${conMod} = +${gained} HP${isWarlock ? " · Pact slots restored" : ""}`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
@@ -1811,6 +1823,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setCharacter(updated);
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
     await charWrite(char.id, { hp: longMaxHp, spell_slots_used: {}, class_resources: {}, status_effects: newStatuses });
+    channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: { charId: char.id, hp: longMaxHp, max_hp: char.max_hp, xp: char.xp, level: char.level, inventory: char.inventory, spell_slots_used: {}, class_resources: {}, status_effects: newStatuses },
+    });
     const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots & class abilities recovered, conditions cleared`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 6000);
@@ -1880,6 +1896,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCharacter(updated); characterRef.current = updated;
     }
 
+    updates.forEach(u => channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: { charId: u.char.id, hp: u.newHp, max_hp: u.char.max_hp, xp: u.char.xp, level: u.char.level, inventory: u.char.inventory, spell_slots_used: u.newSlots, class_resources: u.char.class_resources ?? {}, status_effects: u.newStatus },
+    }));
     const summary = updates.map(u => `${u.char.name} +${u.gained} HP`).join(" · ");
     setStateNotice(`Party Short Rest: ${summary}`);
     setTimeout(() => setStateNotice(null), 6000);
@@ -1912,6 +1932,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCharacter(updated); characterRef.current = updated;
     }
 
+    updates.forEach(u => channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: { charId: u.char.id, hp: u.maxHp, max_hp: u.char.max_hp, xp: u.char.xp, level: u.char.level, inventory: u.char.inventory, spell_slots_used: {}, class_resources: {}, status_effects: u.newStatus },
+    }));
     const names = updates.map(u => u.char.name).join(", ");
     setStateNotice("Party Long Rest: Full HP restored, all spell slots recovered");
     setTimeout(() => setStateNotice(null), 6000);
@@ -2354,26 +2378,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
 
       // DM-driven turn: when the DM's closing question names a player ("Aria, what do you do?"),
-      // advance the turn to that player — but ONLY if they haven't acted yet this round.
-      // Never erase a completed action: that causes already-acted players to get a repeat turn.
+      // advance the turn to that player. detectNextTurnPlayer only matches explicit call-to-action
+      // patterns so false positives are rare; if a named player acts again handleSend's
+      // findNextUnactedIdx still routes the round correctly.
       if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
         const partyNames = campaignPartyRef.current.map(c => c.name);
         const dmTurnName = detectNextTurnPlayer(full, partyNames);
         const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
         if (dmTurnChar) {
-          const alreadyActed = roundActionsRef.current.some(a => a.characterId === dmTurnChar.id);
-          if (!alreadyActed) {
-            // Only advance to players who haven't taken their turn yet
-            const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
-            if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
-              setCurrentTurnIndex(dmTurnIdx);
-              currentTurnIndexRef.current = dmTurnIdx;
-              const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
-              if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
-              channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
-            }
+          const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+          if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
+            setCurrentTurnIndex(dmTurnIdx);
+            currentTurnIndexRef.current = dmTurnIdx;
+            const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
+            if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
+            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
           }
-          // If alreadyActed: silently ignore — do not rewind their turn
         } else if (opts?.prevPlayerName) {
           // No explicit next-player found — check if the DM's closing question is directed at the
           // previous player (follow-up: "Shmang, what element would you like?"). If so, rewind to them.
@@ -2510,13 +2530,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
       if (!isOpeningScene) {
-        console.log("[chat-state] sending narrative:", full.slice(0, 300));
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full }) })
           .then(r => r.json())
-          .then((change: StateChange) => {
-            console.log("[chat-state] response", change);
-            return applyStateChange(change);
-          })
+          .then((change: StateChange) => applyStateChange(change))
           .catch((err) => console.error("[chat-state] error", err));
       }
 
@@ -2664,10 +2680,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Call the DM — fromChar will still act later so do NOT mark them as skipped
     pendingReconciliationRef.current = null;
     await sendToAI(messagesRef.current, false, {
-      trackRound:     turnOrderRef.current.length > 1,
-      nextPlayerName: toChar.name,
-      prevPlayerName: fromChar.name,
-      isTurnSkip:     true,
+      trackRound:       turnOrderRef.current.length > 1,
+      nextPlayerName:   toChar.name,
+      prevPlayerName:   fromChar.name,
+      skippedPlayerName: fromChar.name,
+      isTurnSkip:       true,
     });
     const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
     if (pending) {
@@ -2734,7 +2751,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setCurrentTurnIndex(nextIdx);
       currentTurnIndexRef.current = nextIdx;
       channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
-      if (campaignPartyRef.current.length > 1) setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
     } else if (isRollSubmit && wasGroupCheckRoll && order.length > 1) {
       // Group check roll — keep the same player's turn; DM resolves the check and returns to them
       nextPlayerName = campaignPartyRef.current.find(c => c.id === order[currentTurnIndexRef.current])?.name ?? null;
@@ -2747,7 +2763,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCurrentTurnIndex(nextIdx);
         currentTurnIndexRef.current = nextIdx;
         channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
-        if (campaignPartyRef.current.length > 1) setActiveCharIdx(prev => (prev + 1) % campaignPartyRef.current.length);
       }
     }
 
@@ -2955,8 +2970,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setActiveCharIdx(next ? newParty.indexOf(next) : 0);
     }
     setPartyChangePending(true);
+    const leaveContent = `[Party change — weave naturally into the story: ${char.name}, the ${char.class}, has departed from the party]`;
+    fireDmPartyResponse({ role: "player", content: leaveContent });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fireDmPartyResponse]);
 
   const handleDiceResult = (result: number, diceType: number, description?: string) => {
     // Stop any in-flight narration immediately — roll submission takes priority
@@ -3673,7 +3690,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
-                {streamingContent && !narrationEnabled
+                {streamingContent
                   ? <><StreamingText text={stripSystemLeaks(streamingContent)} /><span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
                   : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
                 }

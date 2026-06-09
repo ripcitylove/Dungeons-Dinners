@@ -49,7 +49,7 @@ function modNum(score: number): number {
 }
 
 function profBonusNum(level: number): number {
-  return level <= 4 ? 2 : level <= 8 ? 3 : level <= 12 ? 4 : 5;
+  return level <= 4 ? 2 : level <= 8 ? 3 : level <= 12 ? 4 : level <= 16 ? 5 : 6;
 }
 
 function profBonus(level: number): string {
@@ -152,6 +152,13 @@ Never narrate events that have not yet occurred or been resolved. Narrate strict
 - Wrong: "You swing the sword and it bites deep into the orc's shoulder. Roll a d20." Right: "The orc raises its axe. Roll a d20."
 - Wrong: "The fireball explodes, scorching the trolls. Roll a d20." Right: "You hurl the fireball. Roll a d20." (Then after the roll: describe the damage.)
 - Never assume an action succeeds or fails before the dice determine it. The dice speak first, you narrate after.
+
+PRONOUNS — NON-NEGOTIABLE
+Every character has a Pronouns field in their stat block. You MUST use those exact pronouns whenever referring to that character in third person. Never infer gender from a name, race, or class.
+- she/her → "she charges forward", "her blade", "she told him"
+- he/him → "he draws his sword", "his spell", "the guard eyes him"
+- they/them → "they step forward", "their dagger", "the crowd watches them"
+Misgendering a character is a critical error.
 
 CHARACTER VOICES — GIVE PCs PERSONALITY
 You voice the entire world — including the player characters. Narrate how they react, move, and speak using their class, race, alignment, and background as a blueprint.
@@ -482,11 +489,14 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solAlign   = char.alignment ? `\nAlignment: ${char.alignment}` : "";
   const solBg      = char.background ? `\nBackground: ${char.background}` : "";
   const solAtk     = buildAttackLine(char);
+  const solSexStr  = char.sex ? `${char.sex} ` : "";
+  const solPronouns = char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him";
 
   return `${VOICE_AND_RULES}${openingBlock}
 ${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
-${char.name}${titleStr} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
+${char.name}${titleStr} — Level ${char.level} ${solSexStr}${char.race} ${char.class} (Proficiency ${pb})
+Pronouns: ${solPronouns}
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 ATTACK BONUSES: ${solAtk}
