@@ -1069,8 +1069,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.senderId === userIdRef.current) return;
         setMessages(prev => [...prev, { role: "player", content: payload.content, sender: payload.characterName }]);
         setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "player", sender: payload.characterName, content: payload.content }]);
-        // Track this player's action for round reconciliation
-        if (payload.characterId && !roundActionsRef.current.some(a => a.characterId === payload.characterId)) {
+        // Track this player's action for round reconciliation (skip questions — they don't consume turns)
+        if (payload.characterId && !payload.isQuestion && !roundActionsRef.current.some(a => a.characterId === payload.characterId)) {
           const updated: RoundAction[] = [...roundActionsRef.current, { characterId: payload.characterId as string, name: (payload.characterName as string) ?? "Unknown", action: payload.content as string }];
           roundActionsRef.current = updated;
           setRoundActions(updated);
@@ -2044,7 +2044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; _retryCount?: number }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -2175,6 +2175,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.isTurnSkip && { isTurnSkip: true }),
           ...(opts?.skippedPlayerName && { skippedPlayerName: opts.skippedPlayerName }),
           ...(opts?.isGroupCheckResult && { isGroupCheckResult: true }),
+          ...(opts?.isQuestion && { isQuestion: true }),
           ...(turnOrderNames.length > 1 && !opts?.roundSummary?.length && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
@@ -2652,14 +2653,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (wasGroupCheckRoll) { setIsGroupCheckRoll(false); isGroupCheckRollRef.current = false; }
     channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: null } });
 
+    // Questions (ending with ?) are informational — they don't consume the player's turn action.
+    const isQuestion = !isRollSubmit && text.endsWith('?');
+
     const playerMsg: Message = { role: "player", content: text, sender: character?.name ?? "You" };
     const updatedMessages    = [...messages, playerMsg];
     setMessages(updatedMessages);
     setLogEntries(prev => [...prev, { id: `player-${Date.now()}`, timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
-    channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name, characterId: character?.id } });
+    channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name, characterId: character?.id, isQuestion } });
 
-    // Record this player's action for round tracking (not for roll submissions)
-    if (!isRollSubmit && order.length > 1 && character) {
+    // Record this player's action for round tracking (not for roll submissions or questions)
+    if (!isRollSubmit && !isQuestion && order.length > 1 && character) {
       const updated: RoundAction[] = [...roundActionsRef.current.filter(a => a.characterId !== character.id), { characterId: character.id, name: character.name, action: text }];
       roundActionsRef.current = updated;
       setRoundActions(updated);
@@ -2691,7 +2695,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     } else if (isRollSubmit && wasGroupCheckRoll && order.length > 1) {
       // Group check roll — keep the same player's turn; DM resolves the check and returns to them
       nextPlayerName = campaignPartyRef.current.find(c => c.id === order[currentTurnIndexRef.current])?.name ?? null;
-    } else if (!isRollSubmit && order.length > 1) {
+    } else if (!isRollSubmit && !isQuestion && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
         const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
@@ -2704,7 +2708,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
     }
 
-    const allActedForDM = !isRollSubmit && order.length > 1
+    const allActedForDM = !isRollSubmit && !isQuestion && order.length > 1
       && roundActionsRef.current.length >= campaignPartyRef.current.length
       && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
@@ -2716,6 +2720,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       allActed:       allActedForDM,
       ...(isRollSubmit && { isRollResult: true }),
       ...(wasGroupCheckRoll && { isGroupCheckResult: true }),
+      ...(isQuestion && { isQuestion: true }),
     });
 
     // If sendToAI detected all players have acted, trigger round reconciliation

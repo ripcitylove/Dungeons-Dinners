@@ -325,7 +325,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[]): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -400,6 +400,10 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       : `\n[TURN SWAP]\nIt is now ${currentTurnPlayerName}'s turn.\nYour entire response: one sentence placing ${currentTurnPlayerName} in the current moment, then ask ${currentTurnPlayerName} what they do. Two sentences maximum.\n`
     : "";
 
+  const questionBlock = isQuestion && currentTurnPlayerName
+    ? `\n[INFORMATIONAL QUESTION — NOT A TURN ACTION]\n${currentTurnPlayerName} is asking an informational question, not taking a turn action. Their turn has NOT been consumed. Answer their question directly. If the question requires a skill check (Perception, Investigation, etc.), ask ${currentTurnPlayerName} to Roll a d20 — the roll result will not advance the turn. After answering (or after you ask for a roll), end your response by asking ${currentTurnPlayerName} what action they would like to take. Do NOT pass the turn to another player.\n`
+    : "";
+
   const isMulti = party && party.length > 1;
 
   // ── Multi-player mode: show full party ──────────────────────────────────────
@@ -439,7 +443,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -479,7 +483,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solAtk     = buildAttackLine(char);
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${char.race} ${char.class} (Proficiency ${pb})
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
@@ -494,7 +498,7 @@ Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${p
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -512,6 +516,7 @@ export async function POST(req: NextRequest) {
       skippedPlayerName?: string;
       isGroupCheckResult?: boolean;
       turnOrder?: string[];
+      isQuestion?: boolean;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -532,12 +537,12 @@ export async function POST(req: NextRequest) {
 
     // max_tokens is a hard ceiling that enforces the word budget.
     // Calibrated so a well-formed response always fits but the DM can't ramble.
-    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : isTurnSkip ? 150 : 190;
+    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : isTurnSkip ? 150 : isQuestion ? 220 : 190;
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion),
       messages:   claudeMessages,
       stream:     true,
     });
