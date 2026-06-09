@@ -2044,7 +2044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; _retried?: boolean }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -2237,23 +2237,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // sentences like "Your move!" or "What do you do?" are not silently dropped.
       if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
 
-      // Guard: if the response has no sentence-ending punctuation it's a bare fragment (e.g. "Ekko,").
-      // Retry once automatically — the prompt fix should prevent recurrence, but this catches edge cases.
-      if (!opts?._retried && !/[.!?…]/.test(full.trim())) {
-        console.warn("[sendToAI] Degenerate response detected, retrying once:", JSON.stringify(full));
-        setTimeout(() => sendToAI(allMessages, isOpeningScene, { ...opts, _retried: true }), 400);
-        return;
+      // Guard: if the response has no sentence-ending punctuation it's a bare fragment (e.g. "Shmang,").
+      // Retry up to 3 times. On the 3rd failure fall back to a silent empty message so nothing is shown.
+      if (!/[.!?…]/.test(full.trim())) {
+        const retryCount = (opts?._retryCount ?? 0) + 1;
+        if (retryCount <= 3) {
+          console.warn(`[sendToAI] Degenerate response (attempt ${retryCount}), retrying:`, JSON.stringify(full));
+          setTimeout(() => sendToAI(allMessages, isOpeningScene, { ...opts, _retryCount: retryCount }), 400);
+          return;
+        }
+        // All retries exhausted — suppress the fragment entirely, show nothing
+        console.error("[sendToAI] Degenerate response after 3 retries, suppressing:", JSON.stringify(full));
+        full = "";
       }
 
       // Route through narration-synced reveal when voice is active; add directly to messages otherwise
-      if (narrationEnabledRef.current && !campaignLoadingRef.current) {
-        setNarRevealText(full);
-        // narRevealIntervalMs will be set when slot-0 audio canplaythrough fires
-      } else {
-        setMessages(prev => [...prev, { role: "dm", content: full }]);
+      if (full) {
+        if (narrationEnabledRef.current && !campaignLoadingRef.current) {
+          setNarRevealText(full);
+          // narRevealIntervalMs will be set when slot-0 audio canplaythrough fires
+        } else {
+          setMessages(prev => [...prev, { role: "dm", content: full }]);
+        }
+        setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
       }
       if (isOpeningScene && campaignLoadingRef.current) setLoadDmDone(true);
-      setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
 
       // Detect which character the DM is asking to roll, and what die type.
       // If DM asks a different character than the current turn, rewind the turn to that character

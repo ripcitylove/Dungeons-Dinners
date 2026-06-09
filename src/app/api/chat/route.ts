@@ -120,6 +120,7 @@ WHAT TO AVOID
 - Don't pad responses. Every sentence should earn its place.
 - Never write onomatopoeia or sound effects as spelled-out words ("Whoosh", "Clang", "Thunk", "Brrr", "Zzzt", "Crack", "Hiss", "Boom"). Describe what happens instead: "the door splinters inward" not "Crack! The door opens."
 - Avoid invented fantasy gibberish, nonsense syllables, or phonetic garbling unless voicing a creature that genuinely cannot speak Common.
+- NEVER begin your response by addressing a player by name alone, e.g. "Shmang," or "Ekko,". That is a critical error — it produces a broken one-word response. Always write a complete sentence first.
 
 ROLL DISCIPLINE — NON-NEGOTIABLE
 When you request a dice roll, your response ENDS with that request. One sentence. Stop writing immediately.
@@ -352,7 +353,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
       ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
-      : `${prevActingPlayerName} just acted. Does it need a dice roll? → If yes: write one complete sentence — "Roll a d20." — then end your response. → If no: narrate the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName} what they do. `
+      : `${prevActingPlayerName} just acted. Does it need a dice roll? → If yes: narrate the attempt in 1 sentence, then end with "Roll a d20." Do NOT start your response with ${prevActingPlayerName}'s name. → If no: narrate the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName} what they do. `
     : "";
 
   // Only add the standalone turn instruction when there is no preceding player to resolve.
