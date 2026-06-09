@@ -2051,11 +2051,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     // Reset narration queue unless we want to continue from a prior DM response (e.g. reconciliation after allActed)
     if (!opts?.preserveNarration) {
-      if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
+      // Bump generation and clear queued slots so in-flight TTS fetches for the old
+      // response are discarded. Do NOT pause the audio element — the currently playing
+      // clip must finish naturally so narration never cuts off mid-sentence.
+      // The clip's onended handler will see the empty new queue and clean up correctly.
       narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
       narSlot0TextRef.current   = null;
-      audioPlayingRef.current   = false;
-      setNarrating(false);
       setNarRevealText(null);
       setNarRevealIntervalMs(null);
     }
@@ -2205,10 +2206,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               const narSentence = stripSystemLeaks(m[1]);
               if (narSentence) {
                 enqueueNarration(narSentence);
-                // For roll-result responses narrate only the first sentence (the immediate
-                // outcome). The follow-up turn prompts and mechanical detail appear as text
-                // only — they should not keep the story paused while audio finishes.
-                if (opts?.isRollResult) narDone = true;
               }
               narBuf = narBuf.slice(m[0].length);
             }
