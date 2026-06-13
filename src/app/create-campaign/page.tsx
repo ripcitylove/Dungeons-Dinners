@@ -691,10 +691,10 @@ export default function CreateCampaignWizard() {
 
               {/* Identity */}
               {charStep === 1 && (
-                <div style={{ display: "flex", gap: "24px", alignItems: "flex-start" }}>
+                <div className="animate-fade-in" style={{ display: "flex", gap: "clamp(16px, 2vw, 28px)", alignItems: "flex-start", flexWrap: "wrap" }}>
 
-                  {/* Left: new character form */}
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 }}>
+                  {/* Left: new character form — gap matched to create-character (28px) so spacing reads identically */}
+                  <div style={{ flex: "1 1 480px", display: "flex", flexDirection: "column", gap: "clamp(20px, 2vw, 28px)", minWidth: 0 }}>
 
                     {/* Name + Title — matched to create-character aesthetic */}
                     <div style={{ display: "flex", gap: "14px" }}>
@@ -729,7 +729,7 @@ export default function CreateCampaignWizard() {
                       <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
                         onMouseLeave={hideTooltip}>Race</label>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(140px, 18vw, 200px), 1fr))", gap: "clamp(10px, 1.2vw, 16px)" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(150px, 18vw, 220px), 1fr))", gap: "clamp(12px, 1.3vw, 18px)" }}>
                         {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
                           <div key={race} onClick={() => setDraft(d => ({ ...d, race }))}
                             onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
@@ -796,9 +796,12 @@ export default function CreateCampaignWizard() {
                     </div>
                   </div>
 
-                  {/* Right: roster import (vertical list) */}
+                  {/* Right: roster import (vertical list). flex: "0 1 220px" so it
+                      shrinks gracefully and wraps under the form on narrower viewports
+                      (Xbox / small windows) — keeps the Identity form full-width and
+                      identical to the create-character single-character flow. */}
                   {(rosterLoading || availableRoster.length > 0) && (
-                    <div style={{ width: "200px", flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ flex: "0 1 220px", minWidth: "180px", display: "flex", flexDirection: "column", gap: "8px" }}>
                       <p style={{ fontSize: "1rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em", lineHeight: 1.4 }}>
                         📜 Import from Roster
                         <span style={{ display: "block", color: "#64748b", fontWeight: 400, fontSize: "1rem" }}>Click a character to skip creation</span>
