@@ -540,7 +540,7 @@ export default function DiceRoller({
         </p>
       )}
 
-      {wrongDie && (
+      {wrongDie && requiredDice && (
         <div style={{
           position:"absolute",top:"calc(50% - 200px)",
           background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.5)",
