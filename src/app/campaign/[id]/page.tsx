@@ -5318,7 +5318,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <span style={{ animation: "blink 1s step-end infinite" }}>✦</span> Generating scene…
           </div>
         )}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "40px 24px 28px", background: "linear-gradient(transparent, rgba(0,0,0,0.92))" }}>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "40px 24px 80px", background: "linear-gradient(transparent, rgba(0,0,0,0.92))", pointerEvents: "none" }}>
           <h2 style={{ fontSize: "1.8rem", fontWeight: "bold", textShadow: "0 2px 10px black", marginBottom: "6px", textTransform: "capitalize" }}>
             {currentSceneRef.current ? currentSceneRef.current.charAt(0).toUpperCase() + currentSceneRef.current.slice(1) : (campaignTitle || "")}
           </h2>

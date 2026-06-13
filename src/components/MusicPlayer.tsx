@@ -801,10 +801,15 @@ export function MusicPlayer() {
       <div
         style={{
           position: "fixed",
-          bottom: "20px",
-          left: "20px",
+          // The scene panel's title overlay ("Wilderness · The story unfolds…")
+          // sits in the bottom-left of the scene image. Lift the player above
+          // it so the two don't overlap, especially at Xbox MS Edge scaling
+          // where every fixed-pixel UI element compounds.
+          bottom: "clamp(14px, 1.5vw, 20px)",
+          left: "clamp(12px, 1.5vw, 20px)",
           zIndex: 50,
           userSelect: "none",
+          maxWidth: "min(92vw, 540px)",
         }}
       >
         {/* Pool picker — floats above the pill */}
@@ -879,20 +884,22 @@ export function MusicPlayer() {
           </div>
         )}
 
-        {/* Pill */}
+        {/* Pill — responsive padding + gap so the pill stays compact on Xbox
+            and doesn't extend across the scene title underneath it. */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "10px",
+            gap: "clamp(6px, 0.7vw, 10px)",
             background: "rgba(10, 7, 24, 0.88)",
             backdropFilter: "blur(14px)",
             border: `1px solid ${loadError ? "rgba(239,68,68,0.5)" : playing ? "rgba(139, 92, 246, 0.45)" : "rgba(255,255,255,0.08)"}`,
             borderRadius: "100px",
-            padding: "10px 18px",
-            minHeight: "48px",
+            padding: "clamp(6px, 0.8vw, 10px) clamp(12px, 1.4vw, 18px)",
+            minHeight: "clamp(36px, 3.5vw, 48px)",
             boxShadow: playing ? "0 0 16px rgba(139,92,246,0.15)" : "0 2px 12px rgba(0,0,0,0.4)",
             transition: "border 0.3s, box-shadow 0.3s",
+            flexWrap: "nowrap",
           }}
         >
           {/* Play / pause */}
@@ -963,7 +970,7 @@ export function MusicPlayer() {
                     value={musicMuted ? 0 : volume}
                     onChange={e => { const v = parseFloat(e.target.value); if (musicMuted && v > 0) setMusicMuted(false); if (v > 0) setVolume(v); else setMusicMuted(true); }}
                     title="Music volume"
-                    style={{ width: "62px", height: "18px", accentColor: "var(--primary)", cursor: "pointer" }}
+                    style={{ width: "clamp(42px, 4vw, 62px)", height: "18px", accentColor: "var(--primary)", cursor: "pointer" }}
                   />
                 </>
               )}
@@ -986,7 +993,7 @@ export function MusicPlayer() {
                 value={ambianceMuted ? 0 : ambianceVol}
                 onChange={e => { const v = parseFloat(e.target.value); if (ambianceMuted && v > 0) setAmbianceMuted(false); if (v > 0) setAmbianceVol(v); else setAmbianceMuted(true); }}
                 title="Ambiance volume"
-                style={{ width: "56px", height: "18px", accentColor: "#64748b", cursor: "pointer" }}
+                style={{ width: "clamp(38px, 3.5vw, 56px)", height: "18px", accentColor: "#64748b", cursor: "pointer" }}
               />
             </>
           )}
