@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
 type DieSides = typeof DICE_SIDES[number];
-const DIE_LABEL: Record<number, string> = { 4:"d4",6:"d6",8:"d8",10:"d10",12:"d12",20:"d20",100:"d%" };
+const DIE_LABEL: Record<number, string> = { 4:"D4",6:"D6",8:"D8",10:"D10",12:"D12",20:"D20",100:"D100" };
 
 type Quality = "crit"|"fumble"|"excellent"|"good"|"fair"|"poor";
 function getQuality(r: number, s: number): Quality {
@@ -414,6 +414,13 @@ export default function DiceRoller({
   useEffect(() => { narVolumeRef.current = narVolume ?? 1;    }, [narVolume]);
   useEffect(() => { narMutedRef.current  = narMuted  ?? false; }, [narMuted]);
 
+  // Hide the floating Tooltip / Back / Save toolbar while the roll modal is up —
+  // those buttons sit at zIndex 9998 above the modal and clutter the screen.
+  useEffect(() => {
+    document.body.classList.add("dice-modal-open");
+    return () => { document.body.classList.remove("dice-modal-open"); };
+  }, []);
+
   const isAdvDis = !!requiredRollMode && requiredRollMode !== "normal";
   const quality  = result !== null && selectedDie !== null ? getQuality(result, selectedDie) : null;
   const qs       = quality ? QUALITY[quality] : null;
@@ -449,7 +456,7 @@ export default function DiceRoller({
       const qd = QUALITY[q];
       if (qd.flash) { setFlashColor(qd.flash); setShowFlash(true); setTimeout(()=>setShowFlash(false),1400); }
       const desc = r2!==null
-        ? `Rolled with ${requiredRollMode}: ${r1} and ${r2}, taking ${kept} on a d${sides}`
+        ? `Rolled with ${requiredRollMode}: ${r1} and ${r2}, taking ${kept} on a ${DIE_LABEL[sides] ?? `D${sides}`}`
         : undefined;
       setTimeout(() => onRollComplete(kept, sides, desc), 2800);
     }, 1380);
@@ -521,14 +528,14 @@ export default function DiceRoller({
       {phase==="idle" && (
         <p style={{ fontSize:"1.6rem",fontWeight:800,color:"white",marginBottom:"40px",letterSpacing:"-0.01em" }}>
           {requiredDice
-            ? <>Roll a <span style={{color:"#a78bfa",textShadow:"0 0 24px rgba(139,92,246,0.8)"}}>d{requiredDice}</span>
+            ? <>Roll a <span style={{color:"#a78bfa",textShadow:"0 0 24px rgba(139,92,246,0.8)"}}>{DIE_LABEL[requiredDice] ?? `D${requiredDice}`}</span>
                 {isAdvDis && <span style={{fontSize:"1rem",color:"#64748b",marginLeft:"12px",fontWeight:600}}>({requiredRollMode})</span>}</>
             : "Choose your die"}
         </p>
       )}
       {phase==="rolling" && requiredDice && (
         <p style={{ fontSize:"1.4rem",fontWeight:800,color:"white",marginBottom:"32px",letterSpacing:"-0.01em" }}>
-          Rolling <span style={{color:"#a78bfa",textShadow:"0 0 20px rgba(139,92,246,0.8)"}}>d{requiredDice}</span>
+          Rolling <span style={{color:"#a78bfa",textShadow:"0 0 20px rgba(139,92,246,0.8)"}}>{DIE_LABEL[requiredDice] ?? `D${requiredDice}`}</span>
           {isAdvDis && <span style={{fontSize:"0.9rem",color:"#64748b",marginLeft:"10px"}}>({requiredRollMode})</span>}
         </p>
       )}
@@ -540,7 +547,7 @@ export default function DiceRoller({
           borderRadius:"10px",padding:"10px 24px",
           color:"#f87171",fontSize:"0.88rem",fontWeight:600,
           animation:"fadeIn 0.2s ease-out",
-        }}>A d{requiredDice} is called for — choose wisely.</div>
+        }}>A {DIE_LABEL[requiredDice] ?? `D${requiredDice}`} is called for — choose wisely.</div>
       )}
 
       {/* ── Idle phase ── */}

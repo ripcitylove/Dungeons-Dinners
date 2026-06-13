@@ -118,6 +118,20 @@ function normalizeForTTS(raw: string): string {
     .replace(/^[-*_]{2,}\s*$/gm, "")
     // Em-dashes / en-dashes -> natural comma pause
     .replace(DASH_RE, ", ")
+    // Closing-quote → attribution pacing fix. ElevenLabs Turbo voices sometimes
+    // produce a click, gulp, or stutter at the boundary where a quoted question
+    // or exclamation ends and the narrator picks up the attribution
+    // (e.g. `"You the elf from the letter?" he says,`). Inserting a comma after
+    // the closing quote — only when followed by a lowercase attribution word —
+    // gives the model an explicit pause cue and avoids the artifact. The text
+    // is still grammatically valid in fiction. Capitalized words after the
+    // quote (a new sentence) are left untouched.
+    .replace(/([!?])(["'])\s+(?=[a-z])/g, "$1$2, ")
+    // Same fix for a quoted statement ending with a period followed by
+    // attribution: `"...something." he nodded.` → `"...something.", he nodded.`
+    // Only triggers when the next word is lowercase (an attribution like "he
+    // said"), never when it starts a new sentence with a capital letter.
+    .replace(/(\.)(["'])\s+(?=[a-z])/g, "$1$2, ")
     // Hyphen as separator between words ("HP - Max HP") -> comma pause
     .replace(/\s+-\s+/g, ", ")
     // Leading list-bullet hyphens

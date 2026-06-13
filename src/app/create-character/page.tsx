@@ -363,12 +363,25 @@ export default function CreateCharacter() {
       const trimmedName = character.name.trim();
       if (!trimmedName) { setStep(1); setNameError('Your character needs a name.'); setSaving(false); return; }
 
+      // Roster cap — a user may keep at most 40 characters in their roster.
+      const { count: rosterCount } = await supabase
+        .from('characters').select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      if ((rosterCount ?? 0) >= 40) {
+        setStep(1);
+        setNameError(`Your roster is full (40 / 40). Delete a character from the dashboard to make room.`);
+        setSaving(false);
+        return;
+      }
+
+      // Global uniqueness — no two characters in the entire game can share a name.
+      // The check is case-insensitive so "Aragorn" and "aragorn" collide.
       const { data: existing } = await supabase
         .from('characters').select('id')
-        .eq('user_id', user.id).ilike('name', trimmedName).limit(1);
+        .ilike('name', trimmedName).limit(1);
       if (existing && existing.length > 0) {
         setStep(1);
-        setNameError(`"${trimmedName}" is already on your roster. Choose a different name.`);
+        setNameError(`"${trimmedName}" is already taken by another adventurer. Choose a different name.`);
         setSaving(false);
         return;
       }

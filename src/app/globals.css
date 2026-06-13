@@ -17,6 +17,10 @@
   --glass-blur: blur(14px);
   --radius: 12px;
   --radius-sm: 8px;
+  /* Premium dark-fantasy accent — used for borders, focus rings, and edge highlights. */
+  --gold: #d4a96a;
+  --gold-soft: rgba(212, 169, 106, 0.45);
+  --gold-glow: rgba(212, 169, 106, 0.28);
 }
 
 * {
@@ -27,9 +31,16 @@
 
 html {
   scroll-behavior: smooth;
-  /* Scale the rem baseline with viewport so all rem-based sizes grow on large
-     screens (TV/Xbox) and shrink on small ones. Clamps between 14px and 20px. */
-  font-size: clamp(14px, 1.15vw, 20px);
+  /* Console-class baseline — sized for reading from a couch on a 1080p/4K TV.
+     • Handheld / 1280-wide:  ~17-18 px
+     • 1080p TV / desktop:    ~26-28 px
+     • 1440p ultrawide:       ~33 px (clamped to 32)
+     • 4K TV (couch viewing): ~32 px (clamped)
+     Every rem-based element in the site scales automatically with this curve,
+     so chat font, party-card stats, headings, dashboard tiles, and forms all
+     get an immediate +35-40 % uplift on the most common console resolutions
+     without touching individual components. */
+  font-size: clamp(16px, 1.4vw, 32px);
 }
 
 body {
@@ -50,6 +61,32 @@ a {
   text-decoration: none;
 }
 
+/* ── Controller / keyboard focus — Xbox Edge & couch viewing ───────────────
+   D-pad navigation is unusable without a bold, high-contrast focus ring that
+   reads from 8–10 ft on a TV. We only show this on keyboard/controller focus
+   (`:focus-visible`) — mouse clicks stay clean. Gold accent on top, violet
+   halo underneath, both visible at any size.
+
+   The 2px solid gold ring is what the eye locks onto from across the room;
+   the wider violet glow tells the eye where in the screen the focus moved. */
+*:focus { outline: none; }
+*:focus-visible {
+  outline: 2px solid #d4a96a !important;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 4px rgba(212, 169, 106, 0.18),
+    0 0 18px rgba(139, 92, 246, 0.45) !important;
+  border-radius: 4px;
+  transition: outline-color 0.12s, box-shadow 0.12s;
+}
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  /* For shaped buttons (rounded/pill/circle) keep the radius — the !important
+     above forces a 4px box, this restores radius for the common control set. */
+  border-radius: inherit;
+}
+
 /* ── Global form controls ─────────────────────────────────────────────────── */
 
 input, textarea, select {
@@ -61,8 +98,10 @@ input, textarea, select {
 
 input:focus, textarea:focus, select:focus {
   outline: none;
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+  border-color: var(--gold) !important;
+  box-shadow:
+    0 0 0 3px rgba(212, 169, 106, 0.18),
+    0 0 18px rgba(212, 169, 106, 0.16);
 }
 
 input::placeholder, textarea::placeholder {
@@ -72,12 +111,16 @@ input::placeholder, textarea::placeholder {
 /* ── Utilities ────────────────────────────────────────────────────────────── */
 
 .glass-panel {
-  background: var(--card-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 18%, rgba(0, 0, 0, 0.06) 100%),
+    var(--card-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--glass-shadow);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--glass-shadow);
 }
 
 .badge-hover {
@@ -123,13 +166,15 @@ input::placeholder, textarea::placeholder {
   .hero-img-panel { display: none; }
 }
 
-/* Portrait cards — rectangular with portrait aspect ratio, class-color accent */
+/* Portrait cards — rectangular with portrait aspect ratio, class-color accent.
+   Sized for TV viewing distance — bigger at every breakpoint so faces are
+   recognisable from a couch. */
 .portrait-card {
-  width: clamp(130px, 14vw, 175px);
-  border-radius: 13px;
+  width: clamp(170px, 16vw, 240px);
+  border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.09);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+  box-shadow: 0 10px 38px rgba(0,0,0,0.55);
   transition: transform 0.3s, box-shadow 0.3s;
   flex-shrink: 0;
   background: rgba(15,20,40,0.8);
@@ -142,8 +187,8 @@ input::placeholder, textarea::placeholder {
 
 /* Legacy circle portraits (used outside landing) */
 .portrait-ring {
-  width: 120px;
-  height: 120px;
+  width: clamp(140px, 12vw, 200px);
+  height: clamp(140px, 12vw, 200px);
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -155,11 +200,13 @@ input::placeholder, textarea::placeholder {
 }
 
 .feature-card-lg {
-  padding: 36px;
+  padding: 36px 28px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  text-align: left;
+  gap: 16px;
+  text-align: center;
+  align-items: center;
+  justify-content: flex-start;
   transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
 }
 
@@ -170,7 +217,7 @@ input::placeholder, textarea::placeholder {
 }
 
 .step-card {
-  padding: 40px 32px;
+  padding: 48px 40px;
   text-align: left;
   position: relative;
   overflow: hidden;
@@ -187,97 +234,433 @@ input::placeholder, textarea::placeholder {
 }
 
 .glass-panel-hover:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.55);
+  border-color: var(--gold-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 12px 48px 0 rgba(0, 0, 0, 0.6),
+    0 0 24px var(--gold-glow);
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0) 50%),
+    linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
   color: white;
-  padding: 12px 24px;
+  /* Generous touch target — readable + clickable from 8-10 ft. */
+  padding: 0.9rem 1.6rem;
   border-radius: var(--radius-sm);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
-  box-shadow: 0 4px 16px 0 var(--primary-glow);
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.15s;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 16px 0 var(--primary-glow);
   white-space: nowrap;
+}
+
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 75%);
+  transform: translateX(-130%);
+  transition: transform 0.7s ease;
+  pointer-events: none;
+}
+
+/* ── CTA "Creator" button ──────────────────────────────────────────
+   Used for all "create / new" actions across the dashboard so they
+   share one polished, dark-fantasy look: violet gradient core, gold
+   accent border, soft purple glow, and shimmer sweep on hover. */
+.btn-cta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: 0.78rem 1.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 169, 106, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #4c1d95 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 6px 18px rgba(124, 58, 237, 0.45),
+    0 0 0 1px rgba(76, 29, 149, 0.6);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.btn-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 75%);
+  transform: translateX(-130%);
+  transition: transform 0.7s ease;
+  pointer-events: none;
+}
+
+.btn-cta:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(212, 169, 106, 0.85);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 10px 28px rgba(124, 58, 237, 0.65),
+    0 0 22px rgba(212, 169, 106, 0.25),
+    0 0 0 1px rgba(76, 29, 149, 0.7);
+}
+
+.btn-cta:hover:not(:disabled)::before {
+  transform: translateX(130%);
+}
+
+.btn-cta:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 2px 6px rgba(0, 0, 0, 0.4),
+    0 3px 10px rgba(124, 58, 237, 0.35);
+}
+
+.btn-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-cta-plus {
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  line-height: 1;
+  text-align: center;
+  font-weight: 900;
+  color: #fde68a;
+  text-shadow: 0 0 8px rgba(253, 230, 138, 0.65);
+}
+
+/* ── Premium nav bar — site-wide top navigation polish ────────────────
+   Apply `.nav-bar` to the wrapper <nav>, `.nav-pill` to user/identity
+   chips, and `.nav-brand` to the brand mark. Adds a faint gradient
+   under-line, glass blur, and gold-tinted hover treatments. */
+.nav-bar {
+  position: relative;
+}
+
+.nav-bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -18px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(212, 169, 106, 0.35) 18%,
+    rgba(139, 92, 246, 0.45) 50%,
+    rgba(212, 169, 106, 0.35) 82%,
+    transparent 100%);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(15, 13, 32, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 40px;
+  padding: 8px 20px 8px 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 14px rgba(0, 0, 0, 0.28);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nav-pill:hover {
+  border-color: var(--gold-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.32),
+    0 0 14px var(--gold-glow);
+}
+
+.nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.nav-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05em;
+  color: var(--primary);
+  text-shadow:
+    0 0 14px rgba(139, 92, 246, 0.7),
+    0 0 28px rgba(139, 92, 246, 0.35);
+  animation: brandPulse 3.6s ease-in-out infinite;
+}
+
+@keyframes brandPulse {
+  0%, 100% { text-shadow: 0 0 14px rgba(139, 92, 246, 0.7), 0 0 28px rgba(139, 92, 246, 0.35); }
+  50%      { text-shadow: 0 0 22px rgba(212, 169, 106, 0.55), 0 0 38px rgba(139, 92, 246, 0.55); }
+}
+
+/* Soft glow for the first-time chat hint when the campaign starts */
+@keyframes chatHintGlow {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(139, 92, 246, 0.25),
+      0 0 12px rgba(139, 92, 246, 0.25),
+      0 0 28px rgba(139, 92, 246, 0.12);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(212, 169, 106, 0.35),
+      0 0 22px rgba(212, 169, 106, 0.32),
+      0 0 48px rgba(139, 92, 246, 0.28);
+  }
+}
+
+.chat-hint-glow {
+  animation: chatHintGlow 3.2s ease-in-out infinite;
+}
+
+/* Refined dismiss pill — used to replace bare "X" close buttons */
+.btn-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(139, 92, 246, 0.12);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
+}
+
+.btn-dismiss:hover {
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(139, 92, 246, 0.28);
+  border-color: var(--gold-soft);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 14px rgba(139, 92, 246, 0.35),
+    0 0 14px var(--gold-glow);
+}
+
+.btn-dismiss:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.btn-dismiss-check {
+  font-size: 0.85em;
+  font-weight: 800;
+  color: #fde68a;
+  text-shadow: 0 0 6px rgba(253, 230, 138, 0.6);
+}
+
+/* DiceRoller sets body.dice-modal-open while the roll modal is up — hide the
+   floating Tooltip / Back / Save toolbar so it does not sit above the modal. */
+body.dice-modal-open .tooltip-size-toolbar {
+  display: none !important;
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 22px 0 rgba(139, 92, 246, 0.55);
+  border-color: rgba(212, 169, 106, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 8px 26px 0 rgba(139, 92, 246, 0.6),
+    0 0 18px var(--gold-glow);
+}
+
+.btn-primary:hover:not(:disabled)::before {
+  transform: translateX(130%);
 }
 
 .btn-primary:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 2px 8px 0 var(--primary-glow);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 2px 6px rgba(0, 0, 0, 0.35),
+    0 2px 8px 0 var(--primary-glow);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+}
+
+/* Keep the content above the shimmer pseudo-element when the button has children */
+.btn-primary > * {
+  position: relative;
+  z-index: 1;
 }
 
 .btn-secondary {
-  background: transparent;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(20, 18, 38, 0.55);
   color: var(--foreground);
-  padding: 12px 24px;
+  padding: 0.9rem 1.6rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 10px rgba(0, 0, 0, 0.25);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
   white-space: nowrap;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: var(--border-hover);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(28, 24, 52, 0.7);
+  border-color: var(--gold-soft);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 4px 18px rgba(0, 0, 0, 0.35),
+    0 0 14px var(--gold-glow);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .btn-danger {
-  background: rgba(239, 68, 68, 0.08);
-  color: var(--danger);
-  padding: 8px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(127, 29, 29, 0.28) 100%);
+  color: #fca5a5;
+  padding: 0.6rem 1.2rem;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  border: 1px solid rgba(239, 68, 68, 0.4);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 10px rgba(127, 29, 29, 0.3);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease, color 0.15s ease;
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.55);
+  color: #fee2e2;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(135deg, rgba(239, 68, 68, 0.32) 0%, rgba(127, 29, 29, 0.45) 100%);
+  border-color: rgba(239, 68, 68, 0.7);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 6px 18px rgba(239, 68, 68, 0.4),
+    0 0 14px rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.35),
+    0 1px 4px rgba(127, 29, 29, 0.3);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.45) 0%, rgba(76, 29, 149, 0.55) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.65) 0%, rgba(109, 40, 217, 0.7) 100%);
+  border-color: var(--gold-soft);
 }
 
 /* ── Animations ───────────────────────────────────────────────────────────── */

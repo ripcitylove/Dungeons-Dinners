@@ -54,8 +54,8 @@ export default function ResetPasswordPage() {
       <div style={{ position: 'absolute', top: '15%', left: '15%', width: '350px', height: '350px', background: 'var(--primary)', filter: 'blur(160px)', opacity: 0.1, zIndex: -1 }} />
       <div style={{ position: 'absolute', bottom: '15%', right: '15%', width: '300px', height: '300px', background: '#f59e0b', filter: 'blur(160px)', opacity: 0.06, zIndex: -1 }} />
 
-      <Link href="/" style={{ position: 'absolute', top: '40px', left: '40px', fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ color: 'var(--primary)' }}>⬡</span> Dungeons &amp; Dinner Legends
+      <Link href="/" className="nav-brand" style={{ position: 'absolute', top: '40px', left: '40px', fontSize: '1.5rem' }}>
+        <span className="nav-brand-mark">⬡</span> Dungeons &amp; Dinner Legends
       </Link>
 
       <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '40px' }}>

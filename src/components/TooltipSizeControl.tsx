@@ -1,35 +1,24 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 const STEPS = [1, 1.25, 1.5, 1.75] as const;
 const STORAGE_KEY = "dnd_tooltip_font_scale";
 
-const BTN_BASE: React.CSSProperties = {
-  position: "fixed",
-  left: "12px",
-  zIndex: 9998,
-  display: "flex",
-  alignItems: "center",
-  gap: "7px",
-  background: "rgba(10, 7, 24, 0.88)",
-  backdropFilter: "blur(14px)",
-  borderRadius: "100px",
-  padding: "9px 16px 9px 12px",
-  minHeight: "42px",
-  cursor: "pointer",
-  userSelect: "none",
-  boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
-  transition: "border-color 0.2s, color 0.2s, box-shadow 0.2s",
-};
+const MENU_HIDE_CLASS = "tooltip-size-toolbar";
 
+// Console-style collapsed corner menu — a single trigger expands a slim
+// vertical stack on hover/focus. Removes 3 always-visible chips from the
+// chrome and matches PC-game tools-corner convention.
 export function TooltipSizeControl() {
   const [stepIdx, setStepIdx] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [open, setOpen]       = useState(false);
+  const [saving, setSaving]   = useState(false);
   const router   = useRouter();
   const pathname = usePathname();
   const isCampaign = pathname?.startsWith("/campaign/");
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const saved = parseFloat(localStorage.getItem(STORAGE_KEY) ?? "");
@@ -50,68 +39,149 @@ export function TooltipSizeControl() {
 
   const handleSave = async () => {
     setSaving(true);
-    // Brief visual feedback — campaign state is auto-saved via Supabase Realtime
     await new Promise(r => setTimeout(r, 600));
     router.push("/dashboard");
   };
+
+  const openMenu  = () => { if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; } setOpen(true); };
+  const closeMenu = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = setTimeout(() => setOpen(false), 280); };
 
   if (!mounted || pathname === "/" || pathname === "/auth") return null;
 
   const isDefault = stepIdx === 0;
 
+  // Trigger: a single small circular icon in the bottom-left.
+  // Menu: stacks up from the trigger on hover/focus.
   return (
-    <>
-      {/* ── Tooltip size control ── */}
+    <div
+      className={MENU_HIDE_CLASS}
+      onMouseEnter={openMenu}
+      onMouseLeave={closeMenu}
+      onFocus={openMenu}
+      onBlur={closeMenu}
+      style={{
+        position: "fixed",
+        left: "16px",
+        bottom: "16px",
+        zIndex: 9998,
+        display: "flex",
+        flexDirection: "column-reverse",
+        alignItems: "flex-start",
+        gap: "8px",
+        pointerEvents: "none",
+      }}
+    >
+      {/* Trigger — always visible */}
       <button
-        onClick={cycle}
-        title={`Hover tooltip size: ${STEPS[stepIdx] === 1 ? "default" : `${STEPS[stepIdx]}×`} — click to ${stepIdx < STEPS.length - 1 ? "increase" : "reset to default"}`}
+        onClick={() => setOpen(o => !o)}
+        title="Tools"
+        aria-label="Tools menu"
+        aria-expanded={open}
         style={{
-          ...BTN_BASE,
-          top: "12px",
-          border: `1px solid ${isDefault ? "rgba(255,255,255,0.08)" : "rgba(139,92,246,0.45)"}`,
-          color: isDefault ? "#475569" : "#c4b5fd",
-          boxShadow: isDefault ? "0 2px 12px rgba(0,0,0,0.4)" : "0 0 12px rgba(139,92,246,0.2)",
+          pointerEvents: "auto",
+          width: "44px",
+          height: "44px",
+          borderRadius: "50%",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 60%), rgba(10, 7, 24, 0.85)",
+          backdropFilter: "blur(14px)",
+          border: `1px solid ${open ? "rgba(212,169,106,0.7)" : "rgba(255,255,255,0.12)"}`,
+          color: open ? "#fde68a" : "#94a3b8",
+          fontSize: "1.1rem",
+          cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: open
+            ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 22px rgba(0,0,0,0.55), 0 0 18px rgba(212,169,106,0.25)"
+            : "inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.45)",
+          transition: "border-color 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s",
+          transform: open ? "translateY(-1px)" : "translateY(0)",
         }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.6)"; e.currentTarget.style.color = "#e2e8f0"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = isDefault ? "rgba(255,255,255,0.08)" : "rgba(139,92,246,0.45)"; e.currentTarget.style.color = isDefault ? "#475569" : "#c4b5fd"; }}
       >
-        <span style={{ fontSize: "1rem", lineHeight: 1 }}>💬</span>
-        <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Tooltip</span>
-        <span style={{ display: "flex", gap: "3px", marginLeft: "2px" }}>
-          {STEPS.map((_, i) => (
-            <span key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: i <= stepIdx ? (isDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
-          ))}
-        </span>
+        ⚙
       </button>
 
-      {/* ── Back button ── */}
-      <button
-        onClick={() => router.back()}
-        title="Go back to previous page"
-        style={{ ...BTN_BASE, top: "62px", border: "1px solid rgba(255,255,255,0.08)", color: "#475569" }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#e2e8f0"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#475569"; }}
+      {/* Expanded menu — slim vertical stack of actions */}
+      <div
+        style={{
+          pointerEvents: open ? "auto" : "none",
+          display: "flex",
+          flexDirection: "column-reverse",
+          gap: "6px",
+          opacity: open ? 1 : 0,
+          transform: open ? "translateY(0)" : "translateY(8px)",
+          transition: "opacity 0.18s ease, transform 0.18s ease",
+        }}
       >
-        <span style={{ fontSize: "1rem", lineHeight: 1 }}>←</span>
-        <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Back</span>
-      </button>
-
-      {/* ── Save & return to dashboard (campaign pages only) ── */}
-      {isCampaign && (
+        {/* Tooltip size control */}
         <button
-          onClick={handleSave}
-          disabled={saving}
-          title="Save campaign and return to dashboard"
-          style={{ ...BTN_BASE, top: "112px", border: "1px solid rgba(34,197,94,0.25)", color: saving ? "#22c55e" : "#475569", opacity: saving ? 0.7 : 1 }}
-          onMouseEnter={e => { if (!saving) { e.currentTarget.style.borderColor = "rgba(34,197,94,0.6)"; e.currentTarget.style.color = "#4ade80"; } }}
-          onMouseLeave={e => { if (!saving) { e.currentTarget.style.borderColor = "rgba(34,197,94,0.25)"; e.currentTarget.style.color = "#475569"; } }}
+          onClick={cycle}
+          title={`Hover tooltip size: ${STEPS[stepIdx] === 1 ? "default" : `${STEPS[stepIdx]}×`} — click to ${stepIdx < STEPS.length - 1 ? "increase" : "reset"}`}
+          tabIndex={open ? 0 : -1}
+          style={menuItemStyle(!isDefault)}
         >
-          <span style={{ fontSize: "1rem", lineHeight: 1 }}>{saving ? "✓" : "💾"}</span>
-          <span style={{ fontSize: "0.8rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>
-            {saving ? "Saving…" : "Save"}
+          <span style={{ fontSize: "0.95rem", lineHeight: 1 }}>💬</span>
+          <span style={{ flex: 1, fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Tooltip</span>
+          <span style={{ display: "flex", gap: "3px" }}>
+            {STEPS.map((_, i) => (
+              <span key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: i <= stepIdx ? (isDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
+            ))}
           </span>
         </button>
-      )}
-    </>
+
+        {/* Back */}
+        <button
+          onClick={() => router.back()}
+          title="Go back"
+          tabIndex={open ? 0 : -1}
+          style={menuItemStyle(false)}
+        >
+          <span style={{ fontSize: "0.95rem", lineHeight: 1 }}>←</span>
+          <span style={{ flex: 1, fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Back</span>
+        </button>
+
+        {/* Save & return to dashboard — campaign pages only */}
+        {isCampaign && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            title="Save campaign and return to dashboard"
+            tabIndex={open ? 0 : -1}
+            style={{
+              ...menuItemStyle(false, true),
+              opacity: saving ? 0.7 : 1,
+              color: saving ? "#4ade80" : "#94a3b8",
+            }}
+          >
+            <span style={{ fontSize: "0.95rem", lineHeight: 1 }}>{saving ? "✓" : "💾"}</span>
+            <span style={{ flex: 1, fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>
+              {saving ? "Saving…" : "Save & Exit"}
+            </span>
+          </button>
+        )}
+      </div>
+    </div>
   );
+}
+
+function menuItemStyle(active: boolean, isSave = false): React.CSSProperties {
+  const borderColor = isSave
+    ? "rgba(34,197,94,0.28)"
+    : active ? "rgba(139,92,246,0.45)" : "rgba(255,255,255,0.1)";
+  const color = active ? "#c4b5fd" : "#94a3b8";
+  return {
+    pointerEvents: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 60%), rgba(10, 7, 24, 0.85)",
+    backdropFilter: "blur(14px)",
+    border: `1px solid ${borderColor}`,
+    borderRadius: "999px",
+    padding: "8px 14px 8px 12px",
+    minHeight: "38px",
+    color,
+    cursor: "pointer",
+    userSelect: "none",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 10px rgba(0,0,0,0.35)",
+    transition: "border-color 0.18s, color 0.18s, transform 0.15s",
+  };
 }

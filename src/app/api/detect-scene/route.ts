@@ -136,22 +136,27 @@ Examples by type:
 - temple: altar, sacred, flooded, dark, abandoned, underground, glowing, ritual
 
 CHANGE DETECTION — current scene is: "${currentScene}"
-Set shouldChange: true ONLY when the party has physically moved to a new location:
+Set shouldChange: true in any of these cases:
 - The scene TYPE genuinely changed (dungeon → tavern, forest → castle, etc.)
 - The party explicitly crossed into a new distinct space (through a door, down stairs, exited a building, arrived somewhere new)
+- A dramatic environmental transformation happened in the SAME space (lights extinguished plunging the room into darkness, the chamber floods, a ceiling collapses, day turns to night, the building catches fire, a magical storm rolls in)
+- A meaningful atmospheric shift in the SAME space — sunset → night, clear weather → heavy rain or snow, dawn breaks, fog rolls in, a magical aurora lights the sky, the hearth dies down to embers and shadow
+- The party reveals a hidden sub-area within the current location (a secret room, a hidden floor, a chamber-within-the-chamber)
 Set shouldChange: false when:
-- Same location with new events — combat, dialogue, discoveries, or action in the same room/area
-- Modifiers changed but the party is in the same place
-- When uncertain — DEFAULT TO FALSE. Background images should be stable; they only change on real location transitions.
+- Same location with new events but unchanged visuals — combat, dialogue, discoveries that don't transform the space
+- Modifiers changed but the room still looks the same and the lighting/weather are unchanged
+- Routine player actions inside a stable environment
+When borderline, prefer TRUE — refreshing the background sells the world's momentum.
 
 MOMENT DETECTION — key visual events worth a dedicated story illustration:
-Set "moment" to an object when the narrative contains ONE of:
-- A named NPC or creature making a dramatically described first appearance (not a generic "goblin attacks" but "the lich lord rises from his throne")
+Set "moment" to an object when the narrative contains ANY of:
+- A named NPC or creature making a vivid first appearance, dramatic action, or notable reveal
 - Discovery of a unique named artifact, weapon, or significant magical item
-- A vivid dramatic spell or power display with specific visual detail
-- A major revelation or transformation with rich visual description
-Set "moment": null for: generic combat rounds, routine movement, conversation, skill checks, or anything visually non-specific.
-Be selective — only truly cinematic, specific visual moments qualify.
+- A vivid spell or power display with specific visual detail (any cinematic cast or unleashed ability)
+- A major revelation, transformation, or turning point with rich visual description
+- A signature combat moment with strong visual specifics (the killing blow on a named foe, a hero shielding the party from a blast, etc.)
+Set "moment": null for: generic combat rounds with no visual specifics, routine movement, plain dialogue, ordinary skill checks.
+Lean toward emitting a moment when the narrative paints a clear picture — moments are how the campaign earns its memorable beats.
 
 Return ONLY valid JSON, no other text:
 {"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"],"moment":{"tag":"<3_to_5_word_snake_case_unique_id>","description":"<1–2 vivid illustrative sentences of exactly what to depict>"} or null}`;

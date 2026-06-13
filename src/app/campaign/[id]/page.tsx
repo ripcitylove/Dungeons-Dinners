@@ -17,7 +17,7 @@ import {
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS, resolveItemTip } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
-import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio } from "../../../lib/classAbilitySounds";
+import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 
@@ -116,6 +116,75 @@ const OPENING_MESSAGES: Message[] = [
   { role: "system", content: "Welcome, adventurer. Your journey begins..." },
 ];
 
+// ── First-time chat hint arrow ────────────────────────────────────────────────
+// A glowing green pointer that draws the player's eye to the hint banner.
+// Renders via portal to escape the chat panel's overflow:hidden box.
+// Disappears the instant `showChatHint` flips off (the "Got it" handler).
+function ChatHintArrow({ show, hintRef }: { show: boolean; hintRef: React.RefObject<HTMLDivElement | null> }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!show) { setPos(null); return; }
+    const el = hintRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      // Place the arrow tip ~16px to the left of the banner, vertically centered.
+      // Arrow svg is 70x44 with the tip on the right edge.
+      setPos({ top: r.top + r.height / 2 - 22, left: Math.max(8, r.left - 86) });
+    };
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    const t = window.setInterval(measure, 800); // catch pane drags
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      clearInterval(t);
+    };
+  }, [show, hintRef]);
+
+  if (!show || !pos || typeof window === "undefined") return null;
+
+  return createPortal(
+    <div
+      aria-hidden
+      style={{
+        position: "fixed",
+        top: pos.top,
+        left: pos.left,
+        zIndex: 9997,
+        pointerEvents: "none",
+        animation: "hintArrowPulse 1.1s ease-in-out infinite",
+      }}
+    >
+      <svg width="70" height="44" viewBox="0 0 70 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hintArrowFill" x1="0" y1="22" x2="70" y2="22" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#16a34a"/>
+            <stop offset="100%" stopColor="#4ade80"/>
+          </linearGradient>
+        </defs>
+        {/* Arrow body: tail rectangle + triangular head, tip on right */}
+        <path
+          d="M 2 16 L 40 16 L 40 6 L 68 22 L 40 38 L 40 28 L 2 28 Z"
+          fill="url(#hintArrowFill)"
+          stroke="#bbf7d0"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>,
+    document.body
+  );
+}
+
 function exportLog(entries: LogEntry[], campaignId: string) {
   const header = ["# Campaign Adventure Log", `Campaign: ${campaignId}`, `Exported: ${new Date().toLocaleString()}`, "", "---", ""].join("\n");
   const body   = entries.map(e => {
@@ -143,48 +212,48 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   {
     icon: "🐉",
     title: "Welcome to DnD Legends",
-    body: "The AI is your Dungeon Master. It narrates the world, runs enemies, hands out loot, and responds to every action you take. No human DM needed — just type and play.",
-    tip: "You don't need to know D&D 5e rules. The DM handles all mechanics automatically.",
+    body: "Your Dungeon Master is an AI. It writes the world, voices every NPC, runs enemy turns, hands out loot, and remembers what your party has done. There's no human DM — every player at the table plays a character.",
+    tip: "You don't need to know D&D 5e rules. The DM handles all the math, dice modifiers, and rule lookups automatically.",
   },
   {
     icon: "💬",
     title: "Type Your Actions",
-    body: "Read the DM's narration in the center panel, then describe your action in the text box at the bottom. Be specific and in-character for the best results.",
-    tip: "Try: \"I kick open the door and charge in with my sword raised\" instead of just \"I attack.\"",
+    body: "Read the DM's narration in the center panel, then describe what your character says or does in the input bar at the bottom. Be specific and in-character — vivid actions get vivid responses.",
+    tip: "Try: \"I kick open the door and charge in with my warhammer raised, eyes locked on the captain\" instead of just \"I attack.\"",
     diagram: "chat" as const,
   },
   {
     icon: "⚔️",
     title: "Turns & The Party Panel",
-    body: "In multiplayer, everyone takes turns in order. The left panel shows your party — the card glowing purple is the active player. Your text box unlocks when it's your turn.",
-    tip: "Playing solo? The input is always active — no waiting.",
+    body: "In multiplayer, everyone takes turns. The party cards on the left show every adventurer — the card outlined in their class color and gently rising is the active player. Click any party card to view that character's full sheet on the right.",
+    tip: "Solo? Your input is always active. The DM scales encounters to your party size automatically.",
     diagram: "party" as const,
   },
   {
     icon: "🎲",
     title: "Rolling Dice",
-    body: "The DM asks you to roll at key moments — attacks, saving throws, skill checks. Click the 🎲 button in the header or press D. Your result goes straight to the DM.",
-    tip: "The DM specifies the die and the difficulty — just roll and report what you get.",
+    body: "The dice button (next to the input bar) stays LOCKED until the DM calls for a roll — attacks, saves, skill checks. When it's time, the button glows gold and pulses. Click it, pick the die the DM asked for, and your result goes straight back to the story.",
+    tip: "Critical hits, critical fumbles, and rolls under disadvantage all have their own animations and sound. The DM does all the math — you just submit the raw number on the die.",
     diagram: "dice" as const,
   },
   {
     icon: "📋",
-    title: "Your Character Sheet",
-    body: "Click the Sheet tab on the right sidebar to see your stats, spells, inventory, and HP. Hover any stat for a plain-English description. Click a spell or item to use it in the story.",
-    tip: "The Party tab shows every adventurer and their HP in real time.",
+    title: "Sheet, Party, Log & Combat",
+    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spells, inventory, HP. PARTY shows everyone's live stats and gold. LOG is the full transcript. COMBAT appears when enemies are present — click an enemy to target them.",
+    tip: "Party leaders see an \"⊕ Invite Players\" panel at the bottom of the Party tab — invite anyone from your roster anytime you're out of combat.",
     diagram: "sheet" as const,
   },
   {
     icon: "🔊",
-    title: "Narration & Music",
-    body: "Click 🔊 in the header to enable AI voice narration — the DM speaks the story aloud. The music player (bottom-right) sets the atmosphere. Both work great on TV and console!",
-    tip: "Match the music to the scene: swap between combat, exploration, or tavern tracks.",
+    title: "Narration & Atmosphere",
+    body: "Toggle the 🔊 button at the top of the chat to enable AI voice narration — the DM speaks the story aloud in the voice you pick. The music player at bottom-right swaps between exploration, combat, and tavern tracks. Both feel great on a TV.",
+    tip: "Playing on Xbox via MS Edge? Use the D-pad to navigate — focused buttons show a gold ring so you always know where you are.",
     diagram: "audio" as const,
   },
   {
     icon: "✨",
-    title: "Begin Your Adventure",
-    body: "The DM will open your campaign with an immersive scene. Read it, then type your first action. The world responds to everything you do — make it count.",
+    title: "Your Adventure Begins",
+    body: "Your characters keep their level, XP, gold, and gear across every campaign they join — they grow with the story. The DM remembers what you've done and calls back to it. Type your first action and the world responds.",
     tip: "Re-open this guide anytime with the ? button in the header.",
   },
 ] as const;
@@ -281,6 +350,22 @@ function parseInspiredTag(text: string, firstName: string): { off: true } | { di
   return { die: `d${dieMatch[1]}` };
 }
 
+/** Returns all [ABILITY:FirstName:key] keys narrated for that character in the
+ *  given response, in narration order. Used to trigger sound + card flash for
+ *  instant class abilities (second_wind, action_surge, cunning_action,
+ *  channel_divinity, ki, lay_on_hands, sorcery_points, arcane_recovery,
+ *  eldritch_invocations, pact_boon, sneak_attack, uncanny_dodge, evasion_rogue,
+ *  paladin_channel). The DM emits one tag per invocation; we play feedback for
+ *  each. */
+function parseAbilityTags(text: string, firstName: string): string[] {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[ABILITY:${n}:([a-z_]+)\\]`, "gi");
+  const keys: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) keys.push(m[1].toLowerCase());
+  return keys;
+}
+
 /** Returns the last [MARK:FirstName:on|off|target] verdict for a ranger applying
  *  or dropping Hunter's Mark. If a target name is given, it becomes the badge
  *  detail (e.g. "Hunter's Mark: Goblin"). */
@@ -298,6 +383,52 @@ function parseMarkTag(text: string, firstName: string): { off: true } | { target
 
 // Detect which player the DM is addressing at the end of a response.
 // Returns the matching full name from partyNames, or null.
+// Generic detector that finds ANY proper-noun addressee in a "what do you
+// do?"-style DM prompt, returning the name regardless of party membership.
+// Used by the resume audit to catch stale addressing where the DM ended its
+// last narration asking a now-departed character what they do. The narrower
+// `detectNextTurnPlayer` only matches names already in the party — it can't
+// flag a departed character because their name is no longer in the list.
+function detectDmAddressee(text: string): string | null {
+  const tail = text.slice(-400);
+  const actionPrompt = `what (?:\\w+ ){0,4}(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|which (?:\\w+ ){0,4}(?:do|will|would|shall) you|(?:do|would|will) you (?:like|want|wish|prefer|choose|pick|decide|select)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment|decision|call) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
+  // Patterns where a capitalized name appears next to an action-prompt phrase.
+  // Group 1 captures the candidate name.
+  const patterns: RegExp[] = [
+    // "what do you do, Tiegan?"
+    new RegExp(`(?:${actionPrompt})[^,?\\n]{0,30}[,?]\\s*([A-Z][a-zA-Z]+)\\b`, "gi"),
+    // "Tiegan, what do you do?"
+    new RegExp(`\\b([A-Z][a-zA-Z]+)\\b[,]?\\s*(?:${actionPrompt})`, "gi"),
+    // "What does Tiegan do?" / "How does Tiegan respond?"
+    new RegExp(`(?:what|how) (?:does|will|would|can|shall) ([A-Z][a-zA-Z]+)\\b[^?\\n]{0,80}\\?`, "gi"),
+    // "Tiegan, what do they do?"
+    new RegExp(`\\b([A-Z][a-zA-Z]+)\\b[,]?\\s+(?:what|how)[^?\\n]{0,80}\\?`, "gi"),
+  ];
+  // Common English words that are capitalized at sentence starts but aren't names.
+  const COMMON_WORDS = new Set([
+    "The", "A", "An", "You", "Your", "What", "How", "Why", "When", "Where", "Who", "Which", "Whose",
+    "But", "And", "Or", "So", "Now", "Then", "Here", "There", "This", "That", "These", "Those",
+    "I", "It", "He", "She", "They", "We", "Us", "Them", "Him", "Her", "Me",
+    "Do", "Does", "Did", "Will", "Would", "Should", "Could", "Can", "Shall", "Must",
+    "Is", "Are", "Was", "Were", "Be", "Been", "Being", "Have", "Has", "Had",
+    "Roll", "Tell", "Show", "Make", "Take", "Choose", "Pick", "Decide", "Try", "Attempt",
+    "Combat", "Initiative", "Stealth", "Perception",
+  ]);
+  let lastMatch: { idx: number; name: string } | null = null;
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = pattern.exec(tail)) !== null) {
+      const name = m[1];
+      if (!name) continue;
+      if (COMMON_WORDS.has(name)) continue;
+      if (name.length < 3) continue;
+      if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name };
+    }
+  }
+  return lastMatch?.name ?? null;
+}
+
 function detectNextTurnPlayer(text: string, partyNames: string[]): string | null {
   const tail = text.slice(-350);
   let lastMatch: { idx: number; name: string } | null = null;
@@ -359,30 +490,121 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-function RevealText({ text, isPaused, onComplete, intervalMs = 50 }: { text: string; isPaused?: boolean; onComplete?: () => void; intervalMs?: number }) {
+// Builds an array of sentence-end character positions for the given text.
+// A "sentence end" is the index AFTER a sentence-terminating punctuation
+// (. ! ? or trailing : or ; for clause-level pauses) that is followed by
+// whitespace or end-of-text. The final entry is always text.length so the
+// last (potentially un-punctuated) sentence completes when audio finishes.
+function buildSentenceBoundaries(text: string): number[] {
+  const ends: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (/[.!?]/.test(text[i])) {
+      // Real boundary: at end of text OR followed by whitespace.
+      if (i === text.length - 1 || /\s/.test(text[i + 1])) {
+        ends.push(i + 1);
+      }
+    }
+  }
+  if (ends[ends.length - 1] !== text.length) ends.push(text.length);
+  return ends;
+}
+
+// Returns the largest sentence-end position ≤ pos. Used to snap the
+// audio-driven reveal back to the most recent COMPLETED sentence so we never
+// expose mid-word fragments like "T|".
+function snapDownToSentenceEnd(boundaries: number[], pos: number): number {
+  let best = 0;
+  for (const b of boundaries) {
+    if (b <= pos) best = b;
+    else break;
+  }
+  return best;
+}
+
+function RevealText({ text, isPaused, onComplete, intervalMs = 50, getAudioProgress }: {
+  text: string;
+  isPaused?: boolean;
+  onComplete?: () => void;
+  intervalMs?: number;
+  // Optional getter that returns the narration's current audio progress (0–1).
+  // When provided AND it returns a number, the reveal locks to the live audio
+  // playback position — true 1:1 with the narrator's voice. When it returns
+  // null/undefined (audio not playing, between slots, fallback to interval),
+  // the component advances at intervalMs while not paused.
+  getAudioProgress?: () => number | null;
+}) {
   const [groups, setGroups] = React.useState<Array<{ id: number; chars: string }>>([]);
   const onCompleteRef = React.useRef(onComplete);
   onCompleteRef.current = onComplete;
-  // When true, the interval keeps ticking but skips advancing — used to hold the reveal
-  // during inter-slot audio gaps so typing stays in sync with the narrator (1:1).
   const isPausedRef = React.useRef(isPaused ?? false);
   isPausedRef.current = isPaused ?? false;
+  const getAudioProgressRef = React.useRef(getAudioProgress);
+  getAudioProgressRef.current = getAudioProgress;
 
   React.useEffect(() => {
     setGroups([]);
     if (!text) return;
+    const sentenceEnds = buildSentenceBoundaries(text);
     let pos = 0;
     let gid = 0;
-    const interval = setInterval(() => {
-      if (isPausedRef.current) return;
-      if (pos >= text.length) { clearInterval(interval); onCompleteRef.current?.(); return; }
-      // Grab one char plus any trailing whitespace so spaces don't each get their own span
-      let chunk = text[pos++];
-      while (pos < text.length && /\s/.test(text[pos]) && chunk.length < 4) chunk += text[pos++];
-      setGroups(prev => [...prev, { id: gid++, chars: chunk }]);
-    }, intervalMs);
-    return () => clearInterval(interval);
-  }, [text]);
+    let done = false;
+    let lastTickAt = performance.now();
+    let intervalAccumMs = 0;
+    let rafId = 0;
+
+    const tick = () => {
+      if (done) return;
+      const now = performance.now();
+      const delta = now - lastTickAt;
+      lastTickAt = now;
+
+      let targetPos = pos;
+      const audioProgress = getAudioProgressRef.current?.();
+
+      if (typeof audioProgress === "number") {
+        // Audio-synced mode — compute raw target from audio progress, then
+        // SNAP to the most recent completed sentence boundary so we never
+        // show partial words (no "T|" stranded at the end of the reveal).
+        // The reveal advances in sentence-sized chunks, each appearing the
+        // moment its audio completes.
+        const raw = Math.min(text.length, Math.round(audioProgress * text.length));
+        targetPos = snapDownToSentenceEnd(sentenceEnds, raw);
+        intervalAccumMs = 0;
+      } else if (!isPausedRef.current) {
+        // Interval fallback — used when no audio is playing. Per-char reveal
+        // (existing behavior) is fine here because there's no voice to drift
+        // out of sync with.
+        intervalAccumMs += delta;
+        while (intervalAccumMs >= intervalMs && targetPos < text.length) {
+          intervalAccumMs -= intervalMs;
+          targetPos++;
+        }
+      } else {
+        intervalAccumMs = 0; // discard accumulated time while paused
+      }
+
+      if (targetPos > pos) {
+        // Single group per tick — the whole new slice fades in together.
+        // For sentence-snap that's a graceful sentence-sized reveal; for the
+        // interval fallback it's still a tight 1-2 character chunk per frame.
+        const chunk = text.slice(pos, targetPos);
+        const groupId = gid++;
+        pos = targetPos;
+        setGroups(prev => [...prev, { id: groupId, chars: chunk }]);
+      }
+
+      if (pos >= text.length) {
+        done = true;
+        onCompleteRef.current?.();
+        return;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [text, intervalMs]);
 
   const revealed = groups.reduce((s, g) => s + g.chars.length, 0);
   return (
@@ -926,7 +1148,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
   const [managePartyOpen,  setManagePartyOpen]    = useState(false);
+  const [claimLeaderOpen,  setClaimLeaderOpen]    = useState(false);
+  const [claimingLeaderId, setClaimingLeaderId]   = useState<string | null>(null);
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
+  // Tracks whether the current user owns the campaign (DB campaigns.user_id).
+  // Used as a belt-and-suspenders gate for the Invite Players panel — the
+  // owner ALWAYS sees the management UI even if partyLeaderId drifts out of
+  // sync momentarily during a reclaim or character swap.
+  const [isCampaignOwner, setIsCampaignOwner] = useState(false);
 
   // Dice-roll targeting — character name the DM just asked to roll
   const [diceRollTarget,      setDiceRollTarget]      = useState<string | null>(null);
@@ -944,6 +1173,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const msgContainerRef      = useRef<HTMLDivElement>(null);
+  const chatHintRef          = useRef<HTMLDivElement>(null);
   const autoScrollRafRef     = useRef<number | null>(null);
   const narSlot0TextRef      = useRef<string | null>(null); // first narration sentence, used to compute speech rate
   const logEndRef            = useRef<HTMLDivElement>(null);
@@ -982,6 +1212,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const narSlotTextsRef      = useRef<string[]>([]); // original text per slot — used to regen truncated clips
   const narSlotRetriedRef    = useRef<boolean[]>([]); // tracks whether a slot was already regen'd to avoid loops
   const narPlaySlotRef       = useRef(0);
+  // Currently-playing slot index, or -1 when no slot is actively sounding.
+  // Used by the audio-synced text reveal to know which slot's audio time to
+  // sample for 1:1 voice/text alignment.
+  const narActiveSlotRef     = useRef(-1);
   const fetchClipForSlotRef  = useRef<((slot: number, text: string, fresh: boolean) => Promise<void>) | null>(null);
   // Incremented on every queue reset — lets in-flight ElevenLabs fetches detect they're stale
   // and skip writing to the (now-reused) slot array, preventing old audio from clobbering new.
@@ -1197,13 +1431,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // ── Per-campaign state write helper ──────────────────────────────────────────
   // Routes to campaign_characters when using the CC table, otherwise characters.
+  // Fields that belong to the CHARACTER, not the campaign — they persist globally
+  // so the same character at level 5 in campaign A remains level 5 in campaign B,
+  // and XP earned in one campaign continues their progression in another.
+  const GLOBAL_CHAR_FIELDS = useMemo(() => new Set([
+    "level", "xp", "max_hp", "title", "portrait_url", "name",
+    "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma",
+  ]), []);
+
   const charWrite = useCallback(async (charId: string, fields: Record<string, unknown>) => {
-    if (usesCCTableRef.current) {
-      await supabase.from("campaign_characters").update(fields).eq("campaign_id", params.id).eq("character_id", charId);
-    } else {
-      await supabase.from("characters").update(fields).eq("id", charId);
+    const globalFields: Record<string, unknown> = {};
+    const sessionFields: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (GLOBAL_CHAR_FIELDS.has(k)) globalFields[k] = v;
+      else sessionFields[k] = v;
     }
-  }, [params.id]);
+    // Global character properties always write to the characters table so they
+    // remain tethered to the character regardless of which campaign they're in.
+    if (Object.keys(globalFields).length > 0) {
+      await supabase.from("characters").update(globalFields).eq("id", charId);
+    }
+    // Per-campaign session state — HP, inventory, spell slots, status effects,
+    // class_resources — goes to whichever table this campaign uses.
+    if (Object.keys(sessionFields).length > 0) {
+      if (usesCCTableRef.current) {
+        await supabase.from("campaign_characters").update(sessionFields).eq("campaign_id", params.id).eq("character_id", charId);
+      } else {
+        await supabase.from("characters").update(sessionFields).eq("id", charId);
+      }
+    }
+  }, [params.id, GLOBAL_CHAR_FIELDS]);
   useEffect(() => { charWriteRef.current = charWrite; }, [charWrite]);
 
   // Build a compact body for /api/suggest-actions that includes the rest of the
@@ -1232,13 +1489,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
   }, []);
 
-  useEffect(() => {
-    const done = localStorage.getItem("dnd_campaign_tutorial_done");
-    if (!done) {
-      const t = setTimeout(() => setTutorialStep(0), 1400);
-      return () => clearTimeout(t);
-    }
-  }, []);
+  // Tutorial is triggered inline by the campaign loader once it has confirmed
+  // the campaign has no prior gameplay history (see the "New campaign" branch
+  // below). Resumes of an in-progress campaign never show the tutorial.
 
   // Build turn order from campaign party — prefer DB-restored state on resume, fall back to alphabetical
   useEffect(() => {
@@ -1293,6 +1546,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [currentTurnIndex, turnOrder, campaignParty]);
 
+  // ── Empty-party reclaim prompt ───────────────────────────────────────────────
+  // If a campaign loads with zero characters in the party, the owner must seat
+  // someone from their roster BEFORE the resume / opening begins — otherwise a
+  // random character would be auto-assigned. The modal opens during the
+  // pre-start screen and blocks the Begin Adventure flow until a leader is
+  // chosen. Non-owners are kicked to /dashboard at load, so reaching this
+  // effect already implies ownership.
+  useEffect(() => {
+    if (!userId) return;
+    // Wait until BOTH the party and roster have been read from the DB.
+    // userRoster is set inside the campaign loader after the auth check, so
+    // gating on userId guarantees we're past the auth pause but not yet past
+    // the data read (campaignParty starts empty and stays empty for an empty
+    // campaign — that's the case we want to catch).
+    if (campaignParty.length === 0 && userRoster.length > 0) {
+      setClaimLeaderOpen(true);
+    } else {
+      setClaimLeaderOpen(false);
+    }
+  }, [userId, campaignParty.length, userRoster.length]);
+
   // ── Load user, character, history ────────────────────────────────────────────
   useEffect(() => {
     async function load() {
@@ -1313,6 +1587,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Campaign-specific character state (null-safe — empty if table doesn't exist yet)
         supabase.from("campaign_characters").select("*").eq("campaign_id", params.id),
       ]);
+
+      // Capture ownership flag once so the Invite Players panel can stay
+      // permanently visible to the owner regardless of partyLeaderId drift.
+      setIsCampaignOwner(!!campRes.data?.user_id && campRes.data.user_id === user.id);
 
       if (campRes.data?.title) setCampaignTitle(campRes.data.title);
       if (campRes.data?.description) {
@@ -1350,9 +1628,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         ? rawParty.map(char => {
             const cc = ccRows.find(r => r.character_id === char.id);
             if (!cc) return char;
+            // level / xp / max_hp / ability scores stay on the global characters
+            // table (rawParty) — they are properties of the character, not the
+            // campaign. The CC table contributes per-session state only.
             return {
               ...char,
-              hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
+              hp: cc.hp,
               inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
               class_resources: cc.class_resources ?? {},
               status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
@@ -1391,9 +1672,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (myChar) { setCharacter(myChar); characterRef.current = myChar; }
         setActiveCharIdx(0);
 
-        // Auto-assign party leader to first character if unset — only campaign owner does this to avoid races
-        if (!loadedLeaderCharId && user.id === campRes.data?.user_id) {
+        // Auto-assign or auto-CORRECT party leader. Two cases trigger a write:
+        //   (a) No party_leader_id set yet (fresh campaign).
+        //   (b) party_leader_id is STALE — points to a character no longer in
+        //       the party (departed, deleted, replaced via empty-party reclaim
+        //       in an older client that didn't reset the leader column).
+        // Only the campaign owner performs the write so concurrent clients
+        // don't race each other.
+        const leaderInParty = !!loadedLeaderCharId && party.some(c => c.id === loadedLeaderCharId);
+        if ((!loadedLeaderCharId || !leaderInParty) && user.id === campRes.data?.user_id) {
           const firstCharId = party[0].id;
+          if (loadedLeaderCharId && !leaderInParty) {
+            console.warn(`[campaign] stale party_leader_id (${loadedLeaderCharId}) — auto-correcting to ${firstCharId}`);
+          }
           supabase.from("campaigns").update({ party_leader_id: firstCharId }).eq("id", params.id).then(() => {});
           setPartyLeaderId(firstCharId);
         }
@@ -1447,8 +1738,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             .catch(() => {});
         }
       } else {
-        // New campaign — DM will narrate the opening scene when the session starts
+        // New campaign — DM will narrate the opening scene when the session starts.
+        // Trigger the tutorial only for brand-new campaigns (no prior gameplay).
+        // Returning to a campaign with history skips the tutorial entirely.
+        // The per-campaign localStorage flag still suppresses the tutorial if
+        // the player explicitly clicked "Skip" before any gameplay happened.
         setMessages(OPENING_MESSAGES);
+        const skipped = localStorage.getItem(`dnd_campaign_tutorial_done_${params.id}`);
+        if (!skipped) setTimeout(() => setTutorialStep(0), 1400);
       }
     }
     load();
@@ -2383,6 +2680,45 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [charWrite, charNameMatches]);
 
+  // ── Audio-synced text reveal getter ─────────────────────────────────────────
+  // Returns a 0-1 ratio of how much of the full narration text has been
+  // "spoken" by the narrator, sampled live from the audio element. Used by
+  // RevealText to render letters in lockstep with the voice — when the voice
+  // is fast, text reveals fast; when the voice pauses between slots, text
+  // pauses too. Returns null when no slot is currently sounding so RevealText
+  // can either hold position or fall back to interval mode.
+  const getNarrationProgress = useCallback((): number | null => {
+    const slot = narActiveSlotRef.current;
+    const slotTexts = narSlotTextsRef.current;
+    if (!slotTexts.length) return null;
+
+    // Total raw chars across every slot enqueued so far.
+    let total = 0;
+    for (const t of slotTexts) total += t?.length ?? 0;
+    if (total <= 0) return null;
+
+    // Raw chars completed by slots that are entirely behind us.
+    let done = 0;
+    if (slot < 0) {
+      // No slot sounding right now — return progress based on how many slots
+      // have fully finished playing (narPlaySlotRef advances past each one).
+      const finished = Math.min(slotTexts.length, narPlaySlotRef.current);
+      for (let i = 0; i < finished; i++) done += slotTexts[i]?.length ?? 0;
+      return Math.min(1, done / total);
+    }
+
+    for (let i = 0; i < slot; i++) done += slotTexts[i]?.length ?? 0;
+
+    // Add the in-progress slot's audio-relative position.
+    const el = narAudioRef.current;
+    const currentText = slotTexts[slot] ?? "";
+    if (el && Number.isFinite(el.duration) && el.duration > 0) {
+      const ratio = Math.min(1, Math.max(0, el.currentTime / el.duration));
+      done += ratio * currentText.length;
+    }
+    return Math.min(1, done / total);
+  }, []);
+
   // ── Ordered narration queue (slot-based) ──────────────────────────────────────
   // Each sentence gets a numbered slot BEFORE the async fetch so they always play in order.
   const playNextInQueue = useCallback(() => {
@@ -2417,6 +2753,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       el.onpause          = null;
       el.onplay           = null;
       audioPlayingRef.current = false;
+      // Clear the active slot so the audio-synced reveal stops sampling this
+      // element's currentTime (which would otherwise stay at duration and
+      // erroneously hold the text at the end-of-slot position).
+      narActiveSlotRef.current = -1;
       // Hold the text reveal while audio is silent (between slots). The next slot's
       // onplay handler flips this back to false so the typing resumes only when sound resumes.
       setNarRevealPaused(true);
@@ -2510,8 +2850,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // For slot 0 specifically: also compute the per-group interval from slot 0's duration.
       el.onplay = () => {
         el.onplay = null;
+        // Mark this slot as the live one so the audio-synced reveal samples
+        // its currentTime/duration for 1:1 voice ↔ text alignment.
+        narActiveSlotRef.current = playingSlot;
         setNarRevealPaused(false);
         if (slot === 0 && narSlot0TextRef.current && dur > 0) {
+          // Fallback interval — only kicks in if the audio progress getter
+          // returns null (e.g. audio failed mid-flight). The RAF loop in
+          // RevealText prefers the audio-synced path when available.
           const avgGroupSize = 1.3;
           const groups = (narSlot0TextRef.current.length) / avgGroupSize;
           const computed = Math.round((dur * 1000) / groups);
@@ -2598,7 +2944,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Party join/leave narration ────────────────────────────────────────────────
   // Joins are debounced 8 s so multiple arrivals batch into one DM announcement.
   // Leave / kick fire immediately.
-  const fireDmPartyResponse = useCallback(async (trigger: Message) => {
+  const fireDmPartyResponse = useCallback(async (
+    trigger: Message,
+    ctx?: {
+      party?: Character[];
+      campaignContext?: { title: string; description: string };
+      partyLeaderName?: string | null;
+      turnOrder?: string[];
+    }
+  ) => {
     if (isTypingRef.current) return;
     setPartyChangePending(false);
     setIsTyping(true); isTypingRef.current = true;
@@ -2610,7 +2964,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...messagesRef.current, trigger], character: characterRef.current }),
+        body: JSON.stringify({
+          messages: [...messagesRef.current, trigger],
+          character: characterRef.current,
+          ...(ctx?.party && ctx.party.length > 1 && { party: ctx.party }),
+          ...(ctx?.campaignContext && { campaignContext: ctx.campaignContext }),
+          ...(ctx?.partyLeaderName && { partyLeaderName: ctx.partyLeaderName }),
+          ...(ctx?.turnOrder && ctx.turnOrder.length > 1 && { turnOrder: ctx.turnOrder }),
+        }),
       });
       if (!res.ok || !res.body) throw new Error();
       const reader = res.body.getReader();
@@ -2941,6 +3302,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[RAGE:[^\]]+\]/gi, "")
       .replace(/\[INSPIRED:[^\]]+\]/gi, "")
       .replace(/\[MARK:[^\]]+\]/gi, "")
+      .replace(/\[ABILITY:[^\]]+\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -3021,7 +3383,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; _retryCount?: number }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -3155,6 +3517,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.isGroupCheckResult && { isGroupCheckResult: true }),
           ...(opts?.isQuestion && { isQuestion: true }),
           ...(opts?.isResumeRecap && { resumeRecap: true }),
+          ...(opts?.departedAddresseeName && { departedAddresseeName: opts.departedAddresseeName }),
           ...(turnOrderNames.length > 1 && !opts?.roundSummary?.length && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
@@ -3706,6 +4069,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
+      // Fast ABILITY detection — when the DM narrates an instant class ability
+      // (Second Wind, Action Surge, Cunning Action, Ki, Lay on Hands, Channel
+      // Divinity, Sorcery Points, Arcane Recovery, Eldritch Invocation, Pact
+      // Boon, Sneak Attack, Uncanny Dodge, Evasion), they emit one
+      // [ABILITY:Name:key] tag per invocation. Mirror the click-the-button
+      // feedback: play the synth voice for that key and pulse the card flash
+      // in that ability's resource color. Persistent buffs (Rage / Inspired /
+      // Mark / Wild Shape) already have their own dedicated tags above.
+      if (!isOpeningScene) {
+        for (const partyMember of campaignPartyRef.current) {
+          const firstName = partyMember.name.split(" ")[0];
+          const keys = parseAbilityTags(full, firstName);
+          if (keys.length === 0) continue;
+          const classResources = CLASS_RESOURCES[partyMember.class] ?? [];
+          // Stagger multiple invocations slightly so two simultaneous cues
+          // don't smear into each other.
+          keys.forEach((key, i) => {
+            const resDef = classResources.find(r => r.key === key);
+            const color  = resDef?.color ?? "#8b5cf6";
+            setTimeout(() => {
+              playAbilitySound(key);
+              triggerAbilityFlash(partyMember.id, color);
+            }, i * 220);
+          });
+        }
+      }
+
       // Fast HP detection — apply HP change to this character immediately before chat-state returns.
       if (!isOpeningScene && pendingHpDeltaRef.current === 0) {
         const actingChar = characterRef.current;
@@ -4161,18 +4551,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Party management ─────────────────────────────────────────────────────────
   const addToParty = useCallback(async (char: Character) => {
     if (campaignPartyRef.current.some(c => c.id === char.id)) return;
+    // Combat lock — never allow party additions while any enemy is undefeated.
+    if (enemiesRef.current.some(e => !e.is_defeated)) return;
 
     let updated: Character;
 
     if (usesCCTableRef.current) {
-      // CC-table campaign: check for existing saved state (returning player)
+      // CC-table campaign: check for existing saved state (returning player).
+      // The character's level / xp / max_hp / ability scores live on the global
+      // characters table — they persist across campaigns. The CC snapshot only
+      // contributes per-session state (HP, inventory, spell slots, status).
       const { data: existingCC } = await supabase.from("campaign_characters")
         .select("*").eq("campaign_id", params.id).eq("character_id", char.id).maybeSingle();
       if (existingCC) {
         const cc = existingCC as CampaignCharacterRow;
         updated = {
           ...char, campaign_id: params.id,
-          hp: cc.hp, max_hp: cc.max_hp, xp: cc.xp, level: cc.level,
+          hp: cc.hp,
           inventory: cc.inventory, spell_slots_used: cc.spell_slots_used,
           status_effects: cc.status_effects, cantrips_known: cc.cantrips_known,
           spells_prepared: cc.spells_prepared,
@@ -4216,14 +4611,75 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setActiveCharIdx(newParty.length - 1);
     }
     setPartyChangePending(true);
-    const joinContent = `[Party change — weave naturally into the story: ${updated.name}, a ${updated.class}, has joined the party]`;
-    fireDmPartyResponse({ role: "player", content: joinContent });
+    const joinContent = `[Party change — ${updated.name}, a Level ${updated.level} ${updated.race} ${updated.class}, has just joined the party. The party now has ${newParty.length} adventurers. Write a brief in-world moment (1–3 sentences) showing how ${updated.name} arrives in the current scene — give them a small gesture, line, or detail that fits their class. Do not call for a dice roll. Do not address anyone with "what do you do" — the next turn prompt is handled separately.]`;
+    const campaignContext = campaignDescriptionRef.current
+      ? { title: campaignTitle, description: campaignDescriptionRef.current }
+      : undefined;
+    const partyLeaderName = newParty.find(c => c.id === partyLeaderId)?.name ?? null;
+    fireDmPartyResponse(
+      { role: "player", content: joinContent },
+      { party: newParty, campaignContext, partyLeaderName },
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id, fireDmPartyResponse]);
+  }, [params.id, fireDmPartyResponse, campaignTitle, partyLeaderId]);
+
+  // Reclaim leadership of an empty campaign. Seats the chosen roster character
+  // as the first party member AND sets them as party leader in one shot, so
+  // the player can immediately invite others. Mirrors the join half of
+  // addToParty but skips the DM narration (no story exists yet to weave into).
+  const claimLeadership = useCallback(async (char: Character) => {
+    if (claimingLeaderId) return; // debounce double-clicks
+    setClaimingLeaderId(char.id);
+    try {
+      // 1. Seat the character in the campaign (no DM narration — fresh start).
+      const ib = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
+      const freshHp = char.max_hp + ib.hpMaxAdd;
+      await supabase.from("characters").update({
+        campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [],
+      }).eq("id", char.id);
+
+      const seated: Character = { ...char, campaign_id: params.id, hp: freshHp, spell_slots_used: {}, status_effects: [] };
+      const newParty = [seated];
+      setCampaignParty(newParty);
+      campaignPartyRef.current = newParty;
+      setCharacter(seated);
+      characterRef.current = seated;
+      setActiveCharIdx(0);
+
+      // 2. Set them as party leader AND reset turn order so any IDs of
+      // departed characters are cleared. The newly-seated leader becomes the
+      // sole turn-holder.
+      const { error: leaderErr } = await supabase.from("campaigns")
+        .update({ party_leader_id: char.id, turn_order: [char.id], current_turn_index: 0 }).eq("id", params.id);
+      if (leaderErr) console.error("[claim leader]", leaderErr.message);
+      setPartyLeaderId(char.id);
+      setTurnOrder([char.id]);
+      turnOrderRef.current = [char.id];
+      setCurrentTurnIndex(0);
+      currentTurnIndexRef.current = 0;
+      channelRef.current?.send({ type: "broadcast", event: "leader_changed", payload: { newLeaderId: char.id } });
+
+      // 3. Invalidate the cached resume narration. The last DM message in the
+      // history (and any [RECAP] sitting on top of it) addresses someone who
+      // is no longer in the party — replaying it would show the player a line
+      // like "What do you do, Tiegan?" when Tiegan is gone. Clearing these
+      // refs forces the resume flow to generate a FRESH recap that targets
+      // the newly-seated leader instead.
+      resumeNarrationRef.current = "";
+      resumeRecapTriggeredRef.current = false;
+
+      // 4. Close the prompt — the Party tab will now show the seated character.
+      setClaimLeaderOpen(false);
+    } finally {
+      setClaimingLeaderId(null);
+    }
+  }, [params.id, claimingLeaderId]);
 
   const leaveParty = useCallback(async (charId: string) => {
     const char = campaignPartyRef.current.find(c => c.id === charId);
     if (!char) return;
+    // Combat lock — never allow party removals while any enemy is undefeated.
+    if (enemiesRef.current.some(e => !e.is_defeated)) return;
     // Persist the removal — clear campaign_id so they don't appear on future loads
     await supabase.from("characters").update({ campaign_id: null }).eq("id", charId);
     const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
@@ -4235,10 +4691,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setActiveCharIdx(next ? newParty.indexOf(next) : 0);
     }
     setPartyChangePending(true);
-    const leaveContent = `[Party change — weave naturally into the story: ${char.name}, the ${char.class}, has departed from the party]`;
-    fireDmPartyResponse({ role: "player", content: leaveContent });
+    const remaining = newParty.length;
+    const leaveContent = `[Party change — ${char.name}, the Level ${char.level} ${char.race} ${char.class}, has just departed from the party. ${remaining} adventurer${remaining === 1 ? "" : "s"} ${remaining === 1 ? "remains" : "remain"}. Write a brief in-world moment (1–3 sentences) showing ${char.name}'s exit from the current scene — a parting line, an obligation pulling them away, a quiet fade into the crowd, whatever fits the tone. Do not call for a dice roll. Do not address anyone with "what do you do" — the next turn prompt is handled separately.]`;
+    const campaignContext = campaignDescriptionRef.current
+      ? { title: campaignTitle, description: campaignDescriptionRef.current }
+      : undefined;
+    const partyLeaderName = newParty.find(c => c.id === partyLeaderId)?.name ?? null;
+    fireDmPartyResponse(
+      { role: "player", content: leaveContent },
+      { party: newParty, campaignContext, partyLeaderName },
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fireDmPartyResponse]);
+  }, [fireDmPartyResponse, campaignTitle, partyLeaderId]);
 
   const handleDiceResult = (result: number, diceType: number, description?: string) => {
     // Stop any in-flight narration immediately — roll submission takes priority
@@ -4271,6 +4735,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
   const isPartyLeader       = !!character && character.id === partyLeaderId;
+  // True only when partyLeaderId resolves to an actual party member. When it
+  // doesn't (stale/broken DB value, mid-render gap during reclaim), the
+  // campaign owner gets the panel as a recovery fail-safe so they can fix the
+  // state. Once a valid leader exists, ONLY that leader manages the party —
+  // even the campaign owner loses the panel if they've transferred leadership.
+  const hasValidLeader      = !!partyLeaderId && campaignParty.some(c => c.id === partyLeaderId);
+  const canManageParty      = isPartyLeader || (isCampaignOwner && !hasValidLeader);
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
     : (turnOrder.length <= 1 || currentTurnPlayerId === character?.id);
@@ -4312,12 +4783,98 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
+      {/* ── Empty-party reclaim modal ──
+          Fires when a campaign loads with zero seated characters. Owner picks
+          one of their roster characters to seat as the new party leader. */}
+      {claimLeaderOpen && (
+        <div
+          onClick={() => {}}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+        >
+          <div
+            className="glass-panel animate-fade-in"
+            onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: "640px", padding: "32px", position: "relative", border: "1px solid rgba(212,169,106,0.45)", boxShadow: "0 0 60px rgba(212,169,106,0.18), 0 24px 80px rgba(0,0,0,0.7)" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: "20px" }}>
+              <span style={{ fontSize: "2.6rem", marginBottom: "8px" }}>👑</span>
+              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#fde68a", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: "6px" }}>
+                Empty Camp
+              </p>
+              <h2 style={{ fontSize: "1.55rem", fontWeight: 800, marginBottom: "10px" }}>Seat a New Party Leader</h2>
+              <p style={{ color: "var(--subtle)", fontSize: "0.95rem", lineHeight: 1.6, maxWidth: "520px" }}>
+                This campaign has no adventurers. Choose a hero from your roster to seat as
+                the new party leader. They&apos;ll appear in the Party tab immediately and can
+                invite others.
+              </p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "10px", maxHeight: "55vh", overflowY: "auto", padding: "4px" }}>
+              {userRoster.map(rc => {
+                const classColor = CLASS_COLORS[rc.class] ?? "#8b5cf6";
+                const claiming = claimingLeaderId === rc.id;
+                const otherClaiming = !!claimingLeaderId && claimingLeaderId !== rc.id;
+                return (
+                  <button
+                    key={rc.id}
+                    onClick={() => claimLeadership(rc)}
+                    disabled={!!claimingLeaderId}
+                    style={{
+                      background: "rgba(0,0,0,0.45)",
+                      border: `1.5px solid ${claiming ? "#fde68a" : classColor + "55"}`,
+                      borderRadius: "10px",
+                      padding: "12px 10px",
+                      cursor: claimingLeaderId ? (claiming ? "wait" : "not-allowed") : "pointer",
+                      opacity: otherClaiming ? 0.4 : 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "8px",
+                      transition: "transform 0.15s, border-color 0.15s, box-shadow 0.15s",
+                      color: "white",
+                      textAlign: "center",
+                      boxShadow: claiming ? `0 0 18px ${classColor}55` : "none",
+                    }}
+                    onMouseEnter={e => { if (!claimingLeaderId) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.borderColor = classColor; e.currentTarget.style.boxShadow = `0 6px 22px ${classColor}33, 0 0 12px rgba(212,169,106,0.2)`; } }}
+                    onMouseLeave={e => { if (!claimingLeaderId) { e.currentTarget.style.transform = "none"; e.currentTarget.style.borderColor = `${classColor}55`; e.currentTarget.style.boxShadow = "none"; } }}
+                  >
+                    <div style={{ width: "72px", height: "72px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}aa`, background: "rgba(0,0,0,0.5)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {rc.portrait_url
+                        ? <img src={rc.portrait_url} alt={rc.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        : <span style={{ fontSize: "1.8rem" }}>🧙</span>
+                      }
+                    </div>
+                    <div style={{ minWidth: 0, width: "100%" }}>
+                      <div style={{ fontSize: "0.86rem", fontWeight: 700, color: classColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rc.name}</div>
+                      <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "2px" }}>Lvl {rc.level} {rc.race} {rc.class}</div>
+                    </div>
+                    {claiming && (
+                      <span style={{ fontSize: "0.7rem", color: "#fde68a", fontWeight: 700, letterSpacing: "0.06em" }}>Seating…</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {userRoster.length === 0 && (
+              <p style={{ color: "var(--subtle)", fontSize: "0.9rem", textAlign: "center", padding: "20px" }}>
+                You have no characters yet.{" "}
+                <Link href="/create-character" style={{ color: "var(--primary)", fontWeight: 700 }}>Create one →</Link>
+              </p>
+            )}
+            <div style={{ marginTop: "20px", display: "flex", justifyContent: "center" }}>
+              <Link href="/dashboard" style={{ color: "#64748b", fontSize: "0.82rem", textDecoration: "none" }}>
+                ← Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Tutorial modal ── */}
       {tutorialStep !== null && (() => {
         const step = CAMPAIGN_TUTORIAL_STEPS[tutorialStep];
         const isLast = tutorialStep === CAMPAIGN_TUTORIAL_STEPS.length - 1;
         const closeTutorial = (markDone = true) => {
-          if (markDone) localStorage.setItem("dnd_campaign_tutorial_done", "1");
+          if (markDone) localStorage.setItem(`dnd_campaign_tutorial_done_${params.id}`, "1");
           setTutorialStep(null);
         };
 
@@ -4527,10 +5084,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     if (el) { el.src = "/silence.wav"; el.load(); el.play().catch(() => {}); }
                   }
                   window.__dndMusicPlay?.();
-                  // Prime the Web Audio context and preload the wild-shape audio
-                  // clips so the first AI-triggered ability sound (which fires
-                  // mid-stream, outside any gesture) plays reliably.
+                  // Prime the Web Audio context and preload both audio sets
+                  // (class abilities + wild-shape forms) so the first AI-
+                  // triggered sound (which fires mid-stream, outside any
+                  // gesture) plays reliably with no network latency.
                   primeAbilitySounds();
+                  preloadAbilityAudio();
                   preloadWildShapeAudio();
 
                   const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
@@ -4602,16 +5161,43 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
                     setSessionStarted(true);
 
-                    // Resume recap: generate a fresh AI recap so the party catches up to where
-                    // they left off. Skip if the latest DM message already starts with [RECAP]
-                    // (another client just generated one, or this is a page-reload after a recap).
-                    // The guard ref prevents re-triggering on the same page load.
+                    // Resume recap audit — fires every resume, not just empty-party reclaims.
+                    // 1) Detect the addressee of the cached DM narration USING THE GENERIC
+                    //    detector (detectDmAddressee) — it returns ANY name found, including
+                    //    departed characters. The narrower detectNextTurnPlayer would silently
+                    //    return null for absent characters, causing the audit to miss them.
+                    // 2) If the addressed name is NOT in the current party (departed character,
+                    //    party changed since last save), the cached text is stale and must be
+                    //    replaced — force a fresh recap even when the cached text starts with
+                    //    [RECAP].
+                    // 3) Otherwise the standard rules apply: skip recap if the latest DM
+                    //    message already starts with [RECAP] (page reload after a recap),
+                    //    and replay the existing narration in that case.
+                    const partyFirstNames = campaignPartyRef.current.map(c => c.name.split(" ")[0].toLowerCase());
+                    const cachedAddressee = resumeNarrationRef.current
+                      ? detectDmAddressee(resumeNarrationRef.current)
+                      : null;
+                    const addressesAbsent = !!resumeNarrationRef.current
+                      && cachedAddressee !== null
+                      && !partyFirstNames.includes(cachedAddressee.toLowerCase());
                     const lastDmIsRecap = !!resumeNarrationRef.current && /^\s*\[RECAP\]/i.test(resumeNarrationRef.current);
-                    if (!resumeRecapTriggeredRef.current && !lastDmIsRecap) {
+                    const forceRecap = addressesAbsent; // stale addressing — regenerate even if cached is a [RECAP]
+                    if (forceRecap && resumeNarrationRef.current) {
+                      console.warn(`[campaign] cached narration addresses "${cachedAddressee}" who is not in the current party — forcing fresh recap`);
+                      // Clear the stale text so its narration doesn't sneak through
+                      // the streamer's reset path.
+                      resumeNarrationRef.current = "";
+                    }
+                    if (!resumeRecapTriggeredRef.current && (forceRecap || !lastDmIsRecap)) {
                       resumeRecapTriggeredRef.current = true;
+                      // When the audit caught stale addressing, pass the detected
+                      // departed name to the API so the recap prompt can be
+                      // explicit about whom NOT to address — even if the AI
+                      // would otherwise echo the name from chat history.
+                      const departedAddresseeName = addressesAbsent && cachedAddressee ? cachedAddressee : undefined;
                       setTimeout(() => {
                         if (isTypingRef.current) return;
-                        void sendToAI(messagesRef.current, false, { isResumeRecap: true });
+                        void sendToAI(messagesRef.current, false, { isResumeRecap: true, departedAddresseeName });
                       }, 400);
                     } else if (resumeNarrationRef.current) {
                       enqueueNarration(resumeNarrationRef.current);
@@ -4960,6 +5546,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   text={stripSystemLeaks(narRevealText)}
                   intervalMs={narRevealIntervalMs}
                   isPaused={narRevealPaused}
+                  getAudioProgress={getNarrationProgress}
                   onComplete={() => {
                     setNarRevealText(null);
                     setNarRevealIntervalMs(null);
@@ -5035,38 +5622,50 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* First-time chat hint */}
         {showChatHint && (
-          <div style={{ padding: "9px 14px", borderTop: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)", display: "flex", alignItems: "center", gap: "10px" }}>
+          <div ref={chatHintRef} className="chat-hint-glow" style={{ padding: "11px 14px", borderTop: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)", display: "flex", alignItems: "center", gap: "12px", position: "relative" }}>
             <span style={{ fontSize: "0.95rem", flexShrink: 0 }}>💬</span>
             <p style={{ fontSize: "0.75rem", color: "#a78bfa", lineHeight: 1.55, flex: 1, margin: 0 }}>
               <strong>Type what your character says or does</strong> — the AI Dungeon Master responds instantly.
-              Use the 🎲 button to roll dice when asked, or explore the sidebar tabs for your sheet, party, and combat.
+              Use the <span style={{ display: "inline-flex", verticalAlign: "middle", margin: "0 2px" }}><D20Icon size={16} color="#c4b5fd"/></span> button to roll dice when asked, or explore the sidebar tabs for your sheet, party, and combat.
             </p>
             <button
               onClick={() => { setShowChatHint(false); sessionStorage.setItem(`chatHint_${params.id}`, "1"); }}
-              style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: "1rem", padding: "2px 4px", lineHeight: 1, flexShrink: 0 }}
+              className="btn-dismiss"
               title="Dismiss"
-            >✕</button>
+            >
+              <span className="btn-dismiss-check">✓</span> Got it
+            </button>
           </div>
         )}
 
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)", overflow: "hidden" }}>
           <div style={{ display: "flex", gap: "10px" }}>
+            {(() => {
+              const dmCallingForRoll = (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn;
+              const diceDisabled    = isTyping || narrating || !isMyTurn || !dmCallingForRoll;
+              const diceTitle       = !isMyTurn ? "Wait for your turn"
+                                    : isTyping || narrating ? "DM is responding"
+                                    : !dmCallingForRoll ? "🔒 Dice unlock when the DM calls for a roll"
+                                    : "Roll Dice";
+              return (
             <button
               className="btn-secondary"
               onClick={() => setShowDice(true)}
-              disabled={isTyping || narrating || !isMyTurn}
-              title="Roll Dice"
+              disabled={diceDisabled}
+              title={diceTitle}
               style={{
                 padding: "14px 18px", fontSize: "1.4rem", flexShrink: 0,
-                ...(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn && {
+                ...(!showDice && dmCallingForRoll && {
                   border: "1.5px solid rgba(251,191,36,0.8)",
                   boxShadow: "0 0 16px rgba(251,191,36,0.5), 0 0 32px rgba(251,191,36,0.2)",
                   animation: "dicePulse 0.8s ease-in-out infinite alternate",
                   color: "#fbbf24",
                 }),
               }}
-            ><D20Icon size={22} color={(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn) ? "#fbbf24" : "currentColor"}/></button>
+            ><D20Icon size={22} color={!showDice && dmCallingForRoll ? "#fbbf24" : "currentColor"}/></button>
+              );
+            })()}
             <input
               type="text" value={input}
               data-chat-input
@@ -5276,7 +5875,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
                 return (
                   <div key={char.id}
-                    onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
+                    onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); setSidebarTab("sheet"); } }}
                     style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
@@ -5515,21 +6114,49 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               )}
             </div>
 
-            {/* Manage party — party leader only */}
-            {isPartyLeader && (
-            <div style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+            {/* Manage party — visible to the campaign owner OR the current
+                party leader. Using canManageParty (owner OR leader) instead of
+                just isPartyLeader prevents the panel from disappearing if
+                partyLeaderId ever drifts out of sync with the active character
+                (stale DB value, mid-reclaim render gap, etc.). */}
+            {canManageParty && (() => {
+              const inCombatNow = combatActive && enemies.some(e => !e.is_defeated);
+              const availableToInvite = userRoster.filter(c => !campaignParty.some(p => p.id === c.id)).length;
+              return (
+            <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid rgba(139,92,246,0.25)" }}>
               <button
                 onClick={() => setManagePartyOpen(o => !o)}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "1px solid var(--border)", borderRadius: "7px", padding: "7px 10px", cursor: "pointer", fontSize: fs(0.75), color: "#94a3b8", transition: "all 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "white"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#94a3b8"; }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 60%), rgba(139,92,246,0.12)",
+                  border: "1px solid rgba(212,169,106,0.45)", borderRadius: "8px",
+                  padding: "9px 12px", cursor: "pointer", fontSize: fs(0.78),
+                  color: "#fde68a", fontWeight: 700, letterSpacing: "0.03em",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.25)",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(212,169,106,0.85)"; e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.12), 0 4px 14px rgba(139,92,246,0.35), 0 0 14px rgba(212,169,106,0.28)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(212,169,106,0.45)"; e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.25)"; }}
               >
-                <span>⊕ Manage Party</span>
-                <span style={{ fontSize: fs(0.65) }}>{managePartyOpen ? "▲" : "▼"}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "1.05em", color: "#fde68a", textShadow: "0 0 8px rgba(253,230,138,0.6)" }}>⊕</span>
+                  <span>Invite Players</span>
+                  {availableToInvite > 0 && !managePartyOpen && (
+                    <span style={{ fontSize: fs(0.6), background: "rgba(139,92,246,0.35)", color: "#e9d5ff", padding: "1px 8px", borderRadius: "999px", fontWeight: 700 }}>
+                      {availableToInvite} available
+                    </span>
+                  )}
+                </span>
+                <span style={{ fontSize: fs(0.65), color: "#c4b5fd" }}>{managePartyOpen ? "▲" : "▼"}</span>
               </button>
 
               {managePartyOpen && (
                 <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {inCombatNow && (
+                    <div style={{ padding: "8px 10px", borderRadius: "7px", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", fontSize: fs(0.72), color: "#fca5a5", lineHeight: 1.4 }}>
+                      ⚔️ Combat is active — party changes are locked until the encounter ends. New invitations and departures can resume once all enemies are defeated.
+                    </div>
+                  )}
                   {userRoster.length === 0 ? (
                     <p style={{ fontSize: fs(0.75), color: "#475569", fontStyle: "italic", padding: "6px 0" }}>
                       No characters yet. <Link href="/create-character" style={{ color: "var(--primary)" }}>Create one →</Link>
@@ -5551,17 +6178,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         {inParty ? (
                           <button
                             onClick={() => leaveParty(char.id)}
-                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
+                            disabled={inCombatNow}
+                            title={inCombatNow ? "Cannot leave the party during combat — wait until the encounter ends." : undefined}
+                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: inCombatNow ? "#7f1d1d" : "#f87171", cursor: inCombatNow ? "not-allowed" : "pointer", opacity: inCombatNow ? 0.45 : 1, flexShrink: 0, transition: "all 0.15s" }}
+                            onMouseEnter={e => { if (!inCombatNow) e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
                           >Leave</button>
                         ) : (
                           <button
                             onClick={() => addToParty(char)}
-                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.1)", color: "#4ade80", cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.2)"; }}
+                            disabled={inCombatNow}
+                            title={inCombatNow
+                              ? "Cannot invite new characters during combat — wait until the encounter ends."
+                              : char.campaign_id && char.campaign_id !== params.id
+                                ? "Invite this character — they will leave their current campaign and bring their level/XP with them."
+                                : undefined}
+                            style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.1)", color: inCombatNow ? "#14532d" : "#4ade80", cursor: inCombatNow ? "not-allowed" : "pointer", opacity: inCombatNow ? 0.45 : 1, flexShrink: 0, transition: "all 0.15s" }}
+                            onMouseEnter={e => { if (!inCombatNow) e.currentTarget.style.background = "rgba(34,197,94,0.2)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.1)"; }}
-                          >Join</button>
+                          >{char.campaign_id && char.campaign_id !== params.id ? "Invite" : "Join"}</button>
                         )}
                       </div>
                     );
@@ -5570,7 +6205,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               )}
 
             </div>
-            )}
+            );
+            })()}
 
             {/* Party item pool */}
             {droppedItems.length > 0 && (
@@ -6651,12 +7287,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       {/* Global tooltip portal — always on top of everything */}
       <TooltipPortal tip={globalTooltip} />
 
+      {/* First-time hint arrow — pulsing green attention pointer.
+          Rendered as a portal so it can sit outside the chat panel's
+          overflow:hidden box. Gated on `sessionStarted` so it never
+          appears during the campaign loading screen — only after the
+          narrator UI has actually surfaced. Hides instantly when
+          `showChatHint` flips to false (the player clicks "Got it"). */}
+      <ChatHintArrow show={showChatHint && sessionStarted} hintRef={chatHintRef} />
+
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
         @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         @keyframes streamFadeIn { from { opacity: 0; filter: blur(3px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
         @keyframes dicePulse { from { transform: scale(1); box-shadow: 0 0 10px rgba(251,191,36,0.4), 0 0 20px rgba(251,191,36,0.15); } to { transform: scale(1.1); box-shadow: 0 0 22px rgba(251,191,36,0.75), 0 0 44px rgba(251,191,36,0.3); } }
+        @keyframes hintArrowPulse {
+          0%, 100% {
+            transform: translate(0, 0) scale(1);
+            filter: drop-shadow(0 0 10px rgba(34,197,94,0.85)) drop-shadow(0 0 22px rgba(34,197,94,0.45));
+          }
+          50% {
+            transform: translate(10px, 0) scale(1.12);
+            filter: drop-shadow(0 0 18px rgba(74,222,128,1)) drop-shadow(0 0 44px rgba(34,197,94,0.7)) drop-shadow(0 0 70px rgba(34,197,94,0.35));
+          }
+        }
       `}</style>
     </main>
   );

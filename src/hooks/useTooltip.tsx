@@ -39,14 +39,22 @@ function PositionedTooltip({ tip }: { tip: TipContent }) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Horizontal: center on cursor, clamp both edges inside viewport
-    const left = Math.max(MARGIN, Math.min(tip.x - w / 2, vw - w - MARGIN));
+    // Horizontal: center on cursor, then clamp into [MARGIN, vw - w - MARGIN].
+    // If the box is somehow wider than the viewport (shouldn't happen given
+    // maxWidth, but defensive), fall back to MARGIN on the left.
+    const maxLeft = Math.max(MARGIN, vw - w - MARGIN);
+    const left = Math.max(MARGIN, Math.min(tip.x - w / 2, maxLeft));
 
-    // Vertical: prefer above cursor; flip below when there isn't enough room
+    // Vertical: prefer above the cursor when it fits; otherwise place below.
+    // In BOTH branches clamp top into [MARGIN, vh - h - MARGIN] so the box can
+    // never clip off the top OR the bottom of the viewport, even when:
+    //   • The tooltip is taller than the space above the cursor.
+    //   • The cursor is so low that below-cursor would overflow off the bottom.
+    //   • The tooltip is taller than the available space either way.
     const fitsAbove = tip.y - 14 - h >= MARGIN;
-    const top = fitsAbove
-      ? Math.max(MARGIN, tip.y - 14 - h)        // above: top edge of box
-      : Math.min(tip.y + 22, vh - h - MARGIN);  // below: top edge of box
+    const desiredTop = fitsAbove ? tip.y - 14 - h : tip.y + 22;
+    const maxTop = Math.max(MARGIN, vh - h - MARGIN);
+    const top = Math.max(MARGIN, Math.min(desiredTop, maxTop));
 
     setStyle({
       position:   "fixed",
@@ -55,7 +63,12 @@ function PositionedTooltip({ tip }: { tip: TipContent }) {
       visibility: "visible",
       zIndex:     99999,
       pointerEvents: "none",
-      maxWidth:   maxW,
+      // Hard caps so the box is guaranteed to fit inside the viewport even on
+      // very small screens. If content exceeds the height cap, the inner tipBox
+      // already scrolls via the page; we just stop the box itself from clipping.
+      maxWidth:   Math.min(maxW, vw - 2 * MARGIN),
+      maxHeight:  vh - 2 * MARGIN,
+      overflowY:  "auto",
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tip.id]);

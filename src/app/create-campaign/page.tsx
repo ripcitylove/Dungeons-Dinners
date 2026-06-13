@@ -137,11 +137,11 @@ function SpellCard({ spell, selected, disabled, onToggle }: {
       opacity: disabled && !selected ? 0.45 : 1, transition: "all 0.15s",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: "6px" }}>
-        <span style={{ fontSize: "0.82rem", fontWeight: "bold", color: selected ? color : "white" }}>{spell.name}</span>
-        {selected && <span style={{ fontSize: "0.65rem", color, flexShrink: 0 }}>✓</span>}
+        <span style={{ fontSize: "1.05rem", fontWeight: "bold", color: selected ? color : "white" }}>{spell.name}</span>
+        {selected && <span style={{ fontSize: "1rem", color, flexShrink: 0 }}>✓</span>}
       </div>
-      <div style={{ fontSize: "0.62rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{spell.school}</div>
-      <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{spell.desc}</div>
+      <div style={{ fontSize: "1.2rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{spell.school}</div>
+      <div style={{ fontSize: "1rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{spell.desc}</div>
     </div>
   );
 }
@@ -589,11 +589,11 @@ export default function CreateCampaignWizard() {
         {/* ── Top progress ── */}
         <div style={{ marginBottom: "32px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-            <span style={{ fontSize: "0.85rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ fontSize: "1.1rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {phase === "characters" ? `Player ${currentPlayerIdx + 1} of ${playerCount}` :
                phase === "creating"   ? "The DM is forging your world…" : "Campaign Setup"}
             </span>
-            <span style={{ fontSize: "0.72rem", color: "#475569" }}>{Math.round(progressPct)}%</span>
+            <span style={{ fontSize: "1rem", color: "#475569" }}>{Math.round(progressPct)}%</span>
           </div>
           <div style={{ height: "6px", background: "var(--border)", borderRadius: "3px", overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, var(--primary), #7c3aed)", borderRadius: "3px", transition: "width 0.5s ease", boxShadow: "0 0 10px rgba(139,92,246,0.6)" }} />
@@ -619,13 +619,13 @@ export default function CreateCampaignWizard() {
         </div>
         {phase === "characters" && (
           <div style={{ textAlign: "center", marginBottom: charStep === 1 ? "16px" : "28px" }}>
-            <p style={{ color: "#64748b", fontSize: "0.95rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
+            <p style={{ color: "#64748b", fontSize: "1.2rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
               Building <strong style={{ color: "var(--primary)" }}>
                 {draft.name.trim() || `Player ${currentPlayerIdx + 1}`}
               </strong>'s character
             </p>
             {currentPlayerIdx === 0 && charStep === 1 && (
-              <p style={{ fontSize: "0.75rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "20px", padding: "3px 12px" }}>
+              <p style={{ fontSize: "1rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "20px", padding: "3px 12px" }}>
                 👑 <span>Player 1&apos;s character becomes the <strong style={{ color: "#c4b5fd" }}>Party Leader</strong> — they can invite others and manage the party</span>
               </p>
             )}
@@ -665,19 +665,19 @@ export default function CreateCampaignWizard() {
                     boxShadow: playerCount === n ? "0 8px 28px rgba(139,92,246,0.4)" : "none",
                   }}>
                     <div style={{ fontSize: "2rem", fontWeight: "bold", color: playerCount === n ? "var(--primary)" : "white", lineHeight: 1 }}>{n}</div>
-                    <div style={{ fontSize: "0.72rem", color: playerCount === n ? "#c4b5fd" : "#64748b", marginTop: "6px", fontWeight: playerCount === n ? 700 : 400, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <div style={{ fontSize: "1rem", color: playerCount === n ? "#c4b5fd" : "#64748b", marginTop: "6px", fontWeight: playerCount === n ? 700 : 400, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                       {PLAYER_COUNT_NAMES[n - 1]}
                     </div>
                   </div>
                 ))}
               </div>
-              <p style={{ color: "#475569", fontSize: "0.82rem" }}>
+              <p style={{ color: "#475569", fontSize: "1.05rem" }}>
                 {playerCount === 1 ? "A solo adventure — you control your hero." :
                  `You'll set up ${playerCount} characters, one per adventurer.`}
               </p>
               <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "14px 18px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", maxWidth: "480px", textAlign: "left" }}>
                 <span style={{ fontSize: "1.1rem", flexShrink: 0, marginTop: "1px" }}>💡</span>
-                <div style={{ fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.65 }}>
+                <div style={{ fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.65 }}>
                   <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "3px" }}>Only set this to who&apos;s here right now.</strong>
                   More players can join any time using the invite link inside your campaign — they pick their own character when they arrive.
                 </div>
@@ -706,10 +706,10 @@ export default function CreateCampaignWizard() {
                           placeholder="e.g. Elara Moonwhisper"
                           style={{ width: "100%", padding: "14px 16px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.05rem" }}
                         />
-                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "6px" }}>{charNameErr}</p>}
+                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "1.05rem", marginTop: "6px" }}>{charNameErr}</p>}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", fontSize: "1rem" }}>Title <span style={{ fontSize: "0.78rem", color: "#475569" }}>(optional)</span></label>
+                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", fontSize: "1rem" }}>Title <span style={{ fontSize: "1.05rem", color: "#475569" }}>(optional)</span></label>
                         <input type="text" value={draft.title} maxLength={40}
                           onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
                           placeholder="e.g. the Brave"
@@ -736,7 +736,7 @@ export default function CreateCampaignWizard() {
                               boxShadow: draft.race === race ? "0 6px 22px rgba(139,92,246,0.35)" : "none",
                             }}>
                             <div style={{ fontSize: "2rem", marginBottom: "6px", lineHeight: 1 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
-                            <div style={{ fontSize: "0.92rem", fontWeight: draft.race === race ? 700 : 400, color: draft.race === race ? "#c4b5fd" : "inherit" }}>{race}</div>
+                            <div style={{ fontSize: "1.18rem", fontWeight: draft.race === race ? 700 : 400, color: draft.race === race ? "#c4b5fd" : "inherit" }}>{race}</div>
                           </div>
                         ))}
                       </div>
@@ -755,7 +755,7 @@ export default function CreateCampaignWizard() {
                             onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, "#c4b5fd"), e)}
                             onMouseLeave={hideTooltip}
                             style={{
-                              flex: 1, padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize", fontSize: "0.95rem",
+                              flex: 1, padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize", fontSize: "1.2rem",
                               border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
                               background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
                             }}>{s}</div>
@@ -768,7 +768,7 @@ export default function CreateCampaignWizard() {
                     <div>
                       <label style={{ display: "block", marginBottom: "6px", color: "#94a3b8", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Alignment", "Your character's moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character's motivations. Hover any alignment for its description.", "#a78bfa"), e)}
-                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span></label>
+                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "1rem", color: "#475569" }}>(optional)</span></label>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
                         {ALIGNMENTS.map(a => (
                           <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))}
@@ -781,8 +781,8 @@ export default function CreateCampaignWizard() {
                               transform: draft.alignment === a.key ? "translateY(-2px)" : "none",
                               boxShadow: draft.alignment === a.key ? `0 4px 14px ${ALIGNMENT_COLORS[a.key] ?? "#8b5cf6"}33` : "none",
                             }}>
-                            <div style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
-                            <div style={{ fontSize: "0.72rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
+                            <div style={{ fontSize: "1.2rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
+                            <div style={{ fontSize: "1rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
                           </div>
                         ))}
                       </div>
@@ -792,12 +792,12 @@ export default function CreateCampaignWizard() {
                   {/* Right: roster import (vertical list) */}
                   {(rosterLoading || availableRoster.length > 0) && (
                     <div style={{ width: "200px", flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <p style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em", lineHeight: 1.4 }}>
+                      <p style={{ fontSize: "1rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em", lineHeight: 1.4 }}>
                         📜 Import from Roster
-                        <span style={{ display: "block", color: "#64748b", fontWeight: 400, fontSize: "0.65rem" }}>Click a character to skip creation</span>
+                        <span style={{ display: "block", color: "#64748b", fontWeight: 400, fontSize: "1rem" }}>Click a character to skip creation</span>
                       </p>
                       {rosterLoading ? (
-                        <div style={{ padding: "12px 0", textAlign: "center", fontSize: "0.78rem", color: "#475569" }}>Loading…</div>
+                        <div style={{ padding: "12px 0", textAlign: "center", fontSize: "1.05rem", color: "#475569" }}>Loading…</div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "380px", overflowY: "auto", paddingRight: "2px" }}>
                           {availableRoster.map(c => {
@@ -818,13 +818,13 @@ export default function CreateCampaignWizard() {
                                 </div>
                                 {/* Info */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: "0.8rem", fontWeight: "bold", color: classColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
-                                  <div style={{ fontSize: "0.62rem", color: "#64748b", marginBottom: "3px" }}>{c.race} {c.class}</div>
+                                  <div style={{ fontSize: "1.05rem", fontWeight: "bold", color: classColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                                  <div style={{ fontSize: "1.2rem", color: "#64748b", marginBottom: "3px" }}>{c.race} {c.class}</div>
                                   <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                                    <span style={{ fontSize: "0.58rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", padding: "1px 5px" }}>Lvl {c.level}</span>
-                                    <span style={{ fontSize: "0.6rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</span>
+                                    <span style={{ fontSize: "1.15rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", padding: "1px 5px" }}>Lvl {c.level}</span>
+                                    <span style={{ fontSize: "1.2rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</span>
                                   </div>
-                                  {c.campaign_id && <div style={{ fontSize: "0.55rem", color: "#475569", marginTop: "2px" }}>In campaign</div>}
+                                  {c.campaign_id && <div style={{ fontSize: "1.15rem", color: "#475569", marginTop: "2px" }}>In campaign</div>}
                                 </div>
                               </div>
                             );
@@ -858,8 +858,8 @@ export default function CreateCampaignWizard() {
                           boxShadow: draft.class === cls ? `0 6px 22px ${clsColor}44` : "none",
                         }}>
                         <div style={{ fontSize: "1.7rem", marginBottom: "5px", lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
-                        <div style={{ fontSize: "0.92rem", fontWeight: draft.class === cls ? 700 : 400, color: draft.class === cls ? clsColor : "inherit" }}>{cls}</div>
-                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "0.6rem", color: "#8b5cf6", marginTop: "3px", letterSpacing: "0.05em", fontWeight: 700 }}>✦ SPELL</div>}
+                        <div style={{ fontSize: "1.18rem", fontWeight: draft.class === cls ? 700 : 400, color: draft.class === cls ? clsColor : "inherit" }}>{cls}</div>
+                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "1.2rem", color: "#8b5cf6", marginTop: "3px", letterSpacing: "0.05em", fontWeight: 700 }}>✦ SPELL</div>}
                       </div>
                       );
                     })}
@@ -867,7 +867,7 @@ export default function CreateCampaignWizard() {
 
                   {profData && (
                     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                      <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.78rem", color: "#94a3b8", lineHeight: 1.7, display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.7, display: "flex", flexWrap: "wrap", gap: "8px" }}>
                         <span><strong style={{ color: "#c4b5fd" }}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
                         <span style={{ color: "#374151" }}>|</span>
                         <span><strong style={{ color: "#c4b5fd" }}>Armor:</strong> {profData.armorProficiencies}</span>
@@ -876,10 +876,10 @@ export default function CreateCampaignWizard() {
                       </div>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                          <label style={{ color: "#94a3b8", fontSize: "0.88rem" }}>
+                          <label style={{ color: "#94a3b8", fontSize: "1.1rem" }}>
                             Choose <strong style={{ color: "white" }}>{profData.skillChoices.count}</strong> Skill Proficiencies
                           </label>
-                          <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: draft.skillProficiencies.length === profRequired ? "#22c55e" : "#8b5cf6" }}>
+                          <span style={{ fontSize: "1.05rem", fontWeight: "bold", color: draft.skillProficiencies.length === profRequired ? "#22c55e" : "#8b5cf6" }}>
                             {draft.skillProficiencies.length} / {profRequired}
                           </span>
                         </div>
@@ -896,9 +896,9 @@ export default function CreateCampaignWizard() {
                                   border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
                                   background: selected ? "rgba(139,92,246,0.25)" : "transparent",
                                   color: selected ? "white" : disabled ? "#374151" : "#94a3b8",
-                                  fontSize: "0.8rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
+                                  fontSize: "1.05rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
                                 }}>
-                                {selected && <span style={{ marginRight: "3px", fontSize: "0.62rem" }}>✓</span>}
+                                {selected && <span style={{ marginRight: "3px", fontSize: "1.2rem" }}>✓</span>}
                                 {skill}
                               </div>
                             );
@@ -917,7 +917,7 @@ export default function CreateCampaignWizard() {
                   <div style={{ display: "flex", gap: "8px", paddingBottom: "14px", borderBottom: "1px solid var(--border)" }}>
                     {(["roll", "array", "pointbuy"] as const).map(method => (
                       <button key={method} onClick={() => handleStatMethodChange(method)} style={{
-                        padding: "7px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "0.82rem", transition: "all 0.15s",
+                        padding: "7px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "1.05rem", transition: "all 0.15s",
                         border: `1px solid ${statMethod === method ? "var(--primary)" : "var(--border)"}`,
                         background: statMethod === method ? "rgba(139,92,246,0.2)" : "transparent",
                         color: statMethod === method ? "white" : "#94a3b8",
@@ -947,12 +947,12 @@ export default function CreateCampaignWizard() {
                           return (
                             <div key={label} style={{ position:"relative", padding:"14px 16px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"70px", border:`1px solid ${ts ? ts.color+"55":"var(--border)"}` }}
                               onMouseEnter={() => setHoveredStat(label)} onMouseLeave={() => setHoveredStat(null)}>
-                              <div style={{ fontSize:"0.7rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
+                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
                               <div style={{ fontWeight:"bold", fontSize:"1.3rem" }}>{val}</div>
-                              <div style={{ fontSize:"0.75rem", color:m>=0?"#22c55e":"#ef4444" }}>{m>=0?`+${m}`:m}</div>
-                              {ts && <div style={{ fontSize:"0.52rem", color:ts.color, marginTop:"4px", fontWeight:"bold" }}>{ts.label.toUpperCase()}</div>}
+                              <div style={{ fontSize:"1rem", color:m>=0?"#22c55e":"#ef4444" }}>{m>=0?`+${m}`:m}</div>
+                              {ts && <div style={{ fontSize:"0.85rem", color:ts.color, marginTop:"4px", fontWeight:"bold" }}>{ts.label.toUpperCase()}</div>}
                               {hoveredStat===label && guide && ts && (
-                                <div style={{ position:"absolute", bottom:"calc(100% + 8px)", left:"50%", transform:"translateX(-50%)", background:"#1a1730", border:`1px solid ${ts.color}66`, borderRadius:"7px", padding:"9px 11px", zIndex:300, width:"170px", pointerEvents:"none", fontSize:"0.72rem", color:"#e2e8f0", lineHeight:1.45, textAlign:"left" }}>
+                                <div style={{ position:"absolute", bottom:"calc(100% + 8px)", left:"50%", transform:"translateX(-50%)", background:"#1a1730", border:`1px solid ${ts.color}66`, borderRadius:"7px", padding:"9px 11px", zIndex:300, width:"170px", pointerEvents:"none", fontSize:"1rem", color:"#e2e8f0", lineHeight:1.45, textAlign:"left" }}>
                                   <div style={{ fontWeight:"bold", color:ts.color, marginBottom:"4px" }}>{ts.label} Stat</div>{guide.reason}
                                 </div>
                               )}
@@ -960,14 +960,14 @@ export default function CreateCampaignWizard() {
                           );
                         })}
                       </div>
-                      <p style={{ color:"#475569", fontSize:"0.75rem" }}>Re-roll as many times as you like.</p>
+                      <p style={{ color:"#475569", fontSize:"1rem" }}>Re-roll as many times as you like.</p>
                     </div>
                   )}
 
                   {/* Standard Array */}
                   {statMethod === "array" && (
                     <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
-                      <p style={{ color:"#94a3b8", fontSize:"0.8rem", textAlign:"center" }}>Click a value, then click a stat to assign it.</p>
+                      <p style={{ color:"#94a3b8", fontSize:"1.05rem", textAlign:"center" }}>Click a value, then click a stat to assign it.</p>
                       <div style={{ display:"flex", gap:"10px", justifyContent:"center", flexWrap:"wrap" }}>
                         {STANDARD_ARRAY.map(v => {
                           const isUsed = Object.values(arrayAssignments).includes(v);
@@ -993,16 +993,16 @@ export default function CreateCampaignWizard() {
                               background:assigned!==null?"rgba(139,92,246,0.15)":selectedArrayVal!==null?"rgba(139,92,246,0.05)":"var(--card-bg)",
                               border:`1px solid ${assigned!==null?"var(--primary)":selectedArrayVal!==null?"rgba(139,92,246,0.4)":"var(--border)"}`,
                             }}>
-                              <div style={{ fontSize:"0.68rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
+                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
                               <div style={{ fontWeight:"bold", fontSize:"1.2rem", color:assigned!==null?"white":"#374151" }}>{assigned??'--'}</div>
-                              <div style={{ fontSize:"0.72rem", color:assigned!==null?(m!>=0?"#22c55e":"#ef4444"):"#374151" }}>
+                              <div style={{ fontSize:"1rem", color:assigned!==null?(m!>=0?"#22c55e":"#ef4444"):"#374151" }}>
                                 {assigned!==null?(m!>=0?`+${m}`:m):'··'}
                               </div>
                             </div>
                           );
                         })}
                       </div>
-                      <p style={{ color:"#64748b", fontSize:"0.78rem", textAlign:"center" }}>
+                      <p style={{ color:"#64748b", fontSize:"1.05rem", textAlign:"center" }}>
                         {!arrayComplete ? (selectedArrayVal!==null ? `Click a stat to assign ${selectedArrayVal}` : "Click a value to select it") : "✓ All stats assigned"}
                       </p>
                     </div>
@@ -1013,7 +1013,7 @@ export default function CreateCampaignWizard() {
                     <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
                       <div style={{ textAlign:"center" }}>
                         <span style={{ fontSize:"1.1rem", fontWeight:"bold", color:pointsLeft===0?"#22c55e":"#c4b5fd" }}>{pointsLeft}</span>
-                        <span style={{ color:"#64748b", fontSize:"0.82rem" }}> / {POINT_BUY_BUDGET} points remaining</span>
+                        <span style={{ color:"#64748b", fontSize:"1.05rem" }}> / {POINT_BUY_BUDGET} points remaining</span>
                       </div>
                       <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", justifyContent:"center" }}>
                         {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
@@ -1024,14 +1024,14 @@ export default function CreateCampaignWizard() {
                           const canDec = val > 8;
                           return (
                             <div key={label} style={{ padding:"12px 10px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"82px", border:"1px solid var(--border)" }}>
-                              <div style={{ fontSize:"0.68rem", color:"#94a3b8", marginBottom:"8px" }}>{label}</div>
+                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"8px" }}>{label}</div>
                               <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"8px" }}>
-                                <button onClick={() => adjustPBStat(sk,-1)} disabled={!canDec} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canDec?"rgba(139,92,246,0.15)":"transparent", color:canDec?"white":"#374151", cursor:canDec?"pointer":"not-allowed", fontWeight:"bold", fontSize:"0.9rem" }}>−</button>
+                                <button onClick={() => adjustPBStat(sk,-1)} disabled={!canDec} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canDec?"rgba(139,92,246,0.15)":"transparent", color:canDec?"white":"#374151", cursor:canDec?"pointer":"not-allowed", fontWeight:"bold", fontSize:"1.15rem" }}>−</button>
                                 <span style={{ fontWeight:"bold", fontSize:"1.2rem", minWidth:"22px" }}>{val}</span>
-                                <button onClick={() => adjustPBStat(sk,1)} disabled={!canInc} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canInc?"rgba(139,92,246,0.15)":"transparent", color:canInc?"white":"#374151", cursor:canInc?"pointer":"not-allowed", fontWeight:"bold", fontSize:"0.9rem" }}>+</button>
+                                <button onClick={() => adjustPBStat(sk,1)} disabled={!canInc} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canInc?"rgba(139,92,246,0.15)":"transparent", color:canInc?"white":"#374151", cursor:canInc?"pointer":"not-allowed", fontWeight:"bold", fontSize:"1.15rem" }}>+</button>
                               </div>
-                              <div style={{ fontSize:"0.72rem", color:m>=0?"#22c55e":"#ef4444", marginTop:"6px" }}>{m>=0?`+${m}`:m}</div>
-                              <div style={{ fontSize:"0.6rem", color:"#475569", marginTop:"2px" }}>{POINT_BUY_COST[val]}pt{POINT_BUY_COST[val]!==1?"s":""}</div>
+                              <div style={{ fontSize:"1rem", color:m>=0?"#22c55e":"#ef4444", marginTop:"6px" }}>{m>=0?`+${m}`:m}</div>
+                              <div style={{ fontSize:"0.95rem", color:"#475569", marginTop:"2px" }}>{POINT_BUY_COST[val]}pt{POINT_BUY_COST[val]!==1?"s":""}</div>
                             </div>
                           );
                         })}
@@ -1040,7 +1040,7 @@ export default function CreateCampaignWizard() {
                   )}
 
                   {draft.class && (
-                    <p style={{ color:"#475569", fontSize:"0.78rem", textAlign:"center" }}>
+                    <p style={{ color:"#475569", fontSize:"1.05rem", textAlign:"center" }}>
                       Level 1 HP: <strong style={{ color:"white" }}>{startingHP(draft.class, effectiveScores().constitution)}</strong>
                       {" "}(d{CLASS_HIT_DIE[draft.class]??8} + CON mod)
                     </p>
@@ -1066,7 +1066,7 @@ export default function CreateCampaignWizard() {
                             boxShadow: draft.weapon === w ? "0 6px 22px rgba(245,158,11,0.3)" : "none",
                           }}>
                           <div style={{ fontSize: "2rem", marginBottom: "8px", lineHeight: 1 }}>{WEAPON_EMOJI[w] ?? "⚔️"}</div>
-                          <div style={{ fontSize: "0.92rem", fontWeight: draft.weapon === w ? 700 : 400, color: draft.weapon === w ? "#f59e0b" : "inherit" }}>{w}</div>
+                          <div style={{ fontSize: "1.18rem", fontWeight: draft.weapon === w ? 700 : 400, color: draft.weapon === w ? "#f59e0b" : "inherit" }}>{w}</div>
                         </div>
                       ))}
                     </div>
@@ -1086,10 +1086,10 @@ export default function CreateCampaignWizard() {
                       >
                         <span style={{ fontSize: "1.5rem" }}>🛡</span>
                         <div>
-                          <div style={{ fontWeight: "bold", fontSize: "0.9rem" }}>Shield <span style={{ color: "#22c55e", fontSize: "0.8rem" }}>+2 AC</span></div>
-                          <div style={{ fontSize: "0.72rem", color: "#64748b" }}>Requires one free hand — pairs well with one-handed weapons</div>
+                          <div style={{ fontWeight: "bold", fontSize: "1.15rem" }}>Shield <span style={{ color: "#22c55e", fontSize: "1.05rem" }}>+2 AC</span></div>
+                          <div style={{ fontSize: "1rem", color: "#64748b" }}>Requires one free hand — pairs well with one-handed weapons</div>
                         </div>
-                        <div style={{ marginLeft: "auto", width: "20px", height: "20px", borderRadius: "50%", border: `2px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`, background: draft.shield ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.7rem" }}>
+                        <div style={{ marginLeft: "auto", width: "20px", height: "20px", borderRadius: "50%", border: `2px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`, background: draft.shield ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1rem" }}>
                           {draft.shield && "✓"}
                         </div>
                       </div>
@@ -1104,7 +1104,7 @@ export default function CreateCampaignWizard() {
                       type="text" value={draft.trinket} maxLength={80}
                       onChange={e => setDraft(d => ({ ...d, trinket: e.target.value }))}
                       placeholder="e.g. A silver locket with a faded portrait"
-                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "0.95rem" }}
+                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.2rem" }}
                     />
                   </div>
                 </div>
@@ -1113,21 +1113,21 @@ export default function CreateCampaignWizard() {
               {/* Character Background */}
               {charStep === 5 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                  <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.65 }}>
+                  <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.65 }}>
                     <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "4px" }}>Optional — skip to continue.</strong>
                     The DM and portrait artist will use this backstory to shape your character&apos;s story and portrait.
                   </div>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
-                      Character Background <span style={{ fontSize: "0.7rem", color: "#475569" }}>(optional)</span>
+                      Character Background <span style={{ fontSize: "1rem", color: "#475569" }}>(optional)</span>
                     </label>
                     <textarea
                       value={draft.charBackground} rows={6} maxLength={500}
                       onChange={e => setDraft(d => ({ ...d, charBackground: e.target.value }))}
                       placeholder="e.g. A wandering mercenary haunted by a betrayal. They carry a broken medallion — once a symbol of their old order, now a reminder of who they used to be..."
-                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "0.9rem", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
+                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.15rem", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
                     />
-                    <p style={{ color: "#374151", fontSize: "0.7rem", textAlign: "right", marginTop: "4px" }}>{draft.charBackground.length} / 500</p>
+                    <p style={{ color: "#374151", fontSize: "1rem", textAlign: "right", marginTop: "4px" }}>{draft.charBackground.length} / 500</p>
                   </div>
                 </div>
               )}
@@ -1135,7 +1135,7 @@ export default function CreateCampaignWizard() {
               {/* Spells */}
               {charStep === 6 && isSpellcaster && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px" }}>
-                  <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.82rem", color: "#c4b5fd", lineHeight: 1.5, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                  <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "1.05rem", color: "#c4b5fd", lineHeight: 1.5, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
                     <span>As a Level 1 <strong>{draft.class}</strong>, choose your spells.
                     {SPELL_LIMITS[draft.class]?.spellFormula && " Prepared count is based on your ability modifier."}</span>
                     <span style={{ flexShrink: 0, fontWeight: "bold", color: (selectedCantrips.length === spellCounts.cantrips || spellCounts.cantrips === 0) && (selectedSpells.length === spellCounts.spells || spellCounts.spells === 0) ? "#22c55e" : "#8b5cf6" }}>
@@ -1146,8 +1146,8 @@ export default function CreateCampaignWizard() {
                   {spellCounts.cantrips > 0 && (
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cantrips</span>
-                        <span style={{ fontSize: "0.78rem", color: selectedCantrips.length === spellCounts.cantrips ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
+                        <span style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cantrips</span>
+                        <span style={{ fontSize: "1.05rem", color: selectedCantrips.length === spellCounts.cantrips ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
                           {selectedCantrips.length} / {spellCounts.cantrips}
                         </span>
                       </div>
@@ -1168,10 +1168,10 @@ export default function CreateCampaignWizard() {
                   {spellCounts.spells > 0 && (
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        <span style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                           1st-Level Spells
                         </span>
-                        <span style={{ fontSize: "0.78rem", color: selectedSpells.length === spellCounts.spells ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
+                        <span style={{ fontSize: "1.05rem", color: selectedSpells.length === spellCounts.spells ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
                           {selectedSpells.length} / {spellCounts.spells} {SPELL_LIMITS[draft.class]?.spellFormula ? "prepared" : "known"}
                         </span>
                       </div>
@@ -1196,7 +1196,7 @@ export default function CreateCampaignWizard() {
           {/* Party review */}
           {phase === "review" && (
             <div className="animate-fade-in">
-              <p style={{ textAlign: "center", color: "#94a3b8", marginBottom: "24px", fontSize: "0.9rem" }}>
+              <p style={{ textAlign: "center", color: "#94a3b8", marginBottom: "24px", fontSize: "1.15rem" }}>
                 Your party is assembled. The DM will name your campaign upon launch.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "14px" }}>
@@ -1213,15 +1213,15 @@ export default function CreateCampaignWizard() {
                       }
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: "bold", fontSize: "0.95rem", color: "white" }}>{c.name}</div>
-                      <div style={{ color: clsColor, fontSize: "0.75rem", fontWeight: 600, marginTop: "1px" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Lv 1"}</div>
+                      <div style={{ fontWeight: "bold", fontSize: "1.2rem", color: "white" }}>{c.name}</div>
+                      <div style={{ color: clsColor, fontSize: "1rem", fontWeight: 600, marginTop: "1px" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Lv 1"}</div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "5px" }}>
-                        <span style={{ fontSize: "0.65rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>
+                        <span style={{ fontSize: "1rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>
                           ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
                         </span>
-                        {!c.rosterId && <span style={{ fontSize: "0.65rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>{WEAPON_EMOJI[c.weapon] ?? "⚔️"} {c.weapon || "Iron Dagger"}</span>}
-                        {c.cantrips.length > 0 && <span style={{ fontSize: "0.65rem", color: "#8b5cf6", background: "rgba(139,92,246,0.1)", borderRadius: "6px", padding: "1px 7px" }}>✨ {c.cantrips.length} cantrip{c.cantrips.length > 1 ? "s" : ""}</span>}
-                        {c.rosterId && <span style={{ fontSize: "0.62rem", color: "#fbbf24", background: "rgba(251,191,36,0.1)", borderRadius: "6px", padding: "1px 7px" }}>📜 Returning</span>}
+                        {!c.rosterId && <span style={{ fontSize: "1rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>{WEAPON_EMOJI[c.weapon] ?? "⚔️"} {c.weapon || "Iron Dagger"}</span>}
+                        {c.cantrips.length > 0 && <span style={{ fontSize: "1rem", color: "#8b5cf6", background: "rgba(139,92,246,0.1)", borderRadius: "6px", padding: "1px 7px" }}>✨ {c.cantrips.length} cantrip{c.cantrips.length > 1 ? "s" : ""}</span>}
+                        {c.rosterId && <span style={{ fontSize: "1.2rem", color: "#fbbf24", background: "rgba(251,191,36,0.1)", borderRadius: "6px", padding: "1px 7px" }}>📜 Returning</span>}
                       </div>
                     </div>
                     <div style={{ fontSize: "1.4rem", opacity: 0.4 }}>{i === 0 ? "👑" : ""}</div>
@@ -1238,7 +1238,7 @@ export default function CreateCampaignWizard() {
               <div style={{ fontSize: "4rem", animation: "float 1.2s ease-in-out infinite", filter: "drop-shadow(0 0 24px rgba(139,92,246,0.7))" }}>⚔️</div>
               <div style={{ textAlign: "center" }}>
                 <p className="shimmer-heading" style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "8px" }}>The DM is forging your world…</p>
-                <p style={{ color: "#64748b", fontSize: "0.82rem" }}>Naming your campaign and preparing the stage</p>
+                <p style={{ color: "#64748b", fontSize: "1.05rem" }}>Naming your campaign and preparing the stage</p>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 {[0, 1, 2].map(i => (

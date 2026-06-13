@@ -64,15 +64,15 @@ export default function AuthPage() {
       <div style={{ position: 'absolute', top: '15%', left: '15%', width: '350px', height: '350px', background: 'var(--primary)', filter: 'blur(160px)', opacity: 0.1, zIndex: -1 }} />
       <div style={{ position: 'absolute', bottom: '15%', right: '15%', width: '300px', height: '300px', background: '#f59e0b', filter: 'blur(160px)', opacity: 0.06, zIndex: -1 }} />
 
-      <Link href="/" style={{ position: 'absolute', top: '40px', left: '40px', fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ color: 'var(--primary)' }}>⬡</span> Dungeons &amp; Dinner Legends
+      <Link href="/" className="nav-brand" style={{ position: 'absolute', top: '40px', left: '40px', fontSize: '1.5rem' }}>
+        <span className="nav-brand-mark">⬡</span> Dungeons &amp; Dinner Legends
       </Link>
 
-      <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '40px' }}>
+      <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '720px', padding: '64px 60px' }}>
 
         {mode === 'login' ? (
           <>
-            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
+            <h1 style={{ fontSize: '2.9rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
               Enter the Tavern
             </h1>
             <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px' }}>
@@ -81,7 +81,7 @@ export default function AuthPage() {
 
             <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '0.9rem' }}>Email Address</label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.48rem' }}>Email Address</label>
                 <input
                   type="email"
                   value={email}
@@ -93,11 +93,11 @@ export default function AuthPage() {
               </div>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>Password</label>
+                  <label style={{ color: '#cbd5e1', fontSize: '1.48rem' }}>Password</label>
                   <button
                     type="button"
                     onClick={() => switchMode('forgot')}
-                    style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
+                    style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '1.35rem', cursor: 'pointer', padding: 0 }}
                   >
                     Forgot password?
                   </button>
@@ -113,7 +113,7 @@ export default function AuthPage() {
               </div>
 
               {errorMsg && (
-                <div style={{ color: '#ef4444', fontSize: '0.875rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <div style={{ color: '#ef4444', fontSize: '1.35rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
                   {errorMsg}
                 </div>
               )}
@@ -125,21 +125,21 @@ export default function AuthPage() {
           </>
         ) : (
           <>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
+            <h1 style={{ fontSize: '2.9rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
               Reset Password
             </h1>
-            <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px', fontSize: '0.9rem' }}>
+            <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px', fontSize: '1.48rem' }}>
               Enter your email and we&apos;ll send you a reset link.
             </p>
 
             {sentMsg ? (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>📬</div>
-                <p style={{ color: '#86efac', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '24px' }}>{sentMsg}</p>
+                <p style={{ color: '#86efac', fontSize: '1.48rem', lineHeight: 1.6, marginBottom: '24px' }}>{sentMsg}</p>
                 <button
                   type="button"
                   onClick={() => switchMode('login')}
-                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.9rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '1.48rem', cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   Back to login
                 </button>
@@ -147,7 +147,7 @@ export default function AuthPage() {
             ) : (
               <form onSubmit={handleForgot} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '0.9rem' }}>Email Address</label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.48rem' }}>Email Address</label>
                   <input
                     type="email"
                     value={email}
@@ -159,7 +159,7 @@ export default function AuthPage() {
                 </div>
 
                 {errorMsg && (
-                  <div style={{ color: '#ef4444', fontSize: '0.875rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div style={{ color: '#ef4444', fontSize: '1.35rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
                     {errorMsg}
                   </div>
                 )}
@@ -171,7 +171,7 @@ export default function AuthPage() {
                 <button
                   type="button"
                   onClick={() => switchMode('login')}
-                  style={{ background: 'none', border: 'none', color: 'var(--subtle)', fontSize: '0.875rem', cursor: 'pointer', textAlign: 'center' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--subtle)', fontSize: '1.35rem', cursor: 'pointer', textAlign: 'center' }}
                 >
                   ← Back to login
                 </button>
