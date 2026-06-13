@@ -7,11 +7,22 @@ type PartyMemberCtx = {
   name: string;
   class?: string;
   race?: string;
+  // Drives pronoun derivation for THIS party member — critical for the
+  // suggester to refer to other characters correctly. Same mapping the chat
+  // route uses: female → she/her, non-binary → they/them, anything else
+  // (including undefined) → he/him.
+  sex?: string;
   hp?: number;
   max_hp?: number;
   status_effects?: string[];
   isMe?: boolean;
 };
+
+function pronounsFor(sex?: string): string {
+  if (sex === "female") return "she/her";
+  if (sex === "non-binary") return "they/them";
+  return "he/him";
+}
 
 type EnemyCtx = {
   name: string;
@@ -51,7 +62,7 @@ export async function POST(req: NextRequest) {
         ? `Weapons: ${character.inventory.weapons.map(w => typeof w === "string" ? w : w.name).join(", ")}.`
         : "";
       const hpPct = character.max_hp && character.max_hp > 0 ? Math.round(((character.hp ?? 0) / character.max_hp) * 100) : 100;
-      const pronouns = character.sex === "female" ? "she/her" : character.sex === "non-binary" ? "they/them" : "he/him";
+      const pronouns = pronounsFor(character.sex);
       charLine = `Character: ${character.name} (${pronouns}), Level ${character.level ?? 1} ${character.race ?? ""} ${character.class ?? ""}. HP ${character.hp}/${character.max_hp} (${hpPct}%). ${weapons} ${cantrips} ${prepared}`.trim();
     }
 
@@ -70,9 +81,14 @@ export async function POST(req: NextRequest) {
           const isUnconscious = cur === 0 || (p.status_effects ?? []).some(s => /unconscious/i.test(s));
           const state = isDead ? "DEAD" : isUnconscious ? "Unconscious (0 HP)" : `${cur}/${max} HP, alive and standing`;
           const status = (p.status_effects ?? []).filter(s => !/^dead$|^unconscious$/i.test(s)).join(", ");
-          return `  - ${p.name}${p.race || p.class ? ` (${[p.race, p.class].filter(Boolean).join(" ")})` : ""}: ${state}${status ? `, ${status}` : ""}`;
+          // Pronouns appear immediately after the name so the suggester can
+          // never mistake the character's gender when crafting a suggestion
+          // that references them in third person.
+          const prn = pronounsFor(p.sex);
+          const subtitle = [p.race, p.class].filter(Boolean).join(" ");
+          return `  - ${p.name} (${prn})${subtitle ? `, ${subtitle}` : ""}: ${state}${status ? `, ${status}` : ""}`;
         }).join("\n");
-        partyLine = `\n\nPARTY (other characters present in the scene):\n${aliveLines}`;
+        partyLine = `\n\nPARTY (other characters present in the scene — pronouns are CANONICAL, not guesses):\n${aliveLines}`;
       }
     }
 
@@ -105,7 +121,13 @@ CRITICAL — SCENE-FIT:
 - Never suggest something the DM just narrated as already done. Be specific to this scene, not generic.
 - If HP is below 40%, include at least one option focused on survival or healing.
 
-PRONOUN RULE: The character line includes pronouns in parentheses (she/her, he/him, they/them). Use those exact pronouns if you refer to the character in a suggestion. Never assume gender from a name or class.
+PRONOUN RULE — NON-NEGOTIABLE, APPLIES TO EVERY NAMED CHARACTER:
+- The acting Character line AND every entry in the PARTY block include the character's pronouns in parentheses immediately after the name: (she/her), (he/him), or (they/them). These pronouns are CANONICAL — derived from the character's sex field in the database. They are not guesses.
+- Whenever any suggestion refers to another character in the third person — by name, by class, or by description — you MUST use the pronouns shown in their PARTY entry.
+- NEVER infer gender from a name. "Aria" might be he/him. "Thor" might be they/them. "Mira" might be he/him. The PARTY block is the only authority.
+- NEVER infer gender from race or class. A male elf, a female dwarf, a non-binary monk — all are valid. The PARTY block tells you which.
+- This rule applies to BOTH the acting character AND every other party member you mention. Suggestions like "Heal him" / "Pass her the potion" / "Ask them to flank" MUST match the listed pronouns.
+- If you cannot recall a member's pronouns mid-suggestion, refer to them by name only (no third-person pronoun) rather than guessing.
 
 CRITICAL SPELL RULE: Only suggest spells the character actually has. Non-spellcasters get zero spell suggestions.`,
       messages: [

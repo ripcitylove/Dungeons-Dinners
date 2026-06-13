@@ -1525,6 +1525,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       name: c.name,
       class: c.class,
       race: c.race,
+      // CRITICAL: include sex so the API can derive pronouns. Without this
+      // the suggestion engine guesses pronouns from name/class and gets
+      // them wrong — a critical immersion bug that the user reported
+      // explicitly. See /api/suggest-actions/route.ts where pronouns are
+      // baked into the party block from sex.
+      sex: c.sex,
       hp: c.hp,
       max_hp: c.max_hp,
       status_effects: c.status_effects ?? [],
