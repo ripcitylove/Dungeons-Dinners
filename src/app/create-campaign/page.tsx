@@ -87,6 +87,48 @@ const ALIGNMENT_COLORS: Record<string, string> = {
 const STEP_ICONS = ["🧑", "⚔️", "🎲", "🗡️", "📜", "✨"];
 const PLAYER_COUNT_NAMES = ["Solo", "Duo", "Trio", "Party", "Company", "Band", "Warband", "Brigade", "Legion", "Army"];
 
+// Inline d20 — matches the create-character step 1 heading mark so the
+// Identity & Origins step looks identical across the two flows.
+function D20Icon({ size = 56 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: 'block', margin: '0 auto', filter: 'drop-shadow(0 4px 12px rgba(139,92,246,0.5))' }}>
+      <defs>
+        <linearGradient id="d20BodyCamp" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#a78bfa" />
+          <stop offset="100%" stopColor="#5b21b6" />
+        </linearGradient>
+        <linearGradient id="d20FaceCamp" x1="0%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stopColor="#c4b5fd" />
+          <stop offset="100%" stopColor="#7c3aed" />
+        </linearGradient>
+      </defs>
+      <path d="M76,14 L92,64 L50,94 L8,64 L24,14 Z" fill="url(#d20BodyCamp)" stroke="#e9d5ff" strokeWidth="1.4" />
+      <path d="M50,50 L27,43 L50,26 Z" fill="#c4b5fd" opacity="0.95" />
+      <path d="M50,50 L50,26 L73,43 Z" fill="#a78bfa" opacity="0.85" />
+      <path d="M50,50 L73,43 L64,69 Z" fill="#8b5cf6" opacity="0.8" />
+      <path d="M50,50 L36,69 L27,43 Z" fill="#9333ea" opacity="0.8" />
+      <path d="M50,50 L64,69 L36,69 Z" fill="url(#d20FaceCamp)" />
+      <g stroke="#ede9fe" strokeWidth="0.9" fill="none" opacity="0.55">
+        <path d="M50,50 L50,26" /><path d="M50,50 L73,43" /><path d="M50,50 L64,69" /><path d="M50,50 L36,69" /><path d="M50,50 L27,43" />
+        <path d="M50,26 L73,43" /><path d="M73,43 L64,69" /><path d="M64,69 L36,69" /><path d="M36,69 L27,43" /><path d="M27,43 L50,26" />
+        <path d="M24,14 L76,14" /><path d="M76,14 L92,64" /><path d="M92,64 L50,94" /><path d="M50,94 L8,64" /><path d="M8,64 L24,14" />
+      </g>
+      <text x="50" y="64" textAnchor="middle" fontSize="22" fontWeight="800" fill="#fef9c3" stroke="#4c1d95" strokeWidth="0.4" fontFamily="system-ui, sans-serif">20</text>
+    </svg>
+  );
+}
+
+// Ability Scores reference legend — sourced from create-character so the two
+// flows surface the same scan-able primer.
+const STAT_LEGEND_CAMP: { code: string; line: string; color: string }[] = [
+  { code: 'STR', line: 'Power, melee hits, carry weight',   color: '#ef4444' },
+  { code: 'DEX', line: 'Agility, ranged hits, AC, stealth', color: '#22c55e' },
+  { code: 'CON', line: 'Toughness, max HP, concentration',  color: '#f97316' },
+  { code: 'INT', line: 'Reasoning, Arcana, Wizard magic',   color: '#3b82f6' },
+  { code: 'WIS', line: 'Perception, Cleric & Druid magic',  color: '#eab308' },
+  { code: 'CHA', line: 'Presence, Bard/Sorcerer/Warlock',   color: '#ec4899' },
+];
+
 const DEFAULT_SCORES: AbilityScores = {
   strength: 15, dexterity: 14, constitution: 13,
   intelligence: 12, wisdom: 10, charisma: 8,
@@ -583,8 +625,46 @@ export default function CreateCampaignWizard() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "40px 20px", backgroundImage: "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)" }}>
-      <div className="glass-panel" style={{ width: "100%", maxWidth: "1020px", padding: "52px 56px", position: "relative" }}>
+    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "clamp(20px, 3vw, 40px) clamp(12px, 2vw, 20px)", backgroundImage: "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "24px", width: "100%", maxWidth: "1280px", justifyContent: "center", flexWrap: "wrap" }}>
+
+      {/* Left rail — Ability Score legend (sticky, always visible on wide
+          viewports). Hides below 900px so phones / Xbox at narrow widths get
+          the form full-width. Mirrors create-character so the layouts feel
+          like the same product. */}
+      {phase === "characters" && (
+        <aside className="hide-on-narrow-camp" style={{ width: "220px", flexShrink: 0, position: "sticky", top: "40px" }}>
+          <div className="glass-panel" style={{ padding: "20px 18px" }}>
+            <div style={{ fontSize: "0.7rem", letterSpacing: "0.12em", color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Reference</div>
+            <h3 style={{ fontSize: "1rem", margin: 0, marginBottom: "14px", color: "white", fontWeight: 600 }}>Ability Scores</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {STAT_LEGEND_CAMP.map(s => {
+                const t = STAT_TIPS[s.code];
+                return (
+                  <div key={s.code}
+                    onMouseEnter={e => { if (t) showTooltip(tipBox(t.title, t.body, s.color), e); }}
+                    onMouseLeave={hideTooltip}
+                    style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "8px 10px", borderRadius: "8px", background: "rgba(0,0,0,0.25)", border: `1px solid ${s.color}33`, cursor: "help", transition: "border-color 0.15s, background 0.15s" }}
+                    onMouseOver={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}88`; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,0,0,0.4)"; }}
+                    onMouseOut={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}33`; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,0,0,0.25)"; }}
+                  >
+                    <div style={{ fontSize: "0.78rem", fontWeight: 700, color: s.color, letterSpacing: "0.05em" }}>{s.code}</div>
+                    <div style={{ fontSize: "0.7rem", color: "#94a3b8", lineHeight: 1.35 }}>{s.line}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: "14px", padding: "8px 10px", borderRadius: "8px", background: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.68rem", color: "#c4b5fd", lineHeight: 1.45, cursor: "help" }}
+              onMouseEnter={e => showTooltip(tipBox("Ability Modifier", "Your modifier = (score − 10) ÷ 2, rounded down. Added to every roll made with that ability (attack, save, skill check).", "#c4b5fd"), e)}
+              onMouseLeave={hideTooltip}>
+              <strong style={{ color: "#a78bfa" }}>Modifier:</strong> (score − 10) ÷ 2, rounded down. Hover for details.
+            </div>
+          </div>
+        </aside>
+      )}
+      <style>{`@media (max-width: 900px) { .hide-on-narrow-camp { display: none !important; } }`}</style>
+
+      <div className="glass-panel" style={{ flex: "1 1 0", minWidth: 0, maxWidth: "1020px", padding: "clamp(24px, 4vw, 52px) clamp(20px, 4vw, 56px)", position: "relative" }}>
 
         {/* ── Top progress ── */}
         <div style={{ marginBottom: "32px" }}>
@@ -600,22 +680,40 @@ export default function CreateCampaignWizard() {
           </div>
         </div>
 
-        {/* ── Character sub-step dots ── */}
+        {/* ── Numbered step circles — matches create-character stepper ── */}
         {phase === "characters" && (
-          <div style={{ display: "flex", justifyContent: "center", gap: "8px", marginBottom: "20px" }}>
-            {Array.from({ length: totalCharSteps }, (_, i) => (
-              <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: charStep > i ? "var(--primary)" : "var(--border)", transition: "background 0.2s" }} />
-            ))}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "32px", position: "relative", maxWidth: "560px", marginLeft: "auto", marginRight: "auto" }}>
+            <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: "2px", zIndex: 0,
+              background: `linear-gradient(90deg, var(--primary) ${Math.max(0, ((charStep - 1) / (totalCharSteps - 1)) * 100)}%, var(--border) ${Math.max(0, ((charStep - 1) / (totalCharSteps - 1)) * 100)}%)`,
+            }} />
+            {Array.from({ length: totalCharSteps }, (_, i) => i + 1).map(i => {
+              const done = charStep > i; const active = charStep === i;
+              return (
+                <div key={i} style={{
+                  width: "clamp(32px, 3.5vw, 46px)", height: "clamp(32px, 3.5vw, 46px)", borderRadius: "50%",
+                  background: done ? "linear-gradient(135deg, var(--primary), #6d28d9)" : active ? "rgba(139,92,246,0.22)" : "var(--card-bg)",
+                  border: `2px solid ${charStep >= i ? "var(--primary)" : "var(--border)"}`,
+                  boxShadow: done ? "0 0 16px rgba(139,92,246,0.6)" : active ? "0 0 10px rgba(139,92,246,0.35), 0 0 0 3px rgba(139,92,246,0.12)" : "none",
+                  display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1,
+                  color: charStep >= i ? "white" : "#475569", fontWeight: "bold", fontSize: done ? "0.82rem" : "1rem", transition: "all 0.3s",
+                }}>{done ? "✓" : i}</div>
+              );
+            })}
           </div>
         )}
 
-        {/* ── Title ── */}
+        {/* ── Title — D20Icon for step 1 of character builder, matching create-character ── */}
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
-          <div style={{ fontSize: "2.6rem", marginBottom: "8px", lineHeight: 1 }}>
-            {phase === "count" ? "⚔️" : phase === "characters" ? STEP_ICONS[charStep - 1] : phase === "review" ? "🏰" : "✨"}
+          <div style={{ fontSize: "2.6rem", marginBottom: "8px", lineHeight: 1, display: "flex", justifyContent: "center" }}>
+            {phase === "characters" && charStep === 1
+              ? <D20Icon size={58} />
+              : phase === "count" ? "⚔️"
+              : phase === "characters" ? <span>{STEP_ICONS[charStep - 1]}</span>
+              : phase === "review" ? "🏰"
+              : "✨"}
           </div>
           <h1 className="shimmer-heading" style={{ fontSize: "2.6rem", marginBottom: 0 }}>{stepTitle}</h1>
-          <div style={{ height: "1px", width: "80px", background: "linear-gradient(90deg, transparent, var(--primary), transparent)", margin: "8px auto 0" }} />
+          <div style={{ height: "1px", width: "80px", background: "linear-gradient(90deg, transparent, var(--primary), transparent)", margin: "10px auto 0" }} />
         </div>
         {phase === "characters" && (
           <div style={{ textAlign: "center", marginBottom: charStep === 1 ? "16px" : "28px" }}>
@@ -1283,6 +1381,7 @@ export default function CreateCampaignWizard() {
             </button>
           </div>
         )}
+      </div>
       </div>
       {TooltipPortal}
     </main>
