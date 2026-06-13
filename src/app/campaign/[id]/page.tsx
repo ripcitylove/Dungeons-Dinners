@@ -15,7 +15,7 @@ import {
   type LootItem,
 } from "../../../lib/lootData";
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
-import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../../../lib/tooltipData";
+import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS, resolveItemTip } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
@@ -359,10 +359,14 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-function RevealText({ text, onComplete, intervalMs = 50 }: { text: string; onComplete?: () => void; intervalMs?: number }) {
+function RevealText({ text, isPaused, onComplete, intervalMs = 50 }: { text: string; isPaused?: boolean; onComplete?: () => void; intervalMs?: number }) {
   const [groups, setGroups] = React.useState<Array<{ id: number; chars: string }>>([]);
   const onCompleteRef = React.useRef(onComplete);
   onCompleteRef.current = onComplete;
+  // When true, the interval keeps ticking but skips advancing — used to hold the reveal
+  // during inter-slot audio gaps so typing stays in sync with the narrator (1:1).
+  const isPausedRef = React.useRef(isPaused ?? false);
+  isPausedRef.current = isPaused ?? false;
 
   React.useEffect(() => {
     setGroups([]);
@@ -370,6 +374,7 @@ function RevealText({ text, onComplete, intervalMs = 50 }: { text: string; onCom
     let pos = 0;
     let gid = 0;
     const interval = setInterval(() => {
+      if (isPausedRef.current) return;
       if (pos >= text.length) { clearInterval(interval); onCompleteRef.current?.(); return; }
       // Grab one char plus any trailing whitespace so spaces don't each get their own span
       let chunk = text[pos++];
@@ -638,9 +643,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [streamingContent, setStreamingContent]  = useState("");
   const [input,            setInput]             = useState("");
   const [isTyping,         setIsTyping]          = useState(false);
-  // Narration-synced reveal: text waits here until audio duration is known, then types at voice pace
+  // Narration-synced reveal: text waits here until audio duration is known, then types at voice pace.
+  // narRevealPaused holds the reveal during inter-slot audio gaps so typing stays 1:1 with the narrator.
   const [narRevealText,       setNarRevealText]       = useState<string | null>(null);
   const [narRevealIntervalMs, setNarRevealIntervalMs] = useState<number | null>(null);
+  const [narRevealPaused,     setNarRevealPaused]     = useState(true);
   const [showDice,         setShowDice]          = useState(false);
   const [pendingDiceShow,  setPendingDiceShow]   = useState(false);
   const [isGroupCheckRoll, setIsGroupCheckRoll]  = useState(false);
@@ -1790,9 +1797,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // unblock the reveal after 1.5 s so text is never permanently stuck.
   useEffect(() => {
     if (!narRevealText || narRevealIntervalMs !== null) return;
-    const t = setTimeout(() => setNarRevealIntervalMs(52), 1500);
+    const t = setTimeout(() => {
+      setNarRevealIntervalMs(52);
+      setNarRevealPaused(false); // no audio coming — let the reveal proceed
+    }, 1500);
     return () => clearTimeout(t);
   }, [narRevealText, narRevealIntervalMs]);
+
+  // Flush: when narration has fully stopped (all slots played, no more audio) but the
+  // reveal is still mid-text (slight drift from displayed length > TTS-stripped slot total),
+  // release the pause so the remaining few characters type out and the message commits.
+  useEffect(() => {
+    if (!narrating && narRevealText && narRevealIntervalMs !== null && narRevealPaused) {
+      setNarRevealPaused(false);
+    }
+  }, [narrating, narRevealText, narRevealIntervalMs, narRevealPaused]);
 
   // Global narration watchdog — resets every time a new clip begins playing
   // (narHeartbeat is bumped in playNextInQueue). This way long multi-sentence
@@ -2398,6 +2417,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       el.onpause          = null;
       el.onplay           = null;
       audioPlayingRef.current = false;
+      // Hold the text reveal while audio is silent (between slots). The next slot's
+      // onplay handler flips this back to false so the typing resumes only when sound resumes.
+      setNarRevealPaused(true);
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
@@ -2484,18 +2506,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setNarHeartbeat(h => h + 1); // bump watchdog — fresh clip is playing
       // Start text reveal the moment audio actually begins playing, not when it's merely buffered.
       // This guarantees voice and text are in sync — no blinking cursor before narrator speaks.
-      if (slot === 0 && narSlot0TextRef.current) {
-        const dur = el.duration;
-        el.onplay = () => {
-          el.onplay = null;
-          if (dur > 0) {
-            const avgGroupSize = 1.3;
-            const groups = (narSlot0TextRef.current?.length ?? 0) / avgGroupSize;
-            const computed = Math.round((dur * 1000) / groups);
-            setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
-          }
-        };
-      }
+      // For ALL slots: unpause the reveal so typing resumes only while audio is sounding.
+      // For slot 0 specifically: also compute the per-group interval from slot 0's duration.
+      el.onplay = () => {
+        el.onplay = null;
+        setNarRevealPaused(false);
+        if (slot === 0 && narSlot0TextRef.current && dur > 0) {
+          const avgGroupSize = 1.3;
+          const groups = (narSlot0TextRef.current.length) / avgGroupSize;
+          const computed = Math.round((dur * 1000) / groups);
+          setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
+        }
+      };
       const p = el.play();
       if (p instanceof Promise) p.catch(() => cleanup());
 
@@ -3014,6 +3036,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       narSlot0TextRef.current = null;
       setNarRevealText(null);
       setNarRevealIntervalMs(null);
+      setNarRevealPaused(true);
     }
 
     setIsTyping(true); isTypingRef.current = true;
@@ -3219,6 +3242,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         full = "";
       }
 
+      // Bare-name truncation: substantive response that ends with a single capitalized
+      // proper-noun token (e.g. "...he watched him go.' Barnabus") — the DM cut off
+      // mid-call-to-action. If the trailing name matches a party member we accept the
+      // response and route the turn to them below. If it doesn't match (likely an NPC
+      // being addressed before the model truncated), retry to get a complete response.
+      if (full && !isDegenerate) {
+        const lastSegRaw = displayFull.split(/[.!?…\n]/).pop()?.trim() ?? "";
+        const lastSeg = lastSegRaw.replace(/^[^A-Za-z]+/, "").trim();
+        const isBareNameTail = lastSeg.length > 1
+          && lastSeg.length < 30
+          && /^[A-Z][a-zA-Z'-]*$/.test(lastSeg);
+        if (isBareNameTail) {
+          const matchesParty = campaignPartyRef.current.some(c =>
+            c.name.split(" ")[0].toLowerCase() === lastSeg.toLowerCase()
+          );
+          if (!matchesParty) {
+            const retryCount = (opts?._retryCount ?? 0) + 1;
+            if (retryCount <= 2) {
+              console.warn(`[sendToAI] Bare-name truncation (non-party), retry ${retryCount}:`, JSON.stringify(lastSeg));
+              setTimeout(() => sendToAI(allMessages, isOpeningScene, { ...opts, _retryCount: retryCount }), 400);
+              return;
+            }
+            console.warn("[sendToAI] Bare-name truncation persisted, accepting:", JSON.stringify(lastSeg));
+          }
+        }
+      }
+
       if (full) {
         // Always add to messages so the chat history is complete regardless of narration mode
         setMessages(prev => [...prev, { role: "dm", content: full }]);
@@ -3363,6 +3413,39 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // from getting stuck on the previous actor.
         if (!dmFollowUpBlockAdvanceRef.current && full.trimEnd().endsWith("?") && anyPartyNameNearQ) {
           dmFollowUpBlockAdvanceRef.current = true;
+        }
+
+        // Bare-name routing: when no action-prompt pattern matched but the response
+        // ends with a bare party-member name (truncated call-to-action — DM was about
+        // to ask them what they do but the completion stopped), route the turn to that
+        // player and block the deferred advance. Guards: skip when the matched player
+        // is the one who just acted, or has already acted this round.
+        if (!dmTurnChar && !dmFollowUpBlockAdvanceRef.current) {
+          const lastSegRaw = full.trim().split(/[.!?…\n]/).pop()?.trim() ?? "";
+          const lastSeg = lastSegRaw.replace(/^[^A-Za-z]+/, "").trim();
+          const isBareNameTail = lastSeg.length > 1
+            && lastSeg.length < 30
+            && /^[A-Z][a-zA-Z'-]*$/.test(lastSeg);
+          if (isBareNameTail) {
+            const matched = campaignPartyRef.current.find(c =>
+              c.name.split(" ")[0].toLowerCase() === lastSeg.toLowerCase()
+            );
+            const alreadyActed = matched && roundActionsRef.current.some(a => a.characterId === matched.id);
+            if (matched && !alreadyActed && matched.name !== opts?.prevPlayerName) {
+              const targetIdx = turnOrderRef.current.indexOf(matched.id);
+              if (targetIdx >= 0) {
+                if (targetIdx !== currentTurnIndexRef.current) {
+                  setCurrentTurnIndex(targetIdx);
+                  currentTurnIndexRef.current = targetIdx;
+                  const partyIdx = campaignPartyRef.current.findIndex(c => c.id === matched.id);
+                  if (partyIdx >= 0) setActiveCharIdx(partyIdx);
+                  channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: targetIdx } });
+                }
+                dmFollowUpBlockAdvanceRef.current = true;
+                console.warn(`[sendToAI] Bare-name truncation — routed turn to ${matched.name}`);
+              }
+            }
+          }
         }
       }
 
@@ -4654,6 +4737,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       setNarrating(false);
                       setNarRevealText(null);
                       setNarRevealIntervalMs(null);
+                      setNarRevealPaused(true);
                       setSelectedVoice(v.id);
                       setVoicePickerOpen(false);
                       // Stop any preview playing
@@ -4875,9 +4959,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 <RevealText
                   text={stripSystemLeaks(narRevealText)}
                   intervalMs={narRevealIntervalMs}
+                  isPaused={narRevealPaused}
                   onComplete={() => {
                     setNarRevealText(null);
                     setNarRevealIntervalMs(null);
+                    setNarRevealPaused(true);
                     // Message already committed to messages state in sendToAI — no re-add needed
                   }}
                 />
@@ -4983,6 +5069,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             ><D20Icon size={22} color={(!showDice && (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn) ? "#fbbf24" : "currentColor"}/></button>
             <input
               type="text" value={input}
+              data-chat-input
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={isTyping || narrating || !isMyTurn || showDice || pendingDiceShow}
@@ -5552,11 +5639,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     <div
                       onClick={vc.portrait_url ? () => setPortraitModal({ name: vc.name, cls: vc.class, url: vc.portrait_url!, subtitle: `${vc.race} ${vc.class} · Level ${vc.level}` }) : undefined}
                       style={{ width: "100%", aspectRatio: "4/3", borderRadius: "10px", overflow: "hidden", border: `2px solid ${vcColor}40`, background: "rgba(0,0,0,0.5)", cursor: vc.portrait_url ? "zoom-in" : "default" }}>
-                      {vc.portrait_url ? (
-                        <img src={vc.portrait_url} alt={vc.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-                      ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>{CLASS_EMOJI[vc.class] ?? "⚔️"}</div>
-                      )}
+                      {(() => {
+                        const wsStatus = (vc.status_effects ?? []).find(s => /^Wild Shape:/i.test(s));
+                        const wsFormName = wsStatus ? wsStatus.replace(/^Wild Shape:\s*/i, "").trim() : null;
+                        const wsResolved = wsFormName ? resolveWildShapeForm(wsFormName) : null;
+                        const wsEmoji    = wsResolved?.form.emoji ?? (wsFormName ? FALLBACK_BEAST_EMOJI : null);
+                        if (wsResolved) {
+                          return (
+                            <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                              <img
+                                src={wildShapeImagePath(wsResolved.key)}
+                                alt={`Wild Shape: ${wsFormName}`}
+                                title={`Wild Shaped: ${wsFormName}`}
+                                onError={e => { const img = e.currentTarget; img.style.display = "none"; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                              <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: fs(5), background: "rgba(34,197,94,0.2)" }} title={`Wild Shaped: ${wsFormName}`}>
+                                {wsResolved.form.emoji}
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (wsEmoji) {
+                          return (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(5), background: "rgba(34,197,94,0.2)" }} title={`Wild Shaped: ${wsFormName}`}>
+                              {wsEmoji}
+                            </div>
+                          );
+                        }
+                        return vc.portrait_url ? (
+                          <img src={vc.portrait_url} alt={vc.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                        ) : (
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>{CLASS_EMOJI[vc.class] ?? "⚔️"}</div>
+                        );
+                      })()}
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: vcColor }}>{vc.name}</div>
@@ -6167,8 +6283,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     )}
                                   </>, rarityColor), e);
                               } else {
-                                const fallback = WEAPON_TIPS[name] ?? ITEM_TIPS[name];
-                                if (fallback) showTooltip(tipBox(fallback.title, fallback.body), e);
+                                // Fuzzy resolver — handles "Rations (5 days)" → "Rations" and
+                                // falls back to a generic inventory tip so every item gets a tooltip.
+                                const fallback = resolveItemTip(name, WEAPON_TIPS, ITEM_TIPS);
+                                showTooltip(tipBox(fallback.title, fallback.body), e);
                               }
                             }}
                             onMouseLeave={() => { setHoveredItem(null); hideTooltip(); }}
@@ -6190,14 +6308,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               </div>
                             </div>
                             <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "6px" }}>
-                              {catalogItem?.consumable && (
-                                <button
-                                  onClick={() => handleUseItem(name)}
-                                  style={{ fontSize: fs(0.58), color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
-                                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
-                                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
-                                >Use</button>
-                              )}
+                              {/* Use button — always shown. Catalog consumables resolve mechanically
+                                  (heals, etc.); everything else prefills the chat input with
+                                  "I use my <item>." so the player can elaborate and let the DM narrate. */}
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  if (catalogItem?.consumable) { handleUseItem(name); return; }
+                                  const prefill = `I use my ${name}.`;
+                                  setInput(prev => {
+                                    const trimmed = prev.trim();
+                                    return trimmed.length === 0 ? prefill : `${trimmed} ${prefill}`;
+                                  });
+                                  // Focus the chat input so the player can keep typing
+                                  requestAnimationFrame(() => {
+                                    const el = document.querySelector<HTMLInputElement>('input[data-chat-input]');
+                                    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+                                  });
+                                }}
+                                title={catalogItem?.consumable ? `Use ${name} immediately` : `Send "I use my ${name}." to the DM`}
+                                style={{ fontSize: fs(0.58), color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "4px", cursor: "pointer", padding: "2px 6px", fontWeight: "bold" }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "rgba(34,197,94,0.25)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "rgba(34,197,94,0.12)"; }}
+                              >Use</button>
                               {campaignParty.length > 1 && (
                                 <button
                                   onClick={e => { e.stopPropagation(); setTradingItem(prev => prev?.name === name && prev?.slot === slot ? null : { name, slot }); }}

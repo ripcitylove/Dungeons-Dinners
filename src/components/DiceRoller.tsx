@@ -444,7 +444,8 @@ export default function DiceRoller({
       setPhase("result");
       const q = getQuality(kept, sides);
       playResultSound(q);
-      if (q==="crit") { const c=new Audio("/angelic_choir.mp3"); c.volume=0.75; c.play().catch(()=>{}); }
+      if (q==="crit")   { const c=new Audio("/angelic_choir.mp3"); c.volume=0.75; c.play().catch(()=>{}); }
+      if (q==="fumble") { const f=new Audio("/disappointing.mp3"); f.volume=0.75; f.play().catch(()=>{}); }
       const qd = QUALITY[q];
       if (qd.flash) { setFlashColor(qd.flash); setShowFlash(true); setTimeout(()=>setShowFlash(false),1400); }
       const desc = r2!==null

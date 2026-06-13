@@ -266,7 +266,63 @@ export const ITEM_TIPS: Record<string, TipEntry> = {
   "Candle":               { title: "Candle", body: "Burns 1 hour, casting 5 ft bright light and 5 ft dim light. Much weaker than a torch or lantern, but quiet and cheap for short-duration lighting." },
   "Chalk":                { title: "Chalk (1 piece)", body: "Mark surfaces to create trail indicators, dungeon maps on walls, or magical diagrams. Cheap and surprisingly useful for dungeon navigation." },
   "Chain (10 ft)":        { title: "Chain (10 ft)", body: "Iron links with 10 hit points that resist fire. Burst with DC 26 STR check. Used to bind doors, restrain prisoners, or build makeshift traps and barricades." },
+  // Camping & survival gear (typically in starting equipment packs)
+  "Bedroll":              { title: "Bedroll", body: "A padded sleeping mat that lets you sleep comfortably outdoors. Required for a full long rest in the wilderness — without one, the DM may rule you only gain a short rest's benefits." },
+  "Mess Kit":             { title: "Mess Kit", body: "A tin box with cup, plate, fork, knife, and spoon. Lets you prepare and eat trail meals hygienically. Required to properly cook foraged or hunted food." },
+  "Waterskin":            { title: "Waterskin", body: "Holds 4 pints of liquid (about 2 days of drinking water for one person). Refill at any clean water source. Going without water for a day causes Exhaustion." },
+  "Hempen Rope (50 ft)":  { title: "Hempen Rope (50 ft)", body: "Coarse-fibered rope. 2 HP, burst with DC 17 STR check. Workhorse for climbing, binding, securing gear, and creative dungeon tricks." },
+  "Silk Rope (50 ft)":    { title: "Silk Rope (50 ft)", body: "Thinner and stronger than hemp. 2 HP, burst with DC 17 STR check. Lighter to carry and less obvious — preferred by Rogues and stealth-focused parties." },
+  "Iron Pot":             { title: "Iron Pot", body: "A small camp pot for cooking stews and boiling water over an open fire. Heavy but durable — useful for camp life and creative improvised weapons." },
+  "Shovel":               { title: "Shovel", body: "Dig graves, search for buried treasure, fortify a campsite, or excavate collapsed dungeon passages. Slow work but indispensable when the situation calls for it." },
+  "Whetstone":            { title: "Whetstone", body: "Sharpens blades during a short rest. Roleplay tool — many DMs grant a small narrative bonus when a player describes maintaining their weapons between fights." },
+  "Common Clothes":       { title: "Common Clothes", body: "A simple peasant's outfit — tunic, trousers, soft cap. Useful for blending in among commoners or as a clean change after hard travel." },
+  "Traveler's Clothes":   { title: "Traveler's Clothes", body: "Durable layered garments built for the road — boots, cloak, padded coat. Standard adventuring wear; resists weather better than common clothes." },
+  "Fine Clothes":         { title: "Fine Clothes", body: "Tailored noble's attire. Often required to attend formal gatherings, parlay with nobility, or impersonate someone of station. May grant Advantage on social checks in court." },
+  "Costume":              { title: "Costume", body: "Themed clothing or disguise outfit. Pair with a Disguise Kit to impersonate someone, or use to perform for crowds (Bards love these)." },
+  "Signal Whistle":       { title: "Signal Whistle", body: "A piercing whistle audible up to 600 ft. Alert allies, scare off small creatures, or coordinate scout movements over open terrain." },
+  "Soap":                 { title: "Soap", body: "Wash off blood, grime, and pungent monster ichor. Roleplay item — and a surprisingly common bargaining chip with cleanliness-conscious NPCs." },
+  "Quiver":               { title: "Quiver", body: "Holds 20 arrows or bolts. Worn on the back or hip for quick draw. Required to wield a bow effectively without one-handed fumbling." },
+  "Arrows (20)":          { title: "Arrows (20)", body: "Standard ammunition for shortbows and longbows. Each shot consumes one — recover half on a battlefield search. Special arrows (silvered, poisoned) may exist in your inventory separately." },
+  "Crossbow Bolts (20)":  { title: "Crossbow Bolts (20)", body: "Standard ammunition for crossbows. Heavier and shorter than arrows, with more punch. Each shot consumes one — recover half after combat." },
+  "Sling Bullets (20)":   { title: "Sling Bullets (20)", body: "Lead pellets sized for a sling. Cheap, plentiful, and reusable — sling bullets can usually be recovered after a fight." },
+  "Blowgun Needles (50)": { title: "Blowgun Needles (50)", body: "Tiny darts for a blowgun. Low damage but easily poisoned — Rogues and assassins favor them for silent strikes." },
+  "Holy Symbol (Amulet)": { title: "Holy Symbol (Amulet)", body: "A divine focus worn around the neck. Replaces material spell components (except those with a gp cost) for Clerics and Paladins. Often invoked when turning undead." },
+  "Holy Symbol (Emblem)": { title: "Holy Symbol (Emblem)", body: "A divine focus emblazoned on a shield or worn openly. Replaces material spell components (except those with a gp cost) for Clerics and Paladins." },
+  "Spell Component Pouch": { title: "Spell Component Pouch", body: "A belt pouch of common spell materials. Removes the need to track individual components (except those with a gp cost). Required for most spells." },
+  "Mysterious Coin":      { title: "Mysterious Coin", body: "An unusual coin of unknown origin — bearing strange markings, an unfamiliar face, or made of an unrecognisable metal. The DM placed it in your pack for a reason; show it to scholars, merchants, or priests to learn more." },
+  "Mysterious Note":      { title: "Mysterious Note", body: "A scrap of paper with cryptic writing. Read it aloud or hand it to the DM to investigate its meaning — clues, prophecies, and quest hooks often arrive this way." },
+  "Mysterious Key":       { title: "Mysterious Key", body: "A key of unknown origin. Carries a hidden meaning — try it on locks you encounter, or describe it to NPCs who might recognise the make." },
+  "Mysterious Letter":    { title: "Mysterious Letter", body: "A sealed letter with no obvious recipient or sender. The contents may be a quest hook, a confession, a warning, or a plant — break the seal in-character to read it aloud to the party." },
+  "Mysterious Map":       { title: "Mysterious Map", body: "A hand-drawn or aged map of an unknown region. Show it to the DM to learn what it depicts — and where it might lead." },
 };
+
+// Generic fallback used when an item has no specific tooltip data — keeps every
+// inventory entry hover-discoverable instead of silent.
+export const GENERIC_ITEM_TIP: TipEntry = {
+  title: "Inventory Item",
+  body: "An item the DM placed in your pack. Click 'Use' to attempt to use it in the story — the DM will narrate what happens. Trade items between party members or drop them with the buttons on the right.",
+};
+
+// Fuzzy resolver for inventory tooltips. Tries:
+//   1. Exact match in ITEM_TIPS or WEAPON_TIPS.
+//   2. Trailing-qualifier strip — e.g. "Rations (5 days)" → "Rations".
+//   3. "Mysterious X" → known mystery-item entry if present.
+//   4. Generic fallback.
+export function resolveItemTip(name: string, weaponTips: Record<string, TipEntry>, itemTips: Record<string, TipEntry>): TipEntry {
+  if (itemTips[name])   return itemTips[name];
+  if (weaponTips[name]) return weaponTips[name];
+  // Strip trailing parenthesised qualifier: "Rations (5 days)" → "Rations"
+  const stripped = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (stripped !== name) {
+    if (itemTips[stripped])   return itemTips[stripped];
+    if (weaponTips[stripped]) return weaponTips[stripped];
+  }
+  // Fall back to a leading prefix match (e.g. "Bedroll (worn)" → "Bedroll")
+  for (const key of Object.keys(itemTips)) {
+    if (name.startsWith(key + " ") || name.startsWith(key + ",")) return itemTips[key];
+  }
+  return GENERIC_ITEM_TIP;
+}
 
 // ── Spell schools ─────────────────────────────────────────────────────────────
 export const SPELL_SCHOOL_TIPS: Record<string, TipEntry> = {

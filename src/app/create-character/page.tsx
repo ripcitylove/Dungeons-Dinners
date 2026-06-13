@@ -107,6 +107,12 @@ const CLASS_EMOJI: Record<string, string> = {
   Paladin: "🛡️", Ranger: "🏹", Bard: "🎵", Warlock: "💀",
   Barbarian: "🪓", Druid: "🌿", Monk: "👊", Sorcerer: "🌀",
 };
+// Static example portraits used as class icons on the class-select step. Generated once
+// via scripts/generate-class-portraits.mjs and saved to public/classes/<class>.png. The
+// emoji above is the fallback if the image isn't on disk yet (first build).
+function classPortraitPath(cls: string): string {
+  return `/classes/${cls.toLowerCase()}.png`;
+}
 const WEAPON_EMOJI: Record<string, string> = {
   "Longsword": "⚔️", "Shortbow": "🏹", "Staff": "🔮",
   "Daggers (x2)": "🗡️", "Warhammer": "🔨", "Crossbow": "🎯",
@@ -117,6 +123,37 @@ const ALIGNMENT_COLORS: Record<string, string> = {
   "Lawful Evil": "#6366f1", "Neutral Evil": "#ef4444", "Chaotic Evil": "#dc2626",
 };
 const STEP_ICONS = ["🧑", "⚔️", "🎲", "🗡️", "📜", "✨"];
+
+// Inline d20 — used in place of step 1's head emoji as the iconic D&D heading mark.
+// SVG so it stays crisp at any size and no extra asset is needed.
+function D20Icon({ size = 56 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: 'block', margin: '0 auto', filter: 'drop-shadow(0 4px 12px rgba(139,92,246,0.5))' }}>
+      <defs>
+        <linearGradient id="d20Body" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#a78bfa" />
+          <stop offset="100%" stopColor="#5b21b6" />
+        </linearGradient>
+        <linearGradient id="d20Face" x1="0%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stopColor="#c4b5fd" />
+          <stop offset="100%" stopColor="#7c3aed" />
+        </linearGradient>
+      </defs>
+      <path d="M76,14 L92,64 L50,94 L8,64 L24,14 Z" fill="url(#d20Body)" stroke="#e9d5ff" strokeWidth="1.4" />
+      <path d="M50,50 L27,43 L50,26 Z" fill="#c4b5fd" opacity="0.95" />
+      <path d="M50,50 L50,26 L73,43 Z" fill="#a78bfa" opacity="0.85" />
+      <path d="M50,50 L73,43 L64,69 Z" fill="#8b5cf6" opacity="0.8" />
+      <path d="M50,50 L36,69 L27,43 Z" fill="#9333ea" opacity="0.8" />
+      <path d="M50,50 L64,69 L36,69 Z" fill="url(#d20Face)" />
+      <g stroke="#ede9fe" strokeWidth="0.9" fill="none" opacity="0.55">
+        <path d="M50,50 L50,26" /><path d="M50,50 L73,43" /><path d="M50,50 L64,69" /><path d="M50,50 L36,69" /><path d="M50,50 L27,43" />
+        <path d="M50,26 L73,43" /><path d="M73,43 L64,69" /><path d="M64,69 L36,69" /><path d="M36,69 L27,43" /><path d="M27,43 L50,26" />
+        <path d="M24,14 L76,14" /><path d="M76,14 L92,64" /><path d="M92,64 L50,94" /><path d="M50,94 L8,64" /><path d="M8,64 L24,14" />
+      </g>
+      <text x="50" y="64" textAnchor="middle" fontSize="22" fontWeight="800" fill="#fef9c3" stroke="#4c1d95" strokeWidth="0.4" fontFamily="system-ui, sans-serif">20</text>
+    </svg>
+  );
+}
 
 function SpellCard({
   spell, selected, disabled, onToggle, showTooltip, hideTooltip,
@@ -421,7 +458,7 @@ export default function CreateCharacter() {
 
   // Shared stat card renderer
   const renderStatCards = (displayScores: AbilityScores, isInteractive = false) => (
-    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
       {STAT_LABELS.map((label, statIdx) => {
         const valKey    = STAT_KEYS[statIdx];
         const val       = displayScores[valKey];
@@ -434,11 +471,11 @@ export default function CreateCharacter() {
             key={label}
             onClick={() => isInteractive && handleArrayStatClick(valKey)}
             style={{
-              position: 'relative', padding: '14px 16px', background:
+              position: 'relative', padding: '22px 26px', background:
                 isInteractive && arrayAssignments[valKey] !== null ? 'rgba(139,92,246,0.15)' :
                 isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.05)' : 'var(--card-bg)',
-              borderRadius: '8px', textAlign: 'center', minWidth: '70px',
-              border: `1px solid ${
+              borderRadius: '12px', textAlign: 'center', minWidth: '108px',
+              border: `2px solid ${
                 isInteractive && arrayAssignments[valKey] !== null ? (tierStyle ? tierStyle.color + "88" : 'var(--primary)') :
                 isInteractive && selectedArrayVal !== null ? 'rgba(139,92,246,0.4)' :
                 tierStyle && isRevealed ? tierStyle.color + "55" : "var(--border)"
@@ -458,15 +495,15 @@ export default function CreateCharacter() {
             }}
             onMouseLeave={hideTooltip}
           >
-            <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
-            <div style={{ fontWeight: 'bold', fontSize: '1.55rem', color: isRevealed ? 'white' : '#475569', transition: 'color 0.2s' }}>
+            <div style={{ fontSize: '1.05rem', color: '#94a3b8', marginBottom: '6px', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</div>
+            <div style={{ fontWeight: 'bold', fontSize: '2.4rem', color: isRevealed ? 'white' : '#475569', transition: 'color 0.2s', lineHeight: 1.05 }}>
               {isRevealed ? val : '??'}
             </div>
-            <div style={{ fontSize: '0.82rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151' }}>
+            <div style={{ fontSize: '1.1rem', color: isRevealed ? (m >= 0 ? '#22c55e' : '#ef4444') : '#374151', fontWeight: 600, marginTop: '4px' }}>
               {isRevealed ? (m >= 0 ? `+${m}` : m) : '--'}
             </div>
             {isRevealed && tierStyle && (
-              <div style={{ fontSize: '0.52rem', color: tierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
+              <div style={{ fontSize: '0.72rem', color: tierStyle.color, marginTop: '8px', fontWeight: 'bold', letterSpacing: '0.08em' }}>
                 {tierStyle.label.toUpperCase()}
               </div>
             )}
@@ -476,8 +513,20 @@ export default function CreateCharacter() {
     </div>
   );
 
+  // Pithy one-liner per ability — surfaced on the always-visible left rail so
+  // newcomers can scan-read which stat covers what. The full description sits
+  // behind a hover tooltip via STAT_TIPS.
+  const STAT_LEGEND: { code: typeof STAT_LABELS[number]; line: string; color: string }[] = [
+    { code: 'STR', line: 'Power, melee hits, carry weight',   color: '#ef4444' },
+    { code: 'DEX', line: 'Agility, ranged hits, AC, stealth', color: '#22c55e' },
+    { code: 'CON', line: 'Toughness, max HP, concentration',  color: '#f97316' },
+    { code: 'INT', line: 'Reasoning, Arcana, Wizard magic',   color: '#3b82f6' },
+    { code: 'WIS', line: 'Perception, Cleric & Druid magic',  color: '#eab308' },
+    { code: 'CHA', line: 'Presence, Bard/Sorcerer/Warlock',   color: '#ec4899' },
+  ];
+
   return (
-    <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backgroundImage: 'radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)' }}>
+    <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '40px 20px', backgroundImage: 'radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)' }}>
 
       {/* Portrait generation overlay */}
       {portraitGenerating && (
@@ -496,7 +545,40 @@ export default function CreateCharacter() {
         </div>
       )}
 
-      <div className="glass-panel" style={{ width: '100%', maxWidth: '1020px', padding: '52px 56px', position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', width: '100%', maxWidth: '1280px', justifyContent: 'center', flexWrap: 'wrap' }}>
+
+      {/* Left rail — Ability Score legend (always visible). Hides below 900px wide. */}
+      <aside className="hide-on-narrow" style={{ width: '220px', flexShrink: 0, position: 'sticky', top: '40px' }}>
+        <div className="glass-panel" style={{ padding: '20px 18px' }}>
+          <div style={{ fontSize: '0.7rem', letterSpacing: '0.12em', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Reference</div>
+          <h3 style={{ fontSize: '1rem', margin: 0, marginBottom: '14px', color: 'white', fontWeight: 600 }}>Ability Scores</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {STAT_LEGEND.map(s => {
+              const t = STAT_TIPS[s.code];
+              return (
+                <div key={s.code}
+                  onMouseEnter={e => { if (t) showTooltip(tipBox(t.title, t.body, s.color), e); }}
+                  onMouseLeave={hideTooltip}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(0,0,0,0.25)', border: `1px solid ${s.color}33`, cursor: 'help', transition: 'border-color 0.15s, background 0.15s' }}
+                  onMouseOver={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}88`; (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,0,0,0.4)'; }}
+                  onMouseOut={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}33`; (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,0,0,0.25)'; }}
+                >
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: s.color, letterSpacing: '0.05em' }}>{s.code}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', lineHeight: 1.35 }}>{s.line}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: '14px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(139,92,246,0.10)', border: '1px solid rgba(139,92,246,0.25)', fontSize: '0.68rem', color: '#c4b5fd', lineHeight: 1.45, cursor: 'help' }}
+            onMouseEnter={e => showTooltip(tipBox('Ability Modifier', 'Your modifier = (score − 10) ÷ 2, rounded down. Added to every roll made with that ability (attack, save, skill check).', '#c4b5fd'), e)}
+            onMouseLeave={hideTooltip}>
+            <strong style={{ color: '#a78bfa' }}>Modifier:</strong> (score − 10) ÷ 2, rounded down. Hover for details.
+          </div>
+        </div>
+      </aside>
+      <style>{`@media (max-width: 900px) { .hide-on-narrow { display: none !important; } }`}</style>
+
+      <div className="glass-panel" style={{ flex: '1 1 0', minWidth: 0, maxWidth: '1020px', padding: '52px 56px', position: 'relative' }}>
 
         {/* Progress bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', position: 'relative' }}>
@@ -523,7 +605,9 @@ export default function CreateCharacter() {
         </div>
 
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ fontSize: '2.6rem', marginBottom: '8px', lineHeight: 1 }}>{STEP_ICONS[step - 1]}</div>
+          <div style={{ fontSize: '2.6rem', marginBottom: '8px', lineHeight: 1, display: 'flex', justifyContent: 'center' }}>
+            {step === 1 ? <D20Icon size={58} /> : <span>{STEP_ICONS[step - 1]}</span>}
+          </div>
           <h1 className="shimmer-heading" style={{ fontSize: '2.6rem', marginBottom: 0 }}>{stepTitle}</h1>
           <div style={{ height: '1px', width: '80px', background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', margin: '10px auto 0' }} />
         </div>
@@ -532,68 +616,77 @@ export default function CreateCharacter() {
 
           {/* ── Step 1: Identity ── */}
           {step === 1 && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
               {/* Name + Title row */}
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '14px' }}>
                 <div style={{ flex: 2 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
+                  <label style={{ display: 'block', marginBottom: '10px', color: '#cbd5e1', fontSize: '1.15rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                     onMouseEnter={e => showTooltip(tipBox('Character Name', 'What your hero is called in the world. The DM and other players will use this name throughout your adventure.', '#c4b5fd'), e)}
                     onMouseLeave={hideTooltip}>Character Name</label>
                   <input
                     type="text" value={character.name}
                     onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
-                    style={{ width: '100%', padding: '14px 16px', borderRadius: '8px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1.05rem' }}
+                    style={{ width: '100%', padding: '18px 20px', borderRadius: '10px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.25)', color: 'white', fontSize: '1.2rem' }}
                     placeholder="e.g. Elara Moonwhisper"
                   />
-                  {nameError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '6px' }}>{nameError}</p>}
+                  {nameError && <p style={{ color: '#ef4444', fontSize: '0.9rem', marginTop: '8px' }}>{nameError}</p>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
+                  <label style={{ display: 'block', marginBottom: '10px', color: '#cbd5e1', fontSize: '1.15rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                     onMouseEnter={e => showTooltip(tipBox('Title', 'An optional honorific like "the Brave" or "Shadowbane." The DM uses it alongside your name in narration — e.g. "Aria the Brave steps forward…"', '#c4b5fd'), e)}
                     onMouseLeave={hideTooltip}>
-                    Title <span style={{ fontSize: '0.78rem', color: '#475569' }}>(optional)</span>
+                    Title <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 400 }}>(optional)</span>
                   </label>
                   <input
                     type="text" value={character.title} maxLength={40}
                     onChange={e => setCharacter(c => ({ ...c, title: e.target.value }))}
-                    style={{ width: '100%', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '1.05rem' }}
+                    style={{ width: '100%', padding: '18px 20px', borderRadius: '10px', border: '1px solid var(--border)', background: 'rgba(0,0,0,0.25)', color: 'white', fontSize: '1.2rem' }}
                     placeholder="e.g. the Brave"
                   />
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
+                <label style={{ display: 'block', marginBottom: '14px', color: '#cbd5e1', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Race', 'Your character\'s ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.', '#c4b5fd'), e)}
                   onMouseLeave={hideTooltip}>Race</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                   {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
                     <div key={race}
                       onClick={() => setCharacter(c => ({ ...c, race }))}
                       onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
                       onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
-                      style={{ padding: '20px 10px', borderRadius: '12px', border: `1px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.5)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.2)' : hoveredRace === race ? 'rgba(139,92,246,0.08)' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.race === race ? 'translateY(-3px)' : hoveredRace === race ? 'translateY(-1px)' : 'none', boxShadow: character.race === race ? '0 6px 22px rgba(139,92,246,0.35)' : 'none' }}>
-                      <div style={{ fontSize: '2rem', marginBottom: '7px', lineHeight: 1 }}>{RACE_EMOJI[race] ?? '🧙'}</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: character.race === race ? 700 : 400, color: character.race === race ? '#c4b5fd' : 'inherit' }}>{race}</div>
+                      style={{ padding: '22px 14px 18px', borderRadius: '14px', border: `2px solid ${character.race === race ? 'var(--primary)' : hoveredRace === race ? 'rgba(139,92,246,0.55)' : 'var(--border)'}`, background: character.race === race ? 'rgba(139,92,246,0.22)' : hoveredRace === race ? 'rgba(139,92,246,0.1)' : 'rgba(0,0,0,0.18)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.race === race ? 'translateY(-4px)' : hoveredRace === race ? 'translateY(-2px)' : 'none', boxShadow: character.race === race ? '0 10px 30px rgba(139,92,246,0.45), 0 0 0 1px rgba(139,92,246,0.5) inset' : 'none' }}>
+                      <div style={{ position: 'relative', width: '96px', height: '96px', margin: '0 auto 12px', borderRadius: '50%', overflow: 'hidden', background: 'rgba(0,0,0,0.4)', border: `2px solid ${character.race === race ? 'rgba(196,181,253,0.7)' : 'rgba(148,163,184,0.2)'}`, boxShadow: character.race === race ? '0 0 22px rgba(139,92,246,0.55)' : 'none' }}>
+                        <img
+                          src={`/races/${race.toLowerCase().replace('-', '_')}.png`}
+                          alt={`${race} emblem`}
+                          onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                        <div style={{ display: 'none', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', fontSize: '2.6rem', position: 'absolute', inset: 0 }}>{RACE_EMOJI[race] ?? '🧙'}</div>
+                      </div>
+                      <div style={{ fontSize: '1.15rem', fontWeight: character.race === race ? 700 : 600, color: character.race === race ? '#c4b5fd' : '#e2e8f0', letterSpacing: '0.02em' }}>{race}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem', cursor: 'help' }}
+                <label style={{ display: 'block', marginBottom: '14px', color: '#cbd5e1', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Sex / Pronouns', 'Sets the pronouns the DM uses when narrating your character\'s actions — he/him, she/her, or they/them.', '#c4b5fd'), e)}
                   onMouseLeave={hideTooltip}>Sex</label>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '14px' }}>
                   {(['male', 'female', 'non-binary'] as const).map(s => {
                     const pronounMap = { male: 'he/him', female: 'she/her', 'non-binary': 'they/them' };
                     return (
                     <div key={s} onClick={() => setCharacter(c => ({ ...c, sex: s }))}
                       onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, '#c4b5fd'), e)}
                       onMouseLeave={hideTooltip}
-                      style={{ flex: 1, padding: '16px', borderRadius: '8px', border: `1px solid ${character.sex === s ? 'var(--primary)' : 'var(--border)'}`, background: character.sex === s ? 'rgba(139,92,246,0.2)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', textTransform: 'capitalize', fontSize: '0.95rem' }}>
-                      {s}
+                      style={{ flex: 1, padding: '22px 16px', borderRadius: '12px', border: `2px solid ${character.sex === s ? 'var(--primary)' : 'var(--border)'}`, background: character.sex === s ? 'rgba(139,92,246,0.22)' : 'rgba(0,0,0,0.18)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', textTransform: 'capitalize', boxShadow: character.sex === s ? '0 6px 22px rgba(139,92,246,0.4)' : 'none' }}>
+                      <div style={{ fontSize: '1.2rem', fontWeight: character.sex === s ? 700 : 600, color: character.sex === s ? '#c4b5fd' : '#e2e8f0' }}>{s}</div>
+                      <div style={{ fontSize: '0.8rem', color: character.sex === s ? 'rgba(196,181,253,0.8)' : '#64748b', marginTop: '6px', letterSpacing: '0.04em', textTransform: 'none' }}>{pronounMap[s]}</div>
                     </div>
                     );
                   })}
@@ -601,18 +694,18 @@ export default function CreateCharacter() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', color: '#94a3b8', cursor: 'help' }}
+                <label style={{ display: 'block', marginBottom: '14px', color: '#cbd5e1', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Alignment', 'Your character\'s moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character\'s motivations. Hover any alignment for its description.', '#a78bfa'), e)}
-                  onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: '0.72rem', color: '#475569' }}>(optional — shapes how the DM reads your character)</span></label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 400 }}>(optional — shapes how the DM reads your character)</span></label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {ALIGNMENTS.map(a => (
                     <div key={a.key}
                       onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
                       onMouseEnter={e => { setHoveredAlign(a.key); showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? a.desc, ALIGNMENT_COLORS[a.key] ?? "#a78bfa"), e); }}
                       onMouseLeave={() => { setHoveredAlign(null); hideTooltip(); }}
-                      style={{ padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', border: `1px solid ${character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? 'var(--primary)') : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '66' : 'var(--border)'}`, background: character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '1a' : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '0d' : 'transparent', transform: character.alignment === a.key ? 'translateY(-2px)' : 'none', boxShadow: character.alignment === a.key ? `0 4px 14px ${ALIGNMENT_COLORS[a.key] ?? '#8b5cf6'}33` : 'none' }}>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', color: character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#c4b5fd') : '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>{a.short}</div>
-                      <div style={{ fontSize: '0.78rem', color: character.alignment === a.key ? 'white' : '#94a3b8', lineHeight: 1.2 }}>{a.key}</div>
+                      style={{ padding: '18px 12px', borderRadius: '12px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', border: `2px solid ${character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? 'var(--primary)') : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '77' : 'var(--border)'}`, background: character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '22' : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#8b5cf6') + '14' : 'rgba(0,0,0,0.18)', transform: character.alignment === a.key ? 'translateY(-3px)' : 'none', boxShadow: character.alignment === a.key ? `0 8px 24px ${ALIGNMENT_COLORS[a.key] ?? '#8b5cf6'}44` : 'none' }}>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, letterSpacing: '0.1em', color: character.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? '#c4b5fd') : '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', lineHeight: 1 }}>{a.short}</div>
+                      <div style={{ fontSize: '0.95rem', color: character.alignment === a.key ? 'white' : '#cbd5e1', lineHeight: 1.25, fontWeight: character.alignment === a.key ? 600 : 400 }}>{a.key}</div>
                     </div>
                   ))}
                 </div>
@@ -634,8 +727,16 @@ export default function CreateCharacter() {
                       onClick={() => handleClassSelect(cls)}
                       onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(tipBoxNode(ct.title, <><div style={{ color: "#64748b", fontSize: "0.9em", marginBottom: "4px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "#94a3b8" }}>{ct.body}</div></>, clsColor), e); }}
                       onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
-                      style={{ padding: '18px 8px', borderRadius: '12px', border: `1px solid ${character.class === cls ? clsColor : hoveredClass === cls ? clsColor + '77' : 'var(--border)'}`, background: character.class === cls ? clsColor + '22' : hoveredClass === cls ? clsColor + '11' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.class === cls ? 'translateY(-3px)' : hoveredClass === cls ? 'translateY(-1px)' : 'none', boxShadow: character.class === cls ? `0 6px 22px ${clsColor}44` : 'none' }}>
-                      <div style={{ fontSize: '1.7rem', marginBottom: '6px', lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? '⚔️'}</div>
+                      style={{ padding: '14px 8px 10px', borderRadius: '12px', border: `1px solid ${character.class === cls ? clsColor : hoveredClass === cls ? clsColor + '77' : 'var(--border)'}`, background: character.class === cls ? clsColor + '22' : hoveredClass === cls ? clsColor + '11' : 'rgba(0,0,0,0.15)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', transform: character.class === cls ? 'translateY(-3px)' : hoveredClass === cls ? 'translateY(-1px)' : 'none', boxShadow: character.class === cls ? `0 6px 22px ${clsColor}44` : 'none' }}>
+                      <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', marginBottom: '8px', borderRadius: '8px', overflow: 'hidden', background: 'rgba(0,0,0,0.35)', border: `1px solid ${character.class === cls ? clsColor + '88' : 'rgba(148,163,184,0.15)'}` }}>
+                        <img
+                          src={classPortraitPath(cls)}
+                          alt={`${cls} example portrait`}
+                          onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center', display: 'block' }}
+                        />
+                        <div style={{ display: 'none', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', position: 'absolute', inset: 0 }}>{CLASS_EMOJI[cls] ?? '⚔️'}</div>
+                      </div>
                       <div style={{ fontSize: '0.92rem', fontWeight: character.class === cls ? 700 : 400, color: character.class === cls ? clsColor : 'inherit' }}>{cls}</div>
                       {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: '0.6rem', color: '#8b5cf6', marginTop: '3px', letterSpacing: '0.05em', fontWeight: 700 }}>✦ SPELL</div>}
                     </div>
@@ -709,13 +810,13 @@ export default function CreateCharacter() {
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
               {/* Method tabs */}
-              <div style={{ display: 'flex', gap: '8px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', gap: '12px', paddingBottom: '20px', borderBottom: '1px solid var(--border)' }}>
                 {(['roll', 'array', 'pointbuy'] as const).map(method => (
                   <button key={method} onClick={() => handleStatMethodChange(method)}
                     onMouseEnter={e => { const st = STAT_METHOD_TIPS[method]; if (st) showTooltip(tipBox(st.title, st.body), e); }}
                     onMouseLeave={hideTooltip}
                     style={{
-                      padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.15s',
+                      padding: '14px 28px', borderRadius: '10px', cursor: 'pointer', fontSize: '1.05rem', transition: 'all 0.15s',
                       border: `1px solid ${statMethod === method ? 'var(--primary)' : 'var(--border)'}`,
                       background: statMethod === method ? 'rgba(139,92,246,0.2)' : 'transparent',
                       color: statMethod === method ? 'white' : '#94a3b8',
@@ -728,29 +829,30 @@ export default function CreateCharacter() {
 
               {/* Roll */}
               {statMethod === 'roll' && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '22px' }}>
                   <div style={{
-                    fontSize: '4rem',
+                    fontSize: '5.5rem',
                     animation: rollingStats ? 'diceRoll 0.35s linear infinite' : 'none',
-                    filter: rollingStats ? 'drop-shadow(0 0 18px rgba(139,92,246,0.8))' : 'none',
+                    filter: rollingStats ? 'drop-shadow(0 0 24px rgba(139,92,246,0.85))' : 'none',
                     transition: 'filter 0.3s',
                   }}>🎲</div>
-                  <button className="btn-primary" onClick={handleRollStats} disabled={rollingStats}>
+                  <button className="btn-primary" onClick={handleRollStats} disabled={rollingStats}
+                    style={{ fontSize: '1.15rem', padding: '16px 32px', borderRadius: '12px' }}>
                     {rollingStats ? 'Rolling…' : 'Roll Ability Scores (4d6 drop lowest)'}
                   </button>
                   {renderStatCards(scores)}
-                  <p style={{ color: '#64748b', fontSize: '0.8rem' }}>Re-roll as many times as you like before continuing.</p>
+                  <p style={{ color: '#94a3b8', fontSize: '1rem' }}>Re-roll as many times as you like before continuing.</p>
                 </div>
               )}
 
               {/* Standard Array */}
               {statMethod === 'array' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <p style={{ color: '#94a3b8', fontSize: '0.82rem', textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                  <p style={{ color: '#94a3b8', fontSize: '1rem', textAlign: 'center' }}>
                     Click a value from the pool below, then click a stat to assign it. Click an assigned stat to pick it back up.
                   </p>
                   {/* Value pool */}
-                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
                     {STANDARD_ARRAY.map(v => {
                       const isUsed = Object.values(arrayAssignments).includes(v);
                       const isSelected = selectedArrayVal === v;
@@ -759,20 +861,20 @@ export default function CreateCharacter() {
                           onMouseEnter={e => { const tip = ARRAY_VALUE_TIPS[v]; if (tip) showTooltip(tipBox(String(v), tip, '#8b5cf6'), e); }}
                           onMouseLeave={hideTooltip}
                           style={{
-                          width: '52px', height: '52px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontWeight: 'bold', fontSize: '1.1rem', cursor: isUsed ? 'default' : 'pointer', transition: 'all 0.15s',
+                          width: '70px', height: '70px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: 'bold', fontSize: '1.55rem', cursor: isUsed ? 'default' : 'pointer', transition: 'all 0.15s',
                           border: `2px solid ${isSelected ? 'var(--primary)' : isUsed ? '#1e293b' : 'var(--border)'}`,
                           background: isSelected ? 'rgba(139,92,246,0.3)' : isUsed ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
                           color: isUsed ? '#374151' : 'white',
                           textDecoration: isUsed ? 'line-through' : 'none',
-                          boxShadow: isSelected ? '0 0 12px rgba(139,92,246,0.5)' : 'none',
+                          boxShadow: isSelected ? '0 0 16px rgba(139,92,246,0.55)' : 'none',
                         }}>{v}</div>
                       );
                     })}
                   </div>
                   {/* Stat assignment */}
                   {renderStatCards(effectiveScores(), true)}
-                  <p style={{ color: '#64748b', fontSize: '0.78rem', textAlign: 'center' }}>
+                  <p style={{ color: '#94a3b8', fontSize: '0.95rem', textAlign: 'center' }}>
                     {!arrayComplete
                       ? selectedArrayVal !== null
                         ? `Click a stat to assign ${selectedArrayVal}`
@@ -784,15 +886,15 @@ export default function CreateCharacter() {
 
               {/* Point Buy */}
               {statMethod === 'pointbuy' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: pointsLeft === 0 ? '#22c55e' : '#c4b5fd' }}>
+                    <span style={{ fontSize: '1.7rem', fontWeight: 'bold', color: pointsLeft === 0 ? '#22c55e' : '#c4b5fd' }}>
                       {pointsLeft}
                     </span>
-                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}> / {POINT_BUY_BUDGET} points remaining</span>
-                    <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '2px' }}>Stats range 8–15. Cost increases at 14 (+2) and 15 (+2).</div>
+                    <span style={{ color: '#94a3b8', fontSize: '1.05rem' }}> / {POINT_BUY_BUDGET} points remaining</span>
+                    <div style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '6px' }}>Stats range 8–15. Cost increases at 14 (+2) and 15 (+2).</div>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
                     {STAT_KEYS.map((statKey, i) => {
                       const val = scores[statKey];
                       const m = Math.floor((val - 10) / 2);
@@ -803,7 +905,7 @@ export default function CreateCharacter() {
                       const pbTierStyle = pbGuide ? getTierStyle(pbGuide.tier) : null;
                       return (
                         <div key={statKey}
-                          style={{ padding: '14px 12px', background: 'var(--card-bg)', borderRadius: '8px', textAlign: 'center', minWidth: '88px', border: `1px solid ${pbTierStyle ? pbTierStyle.color + "55" : 'var(--border)'}` }}
+                          style={{ padding: '22px 18px', background: 'var(--card-bg)', borderRadius: '12px', textAlign: 'center', minWidth: '128px', border: `2px solid ${pbTierStyle ? pbTierStyle.color + "55" : 'var(--border)'}` }}
                           onMouseEnter={e => {
                             const st = STAT_TIPS[STAT_LABELS[i]];
                             if (!st) return;
@@ -819,26 +921,26 @@ export default function CreateCharacter() {
                           }}
                           onMouseLeave={hideTooltip}
                         >
-                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '10px' }}>{STAT_LABELS[i]}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                          <div style={{ fontSize: '1rem', color: '#94a3b8', marginBottom: '12px', letterSpacing: '0.05em', fontWeight: 600 }}>{STAT_LABELS[i]}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px' }}>
                             <button onClick={() => adjustPBStat(statKey, -1)} disabled={!canDec} style={{
-                              width: '24px', height: '24px', borderRadius: '6px', border: '1px solid var(--border)', background: canDec ? 'rgba(139,92,246,0.15)' : 'transparent',
-                              color: canDec ? 'white' : '#374151', cursor: canDec ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              width: '36px', height: '36px', borderRadius: '8px', border: '1px solid var(--border)', background: canDec ? 'rgba(139,92,246,0.15)' : 'transparent',
+                              color: canDec ? 'white' : '#374151', cursor: canDec ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1.4rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>−</button>
-                            <span style={{ fontWeight: 'bold', fontSize: '1.25rem', minWidth: '24px' }}>{val}</span>
+                            <span style={{ fontWeight: 'bold', fontSize: '2.1rem', minWidth: '36px', lineHeight: 1 }}>{val}</span>
                             <button onClick={() => adjustPBStat(statKey, 1)} disabled={!canInc} style={{
-                              width: '24px', height: '24px', borderRadius: '6px', border: '1px solid var(--border)', background: canInc ? 'rgba(139,92,246,0.15)' : 'transparent',
-                              color: canInc ? 'white' : '#374151', cursor: canInc ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              width: '36px', height: '36px', borderRadius: '8px', border: '1px solid var(--border)', background: canInc ? 'rgba(139,92,246,0.15)' : 'transparent',
+                              color: canInc ? 'white' : '#374151', cursor: canInc ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1.4rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>+</button>
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: m >= 0 ? '#22c55e' : '#ef4444', marginTop: '6px' }}>
+                          <div style={{ fontSize: '1.05rem', color: m >= 0 ? '#22c55e' : '#ef4444', marginTop: '10px', fontWeight: 600 }}>
                             {m >= 0 ? `+${m}` : m}
                           </div>
-                          <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: '3px' }}>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px' }}>
                             {POINT_BUY_COST[val]}pt{POINT_BUY_COST[val] !== 1 ? 's' : ''}
                           </div>
                           {pbTierStyle && (
-                            <div style={{ fontSize: '0.52rem', color: pbTierStyle.color, marginTop: '4px', fontWeight: 'bold', letterSpacing: '0.06em' }}>
+                            <div style={{ fontSize: '0.7rem', color: pbTierStyle.color, marginTop: '8px', fontWeight: 'bold', letterSpacing: '0.08em' }}>
                               {pbTierStyle.label.toUpperCase()}
                             </div>
                           )}
@@ -851,8 +953,8 @@ export default function CreateCharacter() {
 
               {/* HP preview — shown for all methods */}
               {character.class && (
-                <p style={{ color: '#64748b', fontSize: '0.8rem', textAlign: 'center' }}>
-                  Level 1 HP: <strong style={{ color: 'white' }}>{startingHP(character.class, eff.constitution)}</strong>
+                <p style={{ color: '#94a3b8', fontSize: '1.05rem', textAlign: 'center', marginTop: '6px' }}>
+                  Level 1 HP: <strong style={{ color: 'white', fontSize: '1.2em' }}>{startingHP(character.class, eff.constitution)}</strong>
                   {' '}(d{CLASS_HIT_DIE[character.class] ?? 8} + CON mod)
                 </p>
               )}
@@ -1071,6 +1173,7 @@ export default function CreateCharacter() {
           )}
         </div>
 
+      </div>
       </div>
       {TooltipPortal}
     </main>
