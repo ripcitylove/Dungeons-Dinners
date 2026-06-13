@@ -1134,6 +1134,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
   const [showBackstory, setShowBackstory] = useState(false);
 
+  // Xbox controller B button (and keyboard Escape) — Save & Exit, NEVER delete.
+  // Why: a player on Xbox pressed B inside a campaign and perceived it as the
+  // campaign being deleted. Edge on Xbox maps controller B to a back/escape
+  // intent, and any of: a focused destructive button, a Browser-Back to a
+  // dashboard with a stale confirm modal, or just losing the session view, can
+  // read as data loss. The campaign autosaves continuously via the chat +
+  // character_sync channels, so the safe interpretation of B is: close any
+  // open modal, otherwise return to the dashboard. The campaign row is never
+  // touched — it stays in the dashboard list, fully resumable.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Modal-close priority: dismiss any open modal first instead of leaving
+      // the campaign. Prevents B from skipping past a dialog the player is
+      // actively interacting with.
+      if (portraitModal) { setPortraitModal(null); e.preventDefault(); return; }
+      if (showBackstory) { setShowBackstory(false); e.preventDefault(); return; }
+      if (showDice)      { setShowDice(false);      e.preventDefault(); return; }
+      if (showChatHint)  { setShowChatHint(false);  e.preventDefault(); return; }
+      // No modal in the way — treat B / Escape as Save & Exit. Autosave has
+      // already persisted everything; just navigate.
+      e.preventDefault();
+      router.push("/dashboard");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router, portraitModal, showBackstory, showDice, showChatHint]);
+
   // Class-ability flash overlay — a brief colored pulse on the party card portrait
   // when ANY class ability is invoked. Key bumps each press so the CSS animation
   // re-fires on rapid repeated clicks.

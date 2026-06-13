@@ -412,6 +412,21 @@ export default function Dashboard() {
 
   const deleteCampaign = (id: string, title: string) => setConfirmDelete({ id, title });
 
+  // Escape (and Xbox controller B) on the dashboard while the delete-confirm
+  // modal is open: dismiss the modal — never delete. The destructive action
+  // must require an explicit click on the red Delete button.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !deleting) {
+        e.preventDefault();
+        setConfirmDelete(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmDelete, deleting]);
+
   const confirmDeleteCampaign = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
@@ -502,7 +517,10 @@ export default function Dashboard() {
             </p>
             <p style={{ color: "var(--muted)", fontSize: "1.41rem", marginBottom: "28px" }}>This cannot be undone.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button onClick={() => setConfirmDelete(null)} disabled={deleting} className="btn-secondary" style={{ padding: "10px 24px" }}>
+              {/* autoFocus on Cancel: on Xbox controller, B/back collapses onto
+                  the focused element. Cancel must be the default so a stray B
+                  press dismisses the modal instead of confirming the delete. */}
+              <button autoFocus onClick={() => setConfirmDelete(null)} disabled={deleting} className="btn-secondary" style={{ padding: "10px 24px" }}>
                 Cancel
               </button>
               <button
