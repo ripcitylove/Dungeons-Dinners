@@ -40,6 +40,7 @@ export const CLASS_RESOURCES: Partial<Record<string, ClassResourceDef[]>> = {
       description: "Bonus action: enter a Rage lasting up to 1 minute. While raging you have advantage on STR checks and saves, resistance to bludgeoning/piercing/slashing damage, and a bonus to melee damage (+2 at L1, +3 at L9, +4 at L16). Rage ends if you end a turn without attacking or being attacked.",
       subAbilities: [
         { name: "Enter Rage", cost: 1, minLevel: 1, description: "Bonus action — enter rage for up to 1 minute (10 rounds)." },
+        { name: "End Rage",   cost: 0, minLevel: 1, description: "Bonus action — drop your rage early. Doesn't cost a use." },
       ],
     },
   ],
@@ -89,9 +90,10 @@ export const CLASS_RESOURCES: Partial<Record<string, ClassResourceDef[]>> = {
       minLevel: 2,
       getMax: () => 2,
       resetOn: "shortRest",
-      description: "Bonus action: transform into a beast you have seen. Duration: half your Druid level in hours. Max CR: ¼ at L2–3 (no fly/swim speed), ½ at L4–7 (no fly), 1 at L8+. You revert if you drop to 0 HP or fall unconscious. Your mental stats remain.",
+      description: "Action: transform into a beast you have seen. Duration: half your Druid level in hours (min 1). Form CR limit and movement caps by level: L2–3 = CR ¼, NO flying or swimming speed; L4–7 = CR ½, swimming OK, no flying; L8+ = CR 1, any speed including flying. You revert if you drop to 0 HP, fall unconscious, or choose to as a bonus action. Mental stats (INT, WIS, CHA) stay yours; you assume the beast's physical stats and HP. Cannot cast spells while transformed (concentration on a spell cast beforehand survives).",
       subAbilities: [
-        { name: "Transform", cost: 1, minLevel: 2, description: "Bonus action — transform into a beast form appropriate to your level's CR limit." },
+        { name: "Transform",  cost: 1, minLevel: 2, description: "Action — transform into a beast form within your CR + speed limit." },
+        { name: "Revert",     cost: 0, minLevel: 2, description: "Bonus action — drop the form and return to your normal shape. Doesn't cost a use." },
       ],
     },
   ],

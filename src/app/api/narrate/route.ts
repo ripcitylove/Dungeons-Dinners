@@ -17,40 +17,45 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   similarity: number;
   style:      number;
 }> = {
+  // All voices use stability >= 0.60 and style <= 0.40. At stability < 0.5 the
+  // model produces erratic phonemes that sound like "speaking in tongues" or
+  // moaning between words. Style above ~0.4 adds dramatic flair at the cost of
+  // clarity. The settings below trade a small amount of expressive range for
+  // crisp, always-intelligible narration that strictly tracks on-screen text.
   chronicler: {
     voiceId:    "JBFqnCBsd6RMkjVDRZzb",
-    stability:  0.75,
-    similarity: 0.75,
-    style:      0.30,
+    stability:  0.78,
+    similarity: 0.78,
+    style:      0.25,
   },
   gravedigger: {
     voiceId:    "N2lVS1w4EtoT3dr4eOWO",
-    stability:  0.55,
-    similarity: 0.75,
-    style:      0.55,
+    stability:  0.68,
+    similarity: 0.78,
+    style:      0.40,
   },
   bard: {
     voiceId:    "pFZP5JQG7iQjIQuC4Bku",
-    stability:  0.30,
-    similarity: 0.75,
-    style:      0.70,
+    stability:  0.62,   // was 0.30 — too low, caused "talking in tongues"
+    similarity: 0.78,
+    style:      0.40,   // was 0.70 — over-expressive
   },
   oracle: {
     voiceId:    "Xb7hH8MSUJpSbSDYk0k2",
     stability:  0.82,
-    similarity: 0.80,
+    similarity: 0.82,
     style:      0.12,
   },
   shade: {
     voiceId:    "SOYHLrjzK2X1ezoPC6cr",
-    stability:  0.50,
-    similarity: 0.75,
-    style:      0.42,
+    stability:  0.65,
+    similarity: 0.78,
+    style:      0.35,
   },
   sage: {
     voiceId:    "pqHfZKP75CvOlQylNhV4",
     stability:  0.82,
-    similarity: 0.80,
+    similarity: 0.82,
     style:      0.12,
   },
 };
@@ -59,31 +64,93 @@ const DEFAULT_VOICE: AllowedVoice = "chronicler";
 const MODEL_ID = "eleven_turbo_v2_5";
 const BUCKET = "scenes";
 
-// Generate TTS via ElevenLabs, upload to Supabase Storage, return the public
-// CDN URL. Xbox Edge (and other constrained browsers) can play static CDN URLs
-// but refuse audio served directly from serverless API responses.
+// Regexes built from code-point escapes via the RegExp constructor so the
+// source file never holds literal control / zero-width characters (which the
+// TypeScript parser refuses to handle).
+//   Zero-width chars + bidi marks + format chars + BOM
+const INVISIBLE_RE = new RegExp(
+  "[\\u200B-\\u200F\\u2028-\\u202F\\u2060-\\u206F\\uFEFF]",
+  "g",
+);
+//   C0 control chars (preserve \n=0x0A, \r=0x0D, \t=0x09) + DEL + C1 controls
+const CONTROL_RE = new RegExp(
+  "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F]",
+  "g",
+);
+//   Pictographic emoji blocks (incl. supplementary). Anything not text or
+//   common punctuation that TTS would vocalise as nonsense syllables.
+const EMOJI_RE = new RegExp(
+  "[\\u{1F000}-\\u{1FFFF}\\u{2600}-\\u{27BF}]",
+  "gu",
+);
+//   Smart quotes -> straight quote
+const SMART_SQUOTE_RE = new RegExp("[\\u2018\\u2019\\u201A\\u201B]", "g");
+const SMART_DQUOTE_RE = new RegExp("[\\u201C\\u201D\\u201E\\u201F]", "g");
+//   Unicode horizontal ellipsis
+const ELLIPSIS_RE = new RegExp("\\u2026", "g");
+//   Em-dash and en-dash with surrounding whitespace
+const DASH_RE = new RegExp("\\s*[\\u2014\\u2013]\\s*", "g");
+//   Catch-all: anything that isn't a letter, number, punctuation, mark, or
+//   whitespace gets dropped. Prevents any stray glyph from leaking through.
+const NON_TEXT_RE = new RegExp("[^\\p{L}\\p{N}\\p{P}\\p{Zs}\\p{M}\\n\\r\\t]", "gu");
+
 function normalizeForTTS(raw: string): string {
   return raw
-    // Strip mechanical bracket labels before any other processing: [STR], [Prof], [+1 weapon], etc.
-    .replace(/\[[A-Z][A-Za-z0-9 +]*\]/g, "")
+    // Strip markdown asterisks (bold/italic markers confuse TTS)
+    .replace(/\*/g, "")
+    // Strip ALL bracketed content — system tokens like [HP:Aria:-9], [1d8+3], etc.
+    .replace(/\[[^\]]*\]/g, "")
     .replace(/=/g, " equals ")
-    // Em-dashes and en-dashes → natural comma pause
-    .replace(/\s*[—–]\s*/g, ", ")
-    // Hyphen used as a separator between words/phrases ("HP - Max HP") → comma pause
+    // Strip pictographic emoji — TTS vocalises them as nonsense syllables
+    .replace(EMOJI_RE, "")
+    // Strip invisible Unicode (zero-width, bidi, format, BOM)
+    .replace(INVISIBLE_RE, "")
+    // Strip C0 / C1 control characters (preserve \n \r \t)
+    .replace(CONTROL_RE, "")
+    // Normalize smart quotes -> straight quotes
+    .replace(SMART_SQUOTE_RE, "'")
+    .replace(SMART_DQUOTE_RE, '"')
+    // Ellipsis (single char) and triple-dot sequences -> comma pause.
+    // TTS otherwise vocalises "..." as a trailing breath / moan.
+    .replace(ELLIPSIS_RE, ", ")
+    .replace(/\.{3,}/g, ", ")
+    // Markdown horizontal rules (---, ***, ___, longer) — strip the whole line
+    .replace(/^[-*_]{2,}\s*$/gm, "")
+    // Em-dashes / en-dashes -> natural comma pause
+    .replace(DASH_RE, ", ")
+    // Hyphen as separator between words ("HP - Max HP") -> comma pause
     .replace(/\s+-\s+/g, ", ")
-    // Leading list-bullet hyphens at start of line → nothing
-    .replace(/^-\s+/gm, "")
-    // Collapse extra spaces left by label removal
+    // Leading list-bullet hyphens
+    .replace(/^-+\s*/gm, "")
+    // Trailing lone hyphen at end of line
+    .replace(/-+\s*$/gm, "")
+    // Remaining isolated hyphens not part of a compound word
+    .replace(/(?<![a-zA-Z0-9])-+(?![a-zA-Z0-9])/g, " ")
+    // Strip bare parentheses. The TTS prosody often stumbles on parenthetical
+    // clauses; keep the inner words but drop the brackets.
+    .replace(/[()]/g, "")
+    // Catch-all: strip anything left over that isn't normal text content
+    .replace(NON_TEXT_RE, "")
+    // Collapse runs of commas (artifacts from em-dash / ellipsis replacement)
+    .replace(/,\s*(?:,\s*)+/g, ", ")
+    // Collapse extra whitespace
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-async function synthesize(text: string, voice: string): Promise<Response> {
+async function synthesize(text: string, voice: string, fresh = false): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
   if (!text?.trim()) return new Response("No text", { status: 400 });
 
   text = normalizeForTTS(text);
+
+  // Reject tiny fragments. Given < ~4 chars of context, ElevenLabs often
+  // produces a single moan, hum, or noise burst (the "speaking in tongues"
+  // effect). The client treats a 400 as "skip this slot" — no broken audio plays.
+  if (text.length < 4) return new Response("Text too short to narrate", { status: 400 });
+  // Reject text that's purely punctuation / non-alphanumeric after normalization.
+  if (!/[A-Za-z]/.test(text)) return new Response("No speakable content", { status: 400 });
 
   const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
     ? (voice as AllowedVoice)
@@ -98,15 +165,24 @@ async function synthesize(text: string, voice: string): Promise<Response> {
     .slice(0, 24);
   const storageFile = `narration/${hash}.mp3`;
 
-  // Cache hit: redirect immediately without calling ElevenLabs
-  const { data: listed } = await supabase.storage.from(BUCKET).list("narration", { search: hash.slice(0, 8) });
-  const cached = listed?.find(f => f.name === `${hash}.mp3`);
-  if (cached) {
-    const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
-    return Response.json({ audioUrl: publicUrl });
+  // Minimum bytes for valid audio. Turbo v2.5 produces MP3 at ~64-96 kbps so
+  // each char of text yields ~600-800 bytes. We require >= 300 bytes/char before
+  // trusting a cached file — anything smaller is a previously-truncated upload.
+  const minBytes = Math.max(4096, Math.floor(text.length * 300));
+
+  if (!fresh) {
+    const { data: listed } = await supabase.storage.from(BUCKET).list("narration", { search: hash.slice(0, 8) });
+    const cached = listed?.find(f => f.name === `${hash}.mp3`);
+    const cachedSize = (cached?.metadata as { size?: number } | undefined)?.size ?? 0;
+    if (cached && cachedSize >= minBytes) {
+      const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
+      return Response.json({ audioUrl: publicUrl });
+    }
+    if (cached && cachedSize < minBytes) {
+      console.warn(`[api/narrate] Stale truncated cache (${cachedSize} bytes for ${text.length} chars, need >=${minBytes}) — regenerating`);
+    }
   }
 
-  // Generate audio
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method:  "POST",
     headers: {
@@ -140,7 +216,36 @@ async function synthesize(text: string, voice: string): Promise<Response> {
 
   const audioBuffer = Buffer.from(await res.arrayBuffer());
 
-  // Upload to Supabase Storage so the browser gets a static CDN URL
+  const contentLen = parseInt(res.headers.get("content-length") ?? "0", 10);
+  if (audioBuffer.length < minBytes || (contentLen > 0 && Math.abs(contentLen - audioBuffer.length) > 64)) {
+    console.warn(`[api/narrate] Truncated TTS payload (got ${audioBuffer.length} bytes, expected >=${minBytes}, content-length ${contentLen}) — not caching`);
+    const retryRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey, "Content-Type": "application/json", "Accept": "audio/mpeg" },
+      body:   JSON.stringify({
+        text:     text.slice(0, 5000),
+        model_id: MODEL_ID,
+        voice_settings: { stability, similarity_boost: similarity, style, use_speaker_boost: true },
+      }),
+    });
+    if (!retryRes.ok) return new Response("TTS truncated", { status: 502 });
+    const retryBuf = Buffer.from(await retryRes.arrayBuffer());
+    const retryLen = parseInt(retryRes.headers.get("content-length") ?? "0", 10);
+    if (retryBuf.length < minBytes || (retryLen > 0 && Math.abs(retryLen - retryBuf.length) > 64)) {
+      console.warn(`[api/narrate] Retry also truncated (got ${retryBuf.length} bytes) — giving up`);
+      return new Response("TTS truncated", { status: 502 });
+    }
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(storageFile, retryBuf, { contentType: "audio/mpeg", upsert: true });
+    if (upErr) {
+      console.error("[api/narrate] Supabase upload (retry):", upErr.message);
+      return new Response("Upload failed", { status: 500 });
+    }
+    const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
+    return Response.json({ audioUrl: `${publicUrl}?v=${Date.now()}` });
+  }
+
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(storageFile, audioBuffer, { contentType: "audio/mpeg", upsert: true });
@@ -151,15 +256,13 @@ async function synthesize(text: string, voice: string): Promise<Response> {
   }
 
   const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
-  // Return the CDN URL as JSON so the client sets it directly on the <audio>
-  // element — the element must never see the slow API URL (Xbox times out).
-  return Response.json({ audioUrl: publicUrl });
+  return Response.json({ audioUrl: fresh ? `${publicUrl}?v=${Date.now()}` : publicUrl });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, voice } = (await req.json()) as { text: string; voice?: string };
-    return await synthesize(text, voice ?? DEFAULT_VOICE);
+    const { text, voice, fresh } = (await req.json()) as { text: string; voice?: string; fresh?: boolean };
+    return await synthesize(text, voice ?? DEFAULT_VOICE, !!fresh);
   } catch (err) {
     console.error("[api/narrate]", err);
     return Response.json({ error: "TTS unavailable" }, { status: 500 });

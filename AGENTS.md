@@ -17,6 +17,7 @@ All values that change during gameplay — HP, gold, XP, level, spell slots, sta
 
 Every change must be clean, correct, and isolated — it must not break or negatively impact any already-working feature.
 
+- Never fix a bug in a way that could create other issues or create new bugs. Always test and re-test fixes to ensure integrity is upheld and fixes are solid.
 - Before implementing any change, identify all features that share code or state with the area being modified and verify they still work after the change.
 - If a proposed implementation would impact or break an existing feature, stop. Explain what the conflict is and why it exists. Ask for explicit confirmation before proceeding.
 - If there is an alternative approach that satisfies the request without affecting other features, that alternative is always the preferred path. Only take the impactful route if the user confirms it after being fully informed.

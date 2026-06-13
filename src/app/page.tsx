@@ -105,13 +105,13 @@ export default async function Home() {
 
         {/* Dragon — left, contained to its half with inner fade */}
         <div className="hero-img-panel hero-img-left animate-float" style={{ animationDelay: "0.3s" }}>
-          <Image src="/Dragon_Ramen.png" alt="" fill style={{ objectFit: "contain", objectPosition: "right center" }} priority />
+          <Image src="/Dragon_Ramen.png" alt="" fill sizes="(max-width: 860px) 1px, 46vw" style={{ objectFit: "contain", objectPosition: "right center" }} priority />
           <div className="hero-fade-right" />
         </div>
 
         {/* Party — right, contained to its half with inner fade */}
         <div className="hero-img-panel hero-img-right animate-float" style={{ animationDelay: "1.1s" }}>
-          <Image src="/GangGang.png" alt="" fill style={{ objectFit: "contain", objectPosition: "left center" }} priority />
+          <Image src="/GangGang.png" alt="" fill sizes="(max-width: 860px) 1px, 46vw" style={{ objectFit: "contain", objectPosition: "left center" }} priority />
           <div className="hero-fade-left" />
         </div>
 

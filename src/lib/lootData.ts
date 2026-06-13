@@ -707,6 +707,12 @@ export function getItemByName(name: string): LootItem | undefined {
   return CATALOG_MAP.get(normalizeName(name));
 }
 
+// Read-only view of every item in the catalog. Used by narrative renderers that
+// want to scan DM text for known item names and add tooltips/rarity colors.
+export function getAllCatalogItems(): readonly LootItem[] {
+  return CATALOG;
+}
+
 // ── Bonus computation ─────────────────────────────────────────────────────────
 
 export function computeInventoryBonuses(items: string[], weapons: string[]): ItemBonuses {

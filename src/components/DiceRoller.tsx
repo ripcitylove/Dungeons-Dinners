@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
 type DieSides = typeof DICE_SIDES[number];
@@ -454,13 +454,7 @@ export default function DiceRoller({
     }, 1380);
   }, [requiredRollMode, isAdvDis, onRollComplete]);
 
-  // Auto-roll before first paint — no idle phase when the DM has specified a die
-  useLayoutEffect(() => {
-    if (requiredDice && DICE_SIDES.includes(requiredDice as DieSides)) {
-      executeRoll(requiredDice as DieSides);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Do NOT auto-roll — always require the player to click the die.
 
   const handleDieClick = useCallback((sides: DieSides) => {
     if (phase!=="idle") return;
@@ -552,9 +546,10 @@ export default function DiceRoller({
       {phase==="idle" && (
         requiredDice
           ? (
-            <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"20px",
-              animation:"dieBobFloat 2.2s ease-in-out infinite" }}>
-              <div style={{ position:"relative" }}>
+            <button onClick={() => handleDieClick(requiredDice as DieSides)}
+              style={{ background:"none",border:"none",cursor:"pointer",padding:0,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:"20px" }}>
+              <div style={{ position:"relative", animation:"dieBobFloat 2.2s ease-in-out infinite" }}>
                 <div style={{ position:"absolute",inset:"-32px",borderRadius:"50%",
                   background:"radial-gradient(circle, rgba(139,92,246,0.45) 0%, transparent 65%)",
                   animation:"beaconPulse 1.5s ease-in-out infinite",pointerEvents:"none" }}/>
@@ -563,9 +558,9 @@ export default function DiceRoller({
               </div>
               <span style={{ fontSize:"1rem",fontWeight:800,color:"#c4b5fd",
                 letterSpacing:"0.06em",textShadow:"0 0 18px rgba(139,92,246,0.75)" }}>
-                Rolling…
+                Click to Roll
               </span>
-            </div>
+            </button>
           )
           : (
             <div style={{

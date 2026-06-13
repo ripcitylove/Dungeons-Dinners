@@ -8,6 +8,7 @@ export interface StatusEffect {
   cardGlow: string;
   badgeBg: string;
   badgeColor: string;
+  bonusLabel?: string;
 }
 
 export const STATUS_EFFECTS: Record<string, StatusEffect> = {
@@ -115,30 +116,35 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Add a d4 to attack rolls and saving throws. Divine magic infuses your every action.",
     defaultDuration: "1 minute (concentration)",
     cardGlow: "rgba(251,191,36,0.5)", badgeBg: "rgba(251,191,36,0.15)", badgeColor: "#fbbf24",
+    bonusLabel: "+1d4",
   },
   Hasted: {
     icon: "💨", type: "buff",
     description: "Speed doubled, +2 AC, advantage on DEX saves, and an extra action each turn. Lethargy hits when the effect ends.",
     defaultDuration: "1 minute (concentration)",
     cardGlow: "rgba(6,182,212,0.5)", badgeBg: "rgba(6,182,212,0.15)", badgeColor: "#06b6d4",
+    bonusLabel: "+2 AC",
   },
   Raging: {
     icon: "🔥", type: "buff",
     description: "Advantage on STR checks and saves. +2 melee damage. Resistance to bludgeoning, piercing, and slashing damage. Can't cast or concentrate on spells.",
     defaultDuration: "1 minute or until incapacitated",
     cardGlow: "rgba(239,68,68,0.5)", badgeBg: "rgba(239,68,68,0.15)", badgeColor: "#ef4444",
+    bonusLabel: "+2 dmg",
   },
   Inspired: {
     icon: "🎵", type: "buff",
     description: "Holding a Bardic Inspiration die. Add it to one ability check, attack roll, or saving throw before the result is known.",
     defaultDuration: "10 minutes",
     cardGlow: "rgba(59,130,246,0.5)", badgeBg: "rgba(59,130,246,0.15)", badgeColor: "#3b82f6",
+    bonusLabel: "+1d6",
   },
   Shielded: {
     icon: "🛡️", type: "buff",
     description: "+5 bonus to AC until the start of your next turn. Granted by the Shield reaction spell.",
     defaultDuration: "Until start of next turn",
     cardGlow: "rgba(59,130,246,0.4)", badgeBg: "rgba(59,130,246,0.12)", badgeColor: "#60a5fa",
+    bonusLabel: "+5 AC",
   },
   Concentrating: {
     icon: "🧿", type: "buff",
@@ -157,6 +163,7 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Recovering HP at the start of each turn from a magical regeneration effect, healing item, or troll-like ability.",
     defaultDuration: "Until condition ends",
     cardGlow: "rgba(34,197,94,0.4)", badgeBg: "rgba(34,197,94,0.12)", badgeColor: "#22c55e",
+    bonusLabel: "+HP/turn",
   },
   "Wild Shaped": {
     icon: "🐺", type: "buff",
@@ -169,12 +176,14 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Granted a Bardic Inspiration die by a Bard ally. Add it to one ability check, attack roll, or saving throw before the result.",
     defaultDuration: "10 minutes",
     cardGlow: "rgba(59,130,246,0.4)", badgeBg: "rgba(59,130,246,0.12)", badgeColor: "#3b82f6",
+    bonusLabel: "+1d6",
   },
   "Death Ward": {
     icon: "🕊️", type: "buff",
     description: "Protected from death. The first time you would drop to 0 HP, you drop to 1 HP instead. The ward is consumed on trigger.",
     defaultDuration: "8 hours",
     cardGlow: "rgba(251,191,36,0.45)", badgeBg: "rgba(251,191,36,0.12)", badgeColor: "#fde68a",
+    bonusLabel: "1 save",
   },
   Sanctuary: {
     icon: "⛪", type: "buff",
@@ -195,6 +204,7 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Target of the Hex spell. Takes +1d6 necrotic damage from the caster's attacks. Disadvantage on one chosen ability type.",
     defaultDuration: "1 hour (concentration)",
     cardGlow: "rgba(91,33,182,0.6)", badgeBg: "rgba(91,33,182,0.2)", badgeColor: "#7c3aed",
+    bonusLabel: "+1d6 dmg",
   },
   Marked: {
     icon: "🎯", type: "debuff",
@@ -213,12 +223,14 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Strength or vitality sapped. Disadvantage on STR checks and saving throws, or reduced damage output.",
     defaultDuration: "Until cured",
     cardGlow: "rgba(239,68,68,0.35)", badgeBg: "rgba(239,68,68,0.12)", badgeColor: "#f87171",
+    bonusLabel: "-1d4",
   },
   "Hunter's Mark": {
     icon: "🏹", type: "debuff",
     description: "Marked by a Ranger. The Ranger deals +1d6 damage to you and has advantage on Perception/Survival checks to track you.",
     defaultDuration: "1 hour (concentration)",
     cardGlow: "rgba(180,83,9,0.45)", badgeBg: "rgba(180,83,9,0.15)", badgeColor: "#d97706",
+    bonusLabel: "+1d6 dmg",
   },
 
   // === DISEASES ===
@@ -271,12 +283,14 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     description: "Protected by Mage Armor. Your AC = 13 + DEX modifier while not wearing armor. Magical force surrounds you.",
     defaultDuration: "8 hours",
     cardGlow: "rgba(59,130,246,0.4)", badgeBg: "rgba(59,130,246,0.12)", badgeColor: "#60a5fa",
+    bonusLabel: "AC 13+",
   },
   "Mirror Image": {
     icon: "👥", type: "enchantment",
     description: "Three illusory duplicates orbit you. When hit, roll to see if the attacker hits a duplicate instead. Each duplicate is destroyed on a hit.",
     defaultDuration: "1 minute",
     cardGlow: "rgba(99,102,241,0.4)", badgeBg: "rgba(99,102,241,0.12)", badgeColor: "#818cf8",
+    bonusLabel: "3 imgs",
   },
 };
 

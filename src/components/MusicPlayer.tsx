@@ -132,122 +132,58 @@ const POOLS: Record<string, string[]> = {
 };
 
 // ── Ambiance pools (atmospheric/environmental audio, played under music) ──────
+// Every URL here points to a pure SOUNDSCAPE — cave drips, forest birds, rain,
+// crowd murmur, ocean waves — never melodic music. This guarantees the music
+// player and ambiance player never "fight" each other with two competing scores.
+// All tracks confirmed live (audio/mpeg content-type) on archive.org.
+const ARCHIVE_DL = "https://archive.org/download";
 const AMBIANCE_POOLS: Record<string, string[]> = {
   dungeon: [
-    `${SI}2023/11/Dungeon-Maze.mp3`,
-    `${SI}2023/01/Dungeons-and-Tunnels.mp3`,
-    `${SI}2015/03/Secret-Tunnels.mp3`,
-    `${SI}2014/02/The-Darkness-Below.mp3`,
-    `${SI}2020/01/Haunted-Tunnels.mp3`,
-    `${SI}2019/05/Ominous-Underground-Goings-On.mp3`,
-    `${SI}2015/11/Drafty-Places.mp3`,
-    `${SI}2014/02/Too-Quiet.mp3`,
-    `${SI}2019/05/More-Sewer-Creepers.mp3`,
-    "https://archive.org/download/d-d-ambience-generic-dungeon/D%26D%20Ambience%20-%20Generic%20Dungeon.mp3",
+    `${ARCHIVE_DL}/d-d-ambience-generic-dungeon/D%26D%20Ambience%20-%20Generic%20Dungeon.mp3`,
+    `${ARCHIVE_DL}/3-excavation-naine-catacombs-ambience.-dark-caverns./3_Excavation%20naine%20%28Catacombs_ambience._Dark_caverns%29..mp3`,
+    `${ARCHIVE_DL}/dark-cave-ambience-sound-effect-no-copyright/Dark%20CAVE%20Ambience%20SOUND%20Effect%20%28NO%20Copyright%29.mp3`,
+    `${ARCHIVE_DL}/spiders-cave-fantasy-asmr-ambience-1-hour/Spiders%27%20Cave%20Fantasy%20ASMR%20Ambience%201%20Hour.mp3`,
   ],
   nature: [
-    `${SI}2014/07/The-Forgotten-Forest.mp3`,
-    `${SI}2015/04/Misty-Forest.mp3`,
-    `${SI}2014/11/Enchanted-Woods.mp3`,
-    `${SI}2015/03/Home-Forest.mp3`,
-    `${SI}2014/12/Forest-of-Spells.mp3`,
-    `${SI}2023/01/The-Fabled-Forest.mp3`,
-    `${SI}2020/04/The-Enchanted-Forest-Smolders.mp3`,
-    `${SI}2014/07/Distant-Mountains.mp3`,
-    `${SI}2016/04/Unforgiving-Himalayas.mp3`,
-    `${SI}2019/10/Mystical-Highlands.mp3`,
-    `${SI}2014/02/Lost-Meadow.mp3`,
-    `${SI}2014/02/Sunrise-at-the-Stream.mp3`,
-    `${SI}2020/07/A-Meadow-of-Mysteries.mp3`,
-    `${SI}2020/02/Troubled-Lands.mp3`,
+    `${ARCHIVE_DL}/forest_ambience_19072014/forest_ambience_19072014.mp3`,
+    `${ARCHIVE_DL}/forest-sounds-woodland-ambience-bird-song-x-nn-7i-ta-57j-m/Forest%20Sounds%20_%20Woodland%20Ambience%2C%20Bird%20Song%20%5BxNN7iTA57jM%5D.mp3`,
+    `${ARCHIVE_DL}/d-d-ambience-to-a-jungles-of-chult/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Jungles%20of%20Chult.mp3`,
+    `${ARCHIVE_DL}/thelastofusrainambience/The%20Last%20Of%20Us%20-%20Thunderstorm%20Ambience%20%281%29.mp3`,
   ],
   mystical: [
-    `${SI}2015/11/Their-Sacred-Place.mp3`,
-    `${SI}2014/02/Deep-Peace.mp3`,
-    `${SI}2015/01/Quiet-Tension.mp3`,
-    `${SI}2015/12/Mystical-Open.mp3`,
-    `${SI}2015/08/The-Idol.mp3`,
-    `${SI}2023/05/The-Book-of-Riddles.mp3`,
-    `${SI}2019/10/The-Attic-of-Secrets.mp3`,
-    `${SI}2019/08/Secret-Spells.mp3`,
-    `${SI}2020/01/Dreamscape.mp3`,
-    `${SI}2014/07/Mysterious-Trail.mp3`,
-    `${SI}2022/01/Ancient-Game-Menu.mp3`,
-    `${SI}2023/12/Magic-Clock-Shop.mp3`,
+    `${ARCHIVE_DL}/curse-of-strahd-town-of-vallaki-st.-andrals-church-ambience/Curse%20of%20Strahd%20-%20Town%20of%20Vallaki%20-%20St.%20Andral%27s%20Church%20%28Ambience%29.mp3`,
+    `${ARCHIVE_DL}/d-d-ambience-to-a-lost-city-of-omu/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Lost%20City%20of%20Omu.mp3`,
   ],
   social: [
-    `${SI}2014/08/The-Village.mp3`,
-    `${SI}2020/01/Bustling-Village.mp3`,
-    `${SI}2019/07/Quirky-Villagers.mp3`,
-    `${SI}2020/08/Life-Was-Hard.mp3`,
-    `${SI}2016/01/The-Secret-Village.mp3`,
-    `${SI}2014/07/Strange-Shop.mp3`,
-    `${SI}2019/12/Fantasy-Street-Performers.mp3`,
-    `${SI}2019/07/Quirky-Magic.mp3`,
-    `${SI}2015/01/Practicing-with-Magic_v001.mp3`,
+    `${ARCHIVE_DL}/tavern_202212/Tavern.mp3`,
+    `${ARCHIVE_DL}/co-s-vallaki-ambience/%28CoS%29%20Vallaki%20Ambience.mp3`,
   ],
   epic: [
-    `${SI}2014/07/The-Castle-Beyond-the-Forest.mp3`,
-    `${SI}2015/03/Castle-of-Despair.mp3`,
-    `${SI}2015/03/Cool-Castle-in-the-Clouds.mp3`,
-    `${SI}2024/01/Contemplation-inthe-Castle.mp3`,
-    `${SI}2019/11/The-Castle-of-the-Mad-Scientist.mp3`,
-    `${SI}2014/09/Lost-Civilization.mp3`,
-    `${SI}2014/09/Foglands.mp3`,
-    `${SI}2014/09/Ominous-Goings-On.mp3`,
-    `${SI}2023/04/Kingdom-in-Despair.mp3`,
-    `${SI}2014/09/Darkness-Approaches.mp3`,
-    `${SI}2017/09/Strangeness.mp3`,
+    `${ARCHIVE_DL}/d-d-ambience-to-a-lost-city-of-omu/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Lost%20City%20of%20Omu.mp3`,
+    `${ARCHIVE_DL}/curse-of-strahd-town-of-vallaki-st.-andrals-church-ambience/Curse%20of%20Strahd%20-%20Town%20of%20Vallaki%20-%20St.%20Andral%27s%20Church%20%28Ambience%29.mp3`,
   ],
   sea: [
-    `${SI}2015/03/The-Seventy-Seas.mp3`,
-    `${SI}2015/04/Exotic-Island.mp3`,
-    `${SI}2015/01/Indian-Ocean-Twilight.mp3`,
-    `${SI}2017/09/Over-Ancient-Waters.mp3`,
-    `${SI}2023/07/Caribbean-Moonlight.mp3`,
-    `${SI}2016/05/Edge-of-Ocean_Looping.mp3`,
-    `${SI}2023/12/Magic-Ocean.mp3`,
-    "https://archive.org/download/d-d-ambience-to-a-port-nyanzaru/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Port%20Nyanzaru.mp3",
+    `${ARCHIVE_DL}/d-d-ambience-to-a-port-nyanzaru/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Port%20Nyanzaru.mp3`,
+    `${ARCHIVE_DL}/5-hours-of-bora-bora-ambience-soft-ocean-sounds/5%20Hours%20of%20Bora%20Bora%20Ambience%20%20Soft%20Ocean%20Sounds.mp3`,
   ],
   eerie: [
-    `${SI}2019/10/Ghostly-Enchantment.mp3`,
-    `${SI}2019/10/The-Front-Door-of-a-Haunted-House.mp3`,
-    `${SI}2020/12/Haunted-Dreams.mp3`,
-    `${SI}2019/10/Creepy-Hollow.mp3`,
-    `${SI}2021/11/Night-Things.mp3`,
-    `${SI}2019/06/Melanquirky-Hollow.mp3`,
-    `${SI}2019/07/Secret-Hollow.mp3`,
-    `${SI}2023/12/Dreamy-Hollow.mp3`,
-    `${SI}2024/01/The-Bog-of-Eternal-Stink.mp3`,
-    `${SI}2014/02/Haunted-Mind.mp3`,
-    `${SI}2017/10/Into-the-Haunted-Forest.mp3`,
-    `${SI}2017/11/Someting-Freaky-This-Way-Comes.mp3`,
+    `${ARCHIVE_DL}/curse-of-strahd-town-of-vallaki-st.-andrals-church-ambience/Curse%20of%20Strahd%20-%20Town%20of%20Vallaki%20-%20St.%20Andral%27s%20Church%20%28Ambience%29.mp3`,
+    `${ARCHIVE_DL}/co-s-vallaki-ambience/%28CoS%29%20Vallaki%20Ambience.mp3`,
+    `${ARCHIVE_DL}/spiders-cave-fantasy-asmr-ambience-1-hour/Spiders%27%20Cave%20Fantasy%20ASMR%20Ambience%201%20Hour.mp3`,
   ],
   city: [
-    `${SI}2014/02/Deserted-Streets.mp3`,
-    `${SI}2014/11/City-of-Dread.mp3`,
-    `${SI}2015/01/Walled-City-of-Doom.mp3`,
-    `${SI}2024/07/Midnight-Streets.mp3`,
-    `${SI}2019/07/Midnight-Fog.mp3`,
-    `${SI}2019/06/Midnight-Mist.mp3`,
-    `${SI}2014/07/Darkness-Approaches.mp3`,
+    `${ARCHIVE_DL}/CitysNightAmbienceSounds_201501/City%60s%20Night%20ambience%20sounds.mp3`,
+    `${ARCHIVE_DL}/co-s-vallaki-ambience/%28CoS%29%20Vallaki%20Ambience.mp3`,
   ],
   desert: [
-    `${SI}2020/05/Desert-Mystery.mp3`,
-    `${SI}2018/08/A-Thousand-Exotic-Places.mp3`,
-    `${SI}2016/04/Hypnotic-Orient.mp3`,
-    `${SI}2020/07/Exotic-Dangers.mp3`,
-    `${SI}2014/09/Ominous-Goings-On.mp3`,
+    // No dedicated desert ambient track found in the open corpus — share the exotic
+    // jungle SFX as the closest "hot environment with bugs and wind" approximation.
+    `${ARCHIVE_DL}/d-d-ambience-to-a-jungles-of-chult/D%26D%20Ambience%20-%20%5BToA%5D%20-%20Jungles%20of%20Chult.mp3`,
   ],
   combat: [
-    `${SI}2016/08/Dark-Fantasy-Open.mp3`,
-    `${SI}2017/12/Kingdom-of-Darkness.mp3`,
-    `${SI}2022/06/Confrontation.mp3`,
-    `${SI}2024/08/In-the-Dead-of-Night.mp3`,
-    `${SI}2023/04/Dark-Quest.mp3`,
-    `${SI}2014/09/Darkness-Approaches.mp3`,
-    `${SI}2017/09/Strangeness.mp3`,
-    `${SI}2014/02/The-Darkness-Below.mp3`,
+    // Intentionally empty — combat music is the soundtrack. Adding an ambient layer
+    // here would just compete with the battle score. The MusicPlayer handles an empty
+    // pool gracefully (no ambiance plays).
   ],
 };
 
@@ -307,18 +243,21 @@ const POOL_LABELS: Record<string, string> = {
 
 const MAX_SKIP = 6;
 
-// Volume ratio for background music when this ambiance pool is active (0=mute, 1=full)
+// Volume ratio for background music when this ambiance pool is active (0=mute, 1=full).
+// Every pool now plays pure soundscape (no melodic content), so music can layer at
+// full volume without two scores fighting each other. Each value is a gentle taper
+// to keep the ambient texture audible under the soundtrack — never to mute it.
 const MUSIC_BALANCE_RATIOS: Record<string, number> = {
-  combat:   0,    // battle ambiance is music — silence background
-  epic:     0,    // castle/dramatic ambiance is music — silence background
-  social:   0,    // village/tavern ambiance is music — silence background
-  mystical: 0,    // arcane/sacred ambiance is music — silence background
-  eerie:    0,    // horror ambiance is music — silence background
-  sea:      0,    // sea ambiance is music — silence background
-  desert:   0,    // desert ambiance is music — silence background
-  city:     0,    // dark city ambiance is music — silence background
-  dungeon:  0.45, // stone/drip soundscape — music at 45% under ambiance
-  nature:   0.60, // forest/wind soundscape — music at 60% under ambiance
+  combat:   1.0,  // no ambiance — music carries the scene
+  dungeon:  0.85, // cave drips/echoes — quiet, music can play loud
+  nature:   0.85, // forest/birds — quiet, music can play loud
+  mystical: 0.80, // church/lost city — atmospheric, leave space for music
+  epic:     0.80,
+  sea:      0.80, // waves/port — leave room for music
+  eerie:    0.75, // creaky, subtle — needs presence under music
+  social:   0.70, // crowd murmur — louder ambient, drop music slightly
+  city:     0.75, // night street — moderate ambient
+  desert:   0.85,
 };
 
 declare global {
@@ -439,7 +378,7 @@ export function MusicPlayer() {
   const ambianceQueueRef   = useRef<string[]>([]);
   const ambianceErrors     = useRef(0);
   const isDucked               = useRef(false);
-  const duckFadeTimer          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const duckFadeTimer          = useRef<number | null>(null);
   const musicMutedRef          = useRef(false);
   const ambianceMutedRef       = useRef(false);
   const ambianceMusicSuppressed = useRef<number>(1);
@@ -453,6 +392,10 @@ export function MusicPlayer() {
 
   const clearFade = useCallback(() => {
     if (fadeTimer.current) { clearInterval(fadeTimer.current); fadeTimer.current = null; }
+  }, []);
+
+  const clearSuppressFade = useCallback(() => {
+    if (suppressFadeRef.current) { clearInterval(suppressFadeRef.current); suppressFadeRef.current = null; }
   }, []);
 
   const loadAndPlay = useCallback((src: string, startVol?: number) => {
@@ -478,6 +421,7 @@ export function MusicPlayer() {
     onStep: (v: number) => void, onDone: () => void,
   ) => {
     clearFade();
+    clearSuppressFade(); // prevent balance fade from competing with track-change fade
     const STEP = 16;
     let elapsed = 0;
     fadeTimer.current = setInterval(() => {
@@ -489,7 +433,7 @@ export function MusicPlayer() {
       onStep(Math.max(0, Math.min(1, vol)));
       if (prog >= 1) { clearFade(); onDone(); }
     }, STEP);
-  }, [clearFade]);
+  }, [clearFade, clearSuppressFade]);
 
   const fadeTo = useCallback((targetPool: string) => {
     if (activePoolKey.current === targetPool) return;
@@ -501,7 +445,9 @@ export function MusicPlayer() {
     musicErrors.current   = 0;
     setPoolLabel(POOL_LABELS[targetPool] ?? targetPool);
 
-    if (!audio || audio.paused) return;
+    // While narration is ducking, skip the fade — duckFadeTimer owns volume right now.
+    // Pool metadata is already updated above; unduck/playNextMusic will use the new pool.
+    if (!audio || audio.paused || isDucked.current) return;
 
     // Pick next track and start pre-buffering it in parallel with the fade-out
     const { src, queue } = nextFrom(musicQueue.current, pool);
@@ -531,16 +477,15 @@ export function MusicPlayer() {
   }, []);
 
   const clearDuckFade = useCallback(() => {
-    if (duckFadeTimer.current) { clearInterval(duckFadeTimer.current); duckFadeTimer.current = null; }
-  }, []);
-
-  const clearSuppressFade = useCallback(() => {
-    if (suppressFadeRef.current) { clearInterval(suppressFadeRef.current); suppressFadeRef.current = null; }
+    if (duckFadeTimer.current) { cancelAnimationFrame(duckFadeTimer.current); duckFadeTimer.current = null; }
   }, []);
 
   const setMusicBalance = useCallback((ratio: number) => {
     ambianceMusicSuppressed.current = ratio;
     clearSuppressFade();
+    // Skip the fade if duck or track-change is already controlling volume — they
+    // will read ambianceMusicSuppressed.current when they finish.
+    if (isDucked.current || fadeTimer.current) return;
     const audio = audioRef.current;
     if (!audio) return;
     const targetV = musicMutedRef.current ? 0 : targetVolume.current * ratio;
@@ -563,29 +508,40 @@ export function MusicPlayer() {
     if (isDucked.current === duck) return;
     isDucked.current = duck;
     clearDuckFade();
-    // Duck to 20% of user-set volume; restore to full target on unduck
+    clearFade();
+    clearSuppressFade();
+
     const DUCK_RATIO = 0.20;
+    const FADE_MS    = 280;
     const musicTarget = duck
       ? (musicMutedRef.current ? 0 : targetVolume.current * DUCK_RATIO)
       : (musicMutedRef.current ? 0 : targetVolume.current * ambianceMusicSuppressed.current);
-    const ambiTarget  = duck ? (ambianceMutedRef.current ? 0 : targetAmbianceV.current * DUCK_RATIO) : (ambianceMutedRef.current ? 0 : targetAmbianceV.current);
-    duckFadeTimer.current = setInterval(() => {
-      let settled = true;
+    const ambiTarget = duck
+      ? (ambianceMutedRef.current ? 0 : targetAmbianceV.current * DUCK_RATIO)
+      : (ambianceMutedRef.current ? 0 : targetAmbianceV.current);
+
+    const musicStart = audioRef.current?.volume    ?? musicTarget;
+    const ambiStart  = ambianceRef.current?.volume ?? ambiTarget;
+    const t0 = performance.now();
+
+    const tick = () => {
+      const prog = Math.min(1, (performance.now() - t0) / FADE_MS);
+      const ease = Math.sin((prog * Math.PI) / 2); // ease-out — fast start, smooth settle
       const music = audioRef.current;
-      if (music && !music.paused) {
-        const diff = musicTarget - music.volume;
-        if (Math.abs(diff) > 0.004) { music.volume = Math.max(0, Math.min(1, music.volume + Math.sign(diff) * 0.012)); settled = false; }
-        else music.volume = musicTarget;
-      }
+      if (music && !music.paused) music.volume = Math.max(0, Math.min(1, musicStart + (musicTarget - musicStart) * ease));
       const amb = ambianceRef.current;
-      if (amb && !amb.paused) {
-        const diff = ambiTarget - amb.volume;
-        if (Math.abs(diff) > 0.004) { amb.volume = Math.max(0, Math.min(1, amb.volume + Math.sign(diff) * 0.012)); settled = false; }
-        else amb.volume = ambiTarget;
+      if (amb   && !amb.paused)   amb.volume   = Math.max(0, Math.min(1, ambiStart  + (ambiTarget  - ambiStart)  * ease));
+      if (prog < 1) {
+        duckFadeTimer.current = requestAnimationFrame(tick);
+      } else {
+        if (music && !music.paused) music.volume = musicTarget;
+        if (amb   && !amb.paused)   amb.volume   = ambiTarget;
+        duckFadeTimer.current = null;
       }
-      if (settled) clearDuckFade();
-    }, 30);
-  }, [clearDuckFade]);
+    };
+
+    duckFadeTimer.current = requestAnimationFrame(tick);
+  }, [clearDuckFade, clearFade, clearSuppressFade]);
 
   const fadeInAmbiance = useCallback(() => {
     const a = ambianceRef.current;
@@ -626,8 +582,25 @@ export function MusicPlayer() {
   // Pick next track from an ambiance pool, fading out the current one first
   const playNextAmbiance = useCallback((poolKey: string) => {
     const pool = AMBIANCE_POOLS[poolKey] ?? AMBIANCE_POOLS.dungeon;
+    // Empty pool (combat) — fade the current ambiance out and stop. Music carries
+    // the scene without a competing ambient layer.
+    if (pool.length === 0) {
+      activeAmbiancePool.current = poolKey;
+      ambianceQueueRef.current = [];
+      fadeOutAmbiance(() => {
+        if (ambianceRef.current) ambianceRef.current.src = "";
+        setAmbianceReady(false);
+      });
+      return;
+    }
+    // Same scene -> same ambiance. If the active pool already matches and a
+    // track is already loaded, keep looping the current track. We only swap
+    // the ambient track when the scene's pool actually changes. Without this
+    // gate, scene detection firing on every DM response (even for the same
+    // scene) would rotate to a different ambient track each time.
+    if (activeAmbiancePool.current === poolKey && ambianceRef.current?.src) return;
     if (activeAmbiancePool.current !== poolKey || ambianceQueueRef.current.length === 0) {
-      // New pool or exhausted — shuffle a fresh queue, excluding the currently playing URL
+      // New pool or no queue yet — shuffle a fresh queue, excluding the currently playing URL
       const current = ambianceRef.current?.src ?? "";
       ambianceQueueRef.current = shuffle(pool).filter(u => u !== current);
       activeAmbiancePool.current = poolKey;
@@ -709,10 +682,14 @@ export function MusicPlayer() {
 
   useEffect(() => {
     targetVolume.current = volume;
-    if (audioRef.current && !isDucked.current)
+    if (audioRef.current && !isDucked.current) {
+      // Cancel any in-progress fade so the slider value takes effect immediately
+      clearFade();
+      clearSuppressFade();
       audioRef.current.volume = musicMutedRef.current ? 0 : volume * ambianceMusicSuppressed.current;
+    }
     localStorage.setItem("dnd_music_vol", String(volume));
-  }, [volume]);
+  }, [volume, clearFade, clearSuppressFade]);
 
   useEffect(() => {
     targetAmbianceV.current = ambianceVol;
@@ -722,10 +699,13 @@ export function MusicPlayer() {
 
   useEffect(() => {
     musicMutedRef.current = musicMuted;
-    if (audioRef.current && !isDucked.current)
+    if (audioRef.current && !isDucked.current) {
+      clearFade();
+      clearSuppressFade();
       audioRef.current.volume = musicMuted ? 0 : targetVolume.current * ambianceMusicSuppressed.current;
+    }
     localStorage.setItem("dnd_music_muted", musicMuted ? "1" : "0");
-  }, [musicMuted]);
+  }, [musicMuted, clearFade, clearSuppressFade]);
 
   useEffect(() => {
     ambianceMutedRef.current = ambianceMuted;
@@ -797,8 +777,11 @@ export function MusicPlayer() {
       <audio
         ref={ambianceRef}
         preload="none"
+        loop
         onCanPlayThrough={() => { if (ambianceRef.current?.src) fadeInAmbiance(); }}
-        onEnded={() => { if (activeAmbiancePool.current) playNextAmbiance(activeAmbiancePool.current); }}
+        // No onEnded rotation — `loop` keeps the same track playing forever. The
+        // ambient track only swaps when the scene's pool changes (handled in
+        // playNextAmbiance) or when the user picks a different mood manually.
         onError={() => {
           ambianceErrors.current++;
           if (ambianceErrors.current < MAX_SKIP && activeAmbiancePool.current) {

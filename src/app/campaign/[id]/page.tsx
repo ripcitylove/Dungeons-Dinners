@@ -10,13 +10,15 @@ import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
 import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel } from "../../../lib/spellData";
 import {
-  getItemByName, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
+  getItemByName, getAllCatalogItems, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
   type LootItem,
 } from "../../../lib/lootData";
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
+import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio } from "../../../lib/classAbilitySounds";
+import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 
 type MsgRole  = "dm" | "player" | "system";
@@ -32,7 +34,7 @@ type CampaignCharacterRow = {
   spells_prepared: string[];
 };
 type LogEntry = { id: string; timestamp: Date; role: MsgRole; sender?: string; content: string };
-type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string };
+type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string; meta?: NonNullable<Character["inventory"]["item_meta"]>[string] };
 
 type Character = {
   id: string; user_id?: string; name: string; race: string; class: string; level: number;
@@ -51,7 +53,13 @@ type Character = {
   status_effects?: string[];
   spell_slots_used?: Record<number, number>;
   class_resources?: Record<string, number>;
-  inventory: { gold: number; cp?: number; sp?: number; ep?: number; pp?: number; weapons: string[]; items: string[] };
+  inventory: {
+    gold: number; cp?: number; sp?: number; ep?: number; pp?: number;
+    weapons: string[]; items: string[];
+    // Per-item metadata for DM-awarded loot not in the static catalog.
+    // Keyed by exact item/weapon name; populated by /api/item-details.
+    item_meta?: Record<string, { description: string; value_gp?: number; rarity?: "common" | "uncommon" | "rare" | "very_rare" | "legendary"; type?: string }>;
+  };
 };
 
 type EnemyCondition = "healthy" | "wounded" | "bloodied" | "critical" | "defeated";
@@ -219,6 +227,75 @@ function parseHpTag(text: string, firstName: string): number {
   return total;
 }
 
+/** Parses [THP:FirstName:+N] tags from DM text. Returns the highest temp-HP grant
+ *  seen for that character (D&D 5e: temp HP doesn't stack — keep the larger value). */
+function parseThpTag(text: string, firstName: string): number {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[THP:${n}:\\+?(\\d+)\\]`, "gi");
+  let maxGrant = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) maxGrant = Math.max(maxGrant, parseInt(m[1], 10));
+  return maxGrant;
+}
+
+/** Parses [WILDSHAPE:FirstName:Form] tags. Returns "revert" if the form is the
+ *  literal string "revert" / "revert" / "human" (the druid is reverting), the
+ *  beast name otherwise (e.g. "bear", "brown bear", "giant eagle"), or null if
+ *  the tag isn't present for that character. The last tag in the text wins so a
+ *  transform-then-revert sequence in one DM response settles on "revert". */
+function parseWildShapeTag(text: string, firstName: string): string | null {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[WILDSHAPE:${n}:([^\\]]+)\\]`, "gi");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) last = m[1].trim();
+  if (!last) return null;
+  if (/^(revert|reverts?|human|natural|normal)$/i.test(last)) return "revert";
+  return last;
+}
+
+/** Returns the last [RAGE:FirstName:on|off] verdict for that character, or null. */
+function parseRageTag(text: string, firstName: string): "on" | "off" | null {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[RAGE:${n}:(on|off|end|stop)\\]`, "gi");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) last = m[1].toLowerCase();
+  if (!last) return null;
+  return last === "on" ? "on" : "off";
+}
+
+/** Returns the last [INSPIRED:FirstName:dX|off] verdict — either an "off" or the
+ *  die size ("d6"/"d8"/"d10"/"d12"). Used to add/remove the Inspired buff on a
+ *  recipient when the bard grants Bardic Inspiration. */
+function parseInspiredTag(text: string, firstName: string): { off: true } | { die: string } | null {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[INSPIRED:${n}:([^\\]]+)\\]`, "gi");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) last = m[1].trim().toLowerCase();
+  if (!last) return null;
+  if (/^(off|end|expired|used|consumed|spent)$/i.test(last)) return { off: true };
+  const dieMatch = last.match(/d(4|6|8|10|12|20)/);
+  if (!dieMatch) return { die: "d6" };
+  return { die: `d${dieMatch[1]}` };
+}
+
+/** Returns the last [MARK:FirstName:on|off|target] verdict for a ranger applying
+ *  or dropping Hunter's Mark. If a target name is given, it becomes the badge
+ *  detail (e.g. "Hunter's Mark: Goblin"). */
+function parseMarkTag(text: string, firstName: string): { off: true } | { target: string } | null {
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[MARK:${n}:([^\\]]+)\\]`, "gi");
+  let last: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) last = m[1].trim();
+  if (!last) return null;
+  if (/^(off|end|cleared|dropped)$/i.test(last)) return { off: true };
+  if (/^on$/i.test(last)) return { target: "" };
+  return { target: last };
+}
+
 // Detect which player the DM is addressing at the end of a response.
 // Returns the matching full name from partyNames, or null.
 function detectNextTurnPlayer(text: string, partyNames: string[]): string | null {
@@ -228,7 +305,7 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
     const firstName = fullName.split(" ")[0];
     if (firstName.length < 2) continue;
     const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // "[Name], what do you do?" or "your move, [Name]?" or any call-to-action addressed to Name
+    // Second-person: "[Name], what do you do?" / "What do you do, [Name]?"
     const actionPrompt = `what (?:\\w+ ){0,4}(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|which (?:\\w+ ){0,4}(?:do|will|would|shall) you|(?:do|would|will) you (?:like|want|wish|prefer|choose|pick|decide|select)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment|decision|call) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
     const re = new RegExp(
       `\\b${esc}\\b[^\\n]{0,120}(?:${actionPrompt})` +
@@ -238,6 +315,19 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
     let m: RegExpExecArray | null;
     re.lastIndex = 0;
     while ((m = re.exec(tail)) !== null) {
+      if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name: fullName };
+    }
+    // Third-person: "What does [Name] do?" / "How does [Name] respond?" / "[Name], what do they do?"
+    // Also: "Does/Will/Is/Can/Should/Shall [Name] X?" — yes/no question directed at the player
+    const thirdRe = new RegExp(
+      `what (?:does|will|would|can|shall) \\b${esc}\\b[^?\\n]{0,80}\\?` +
+      `|how (?:does|will|would|should) \\b${esc}\\b[^?\\n]{0,80}\\?` +
+      `|\\b${esc}\\b[^?\\n]{0,60},?\\s+(?:what|how)[^?\\n]{0,80}\\?` +
+      `|(?:does|will|is|are|can|should|would|shall)\\s+\\b${esc}\\b[^?\\n]{0,60}\\?`,
+      "gi"
+    );
+    thirdRe.lastIndex = 0;
+    while ((m = thirdRe.exec(tail)) !== null) {
       if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name: fullName };
     }
   }
@@ -302,13 +392,27 @@ function RevealText({ text, onComplete, intervalMs = 50 }: { text: string; onCom
   );
 }
 
-function ColorizedText({ text, playerColors = {}, onShowTooltip, onHideTooltip }: {
+type KnownItem = {
+  name: string;
+  color: string;
+  tooltipNode: React.ReactNode;
+};
+
+function ColorizedText({ text, playerColors = {}, knownItems = [], onShowTooltip, onHideTooltip }: {
   text: string;
   playerColors?: Record<string, string>;
+  knownItems?: KnownItem[];
   onShowTooltip?: (content: React.ReactNode, e: React.MouseEvent) => void;
   onHideTooltip?: () => void;
 }) {
-  type Seg = { start: number; end: number; color: string; tooltip?: string; richTooltip?: { title: string; body: string; accent: string } };
+  type Seg = {
+    start: number;
+    end: number;
+    color: string;
+    tooltip?: string;
+    richTooltip?: { title: string; body: string; accent: string };
+    nodeTooltip?: React.ReactNode;
+  };
   const segs: Seg[] = [];
   let m: RegExpExecArray | null;
   DAMAGE_RE.lastIndex = 0;
@@ -322,6 +426,20 @@ function ColorizedText({ text, playerColors = {}, onShowTooltip, onHideTooltip }
     const tt = getBonusTooltip(m[0]);
     if (tt) segs.push({ start: m.index, end: m.index + m[0].length, color: "#a78bfa", richTooltip: tt });
   }
+  // Item mentions — catalog items + DM-awarded loot present in any party
+  // member's inventory get tinted with their rarity color and a hover tooltip.
+  // Sort by name length descending so longer matches win over shorter substrings
+  // ("Ring of Protection" beats "Ring").
+  const sortedItems = [...knownItems].sort((a, b) => b.name.length - a.name.length);
+  for (const item of sortedItems) {
+    if (!item.name.trim()) continue;
+    const escaped = item.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${escaped}\\b`, "gi");
+    let im: RegExpExecArray | null;
+    while ((im = re.exec(text)) !== null) {
+      segs.push({ start: im.index, end: im.index + im[0].length, color: item.color, nodeTooltip: item.tooltipNode });
+    }
+  }
   for (const [name, color] of Object.entries(playerColors)) {
     if (!name.trim()) continue;
     const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
@@ -333,13 +451,19 @@ function ColorizedText({ text, playerColors = {}, onShowTooltip, onHideTooltip }
   for (const seg of segs) {
     if (seg.start < pos) continue;
     if (seg.start > pos) out.push(<span key={pos}>{text.slice(pos, seg.start)}</span>);
-    const hasInteraction = !!(seg.tooltip || seg.richTooltip);
+    const hasInteraction = !!(seg.tooltip || seg.richTooltip || seg.nodeTooltip);
+    const onEnter = seg.nodeTooltip && onShowTooltip
+      ? (e: React.MouseEvent) => onShowTooltip(seg.nodeTooltip!, e)
+      : seg.richTooltip && onShowTooltip
+        ? (e: React.MouseEvent) => onShowTooltip(tipBox(seg.richTooltip!.title, seg.richTooltip!.body, seg.richTooltip!.accent), e)
+        : undefined;
+    const onLeave = (seg.nodeTooltip || seg.richTooltip) && onHideTooltip ? onHideTooltip : undefined;
     out.push(
       <span
         key={seg.start}
-        title={seg.richTooltip ? undefined : seg.tooltip}
-        onMouseEnter={seg.richTooltip && onShowTooltip ? (e => onShowTooltip(tipBox(seg.richTooltip!.title, seg.richTooltip!.body, seg.richTooltip!.accent), e)) : undefined}
-        onMouseLeave={seg.richTooltip && onHideTooltip ? onHideTooltip : undefined}
+        title={(seg.nodeTooltip || seg.richTooltip) ? undefined : seg.tooltip}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
         style={{ color: seg.color, fontWeight: 600, ...(hasInteraction && { textDecoration: "underline dotted", cursor: "help" }) }}
       >
         {text.slice(seg.start, seg.end)}
@@ -357,6 +481,136 @@ const CLASS_COLORS: Record<string, string> = {
   Bard:      "#ec4899", Warlock:   "#8b5cf6", Barbarian: "#f97316",
   Druid:     "#65a30d", Monk:      "#06b6d4", Sorcerer:  "#a855f7",
 };
+
+// Monotonic counter for collision-free React keys. `Date.now()` alone is not
+// enough — two log entries created in the same millisecond (e.g. two rest
+// presses, or a state-notice firing in the same tick as a DM response insert)
+// will produce identical keys and trigger React's "two children with the same
+// key" warning. The counter guarantees uniqueness regardless of how fast the
+// callsite fires; the timestamp prefix keeps keys naturally ordered and
+// readable in DevTools.
+let _logIdCounter = 0;
+function makeLogId(prefix: string): string {
+  _logIdCounter = (_logIdCounter + 1) | 0;
+  return `${prefix}-${Date.now()}-${_logIdCounter.toString(36)}`;
+}
+
+function hexToRgb(hex: string): string {
+  const h = hex.replace("#", "");
+  return `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}`;
+}
+
+// Strip artifacts that would otherwise sound like the DM is having a stroke or
+// "speaking in tongues" when read aloud by TTS:
+//   • Bracketed system tokens ([HP:Aria:-9], [1d8+3], [STR], etc.)
+//   • Asterisks (markdown bold/italic — TTS spells them out)
+//   • Pictographic emoji — TTS vocalises them as nonsense syllables
+//   • Zero-width / bidi / format chars and BOMs — vocalised as clicks/pauses
+//   • C0 / C1 control characters — can crash the parser or emit noise bursts
+//   • Anything else outside text, punctuation, digits, marks, whitespace
+// Applied at every queue entry point so resume, streaming, and cached-replay
+// paths all reach the network with the same clean text.
+const _STRIP_EMOJI    = new RegExp("[\\u{1F000}-\\u{1FFFF}\\u{2600}-\\u{27BF}]", "gu");
+const _STRIP_INVISIBLE = new RegExp("[\\u200B-\\u200F\\u2028-\\u202F\\u2060-\\u206F\\uFEFF]", "g");
+const _STRIP_CONTROL  = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F]", "g");
+const _STRIP_NONTEXT  = new RegExp("[^\\p{L}\\p{N}\\p{P}\\p{Zs}\\p{M}\\n\\r\\t]", "gu");
+function stripTtsArtifacts(text: string): string {
+  return text
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\*+/g, "")
+    .replace(_STRIP_EMOJI, "")
+    .replace(_STRIP_INVISIBLE, "")
+    .replace(_STRIP_CONTROL, "")
+    .replace(_STRIP_NONTEXT, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Pull as many TTS-ready chunks as possible from a streaming narration buffer.
+// Returns the chunks plus the leftover buffer.
+//
+// Three failure modes this handles:
+//   1. Multiple complete sentences in one chunk — loop until none match.
+//   2. Smart/curly quotes after the sentence-ender (DM models love " " ' ') —
+//      character class accepts them alongside straight quotes.
+//   3. A genuinely long clause (DM writes a 600-char run-on or quotes block) —
+//      force-split at the nearest clause boundary so no TTS clip exceeds the
+//      45s watchdog limit. Worst-case forces a hard cut.
+//
+// When `isFinal=true` (end of stream), accept sentences without trailing
+// whitespace and dump anything left over as a final fragment.
+function pullNarrationChunks(buf: string, isFinal: boolean): { chunks: string[]; remaining: string } {
+  const chunks: string[] = [];
+  const MAX_CHUNK = 280;   // ~20s of speech — safely under the 45s watchdog
+  const MIN_FORCED = 60;   // never force-split shorter than this
+  // Quote characters allowed after a sentence-ender: straight ' " plus all curly variants
+  const QUOTE_CLASS = "[\\u2018\\u2019\\u201C\\u201D'\"]";
+  // Streaming match: 40+ chars then sentence-ender + optional quote + whitespace
+  const SENT_RE_STREAM = new RegExp(`^([\\s\\S]{40,}?[.!?…]${QUOTE_CLASS}?)\\s+`);
+  // Final match: shorter min, trailing whitespace OR end-of-buffer
+  const SENT_RE_FINAL  = new RegExp(`^([\\s\\S]{8,}?[.!?…]${QUOTE_CLASS}?)(?:\\s+|$)`);
+
+  while (true) {
+    const m = buf.match(isFinal ? SENT_RE_FINAL : SENT_RE_STREAM);
+    if (m) {
+      chunks.push(m[1].trim());
+      buf = buf.slice(m[0].length);
+      continue;
+    }
+    // No sentence-ender found — force-split if the buffer has grown past MAX_CHUNK
+    if (buf.length > MAX_CHUNK) {
+      const slice = buf.slice(0, MAX_CHUNK);
+      const boundary = Math.max(
+        slice.lastIndexOf(", "),
+        slice.lastIndexOf("; "),
+        slice.lastIndexOf("— "),
+        slice.lastIndexOf("– "),
+      );
+      if (boundary > MIN_FORCED) {
+        chunks.push(buf.slice(0, boundary + 1).trim());
+        buf = buf.slice(boundary + 2);
+        continue;
+      }
+      const wsBoundary = slice.lastIndexOf(" ");
+      if (wsBoundary > MIN_FORCED) {
+        chunks.push(buf.slice(0, wsBoundary).trim());
+        buf = buf.slice(wsBoundary + 1);
+        continue;
+      }
+      // Last resort: hard cut at MAX_CHUNK
+      chunks.push(buf.slice(0, MAX_CHUNK).trim());
+      buf = buf.slice(MAX_CHUNK);
+      continue;
+    }
+    break;
+  }
+  // At end of stream, anything still in the buffer is the final fragment
+  if (isFinal && buf.trim().length > 0) {
+    chunks.push(buf.trim());
+    buf = "";
+  }
+
+  // Merge tiny chunks (< MIN_TTS_CHARS) with the next chunk. ElevenLabs given a
+  // ~25-char fragment in isolation (e.g. `"Where did you get those?"`) rushes
+  // the prosody and drops syllables — the resulting clip sounds like nonsense
+  // or a foreign language. Concatenating short sentences with the next sentence
+  // gives the model enough context to voice them naturally.
+  //
+  // The merge only fires when there IS a next chunk. The final chunk is left
+  // untouched (even if short) — the alternative would be losing it entirely.
+  const MIN_TTS_CHARS = 40;
+  const merged: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    let cur = chunks[i];
+    // Merge forward — combined with subsequent chunks until length meets the floor
+    while (cur.length < MIN_TTS_CHARS && i + 1 < chunks.length && cur.length + chunks[i + 1].length + 1 <= MAX_CHUNK) {
+      cur = cur + " " + chunks[i + 1];
+      i++;
+    }
+    merged.push(cur);
+  }
+  return { chunks: merged, remaining: buf };
+}
 
 const CLASS_EMOJI: Record<string, string> = {
   Fighter: "⚔️", Wizard: "🧙", Rogue: "🗡️", Cleric: "✝️", Paladin: "🛡️", Ranger: "🏹",
@@ -408,11 +662,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [selectedVoice,    setSelectedVoice]     = useState<string>("bard");
   const [voicePickerOpen,  setVoicePickerOpen]   = useState(false);
   const [testingVoice,     setTestingVoice]      = useState<string | null>(null);
-  const [narVolume,        setNarVolume]         = useState<number>(() => parseFloat(localStorage.getItem("dnd_nar_volume") ?? "1"));
-  const [narMuted,         setNarMuted]          = useState<boolean>(() => localStorage.getItem("dnd_nar_muted") === "1");
+  const [narVolume,        setNarVolume]         = useState<number>(() => { try { const v = parseFloat(localStorage.getItem("dnd_nar_volume") ?? "1"); return isNaN(v) ? 1 : v; } catch { return 1; } });
+  const [narMuted,         setNarMuted]          = useState<boolean>(() => { try { return localStorage.getItem("dnd_nar_muted") === "1"; } catch { return false; } });
+  // Collapsed state for the Suggested Actions panel. Default to expanded.
+  // Persisted to localStorage and hydrated client-side (the SSR-safe pattern —
+  // reading localStorage inside the initializer would cause hydration mismatches).
+  const [suggestionsCollapsed, setSuggestionsCollapsed] = useState<boolean>(false);
+  useEffect(() => {
+    try { setSuggestionsCollapsed(localStorage.getItem("dnd_suggestions_collapsed") === "1"); } catch { /* ignore */ }
+  }, []);
+  const toggleSuggestionsCollapsed = useCallback(() => {
+    setSuggestionsCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("dnd_suggestions_collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const narVolumeRef = useRef<number>(1);
   const narMutedRef  = useRef<boolean>(false);
-  const [passTurnOpen,     setPassTurnOpen]      = useState(false);
   const selectedVoiceRef = useRef<string>("bard");
   const previewAudioRef  = useRef<HTMLAudioElement | null>(null);
 
@@ -514,20 +781,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   });
 
   // Resizable pane widths — persisted across sessions
-  const [chatPaneWidth, setChatPaneWidth] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const v = parseInt(localStorage.getItem("dnd_chat_pane_w") ?? "");
-      if (!isNaN(v) && v >= 280 && v <= 700) return v;
-    }
-    return 380;
-  });
-  const [sidebarPaneWidth, setSidebarPaneWidth] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const v = parseInt(localStorage.getItem("dnd_sidebar_pane_w") ?? "");
-      if (!isNaN(v) && v >= 200 && v <= 480) return v;
-    }
-    return 270;
-  });
+  const [chatPaneWidth,    setChatPaneWidth]    = useState<number>(380);
+  const [sidebarPaneWidth, setSidebarPaneWidth] = useState<number>(270);
+  // Restore persisted widths after mount — must not run during SSR to avoid hydration mismatch
+  useEffect(() => {
+    const cv = parseInt(localStorage.getItem("dnd_chat_pane_w") ?? "");
+    if (!isNaN(cv) && cv >= 280 && cv <= 700) setChatPaneWidth(cv);
+    const sv = parseInt(localStorage.getItem("dnd_sidebar_pane_w") ?? "");
+    if (!isNaN(sv) && sv >= 200 && sv <= 480) setSidebarPaneWidth(sv);
+  }, []);
   const dragRef = useRef<{ which: "chat" | "sidebar"; startX: number; startW: number } | null>(null);
 
   const chatWidthRatio    = Math.max(0.85, Math.min(1.45, chatPaneWidth / 380));
@@ -537,9 +799,107 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // chatFontPx scales chat message text with A-/A+ control AND chat drag width
   const chatMsgSize = `${(chatFontSize * chatWidthRatio).toFixed(2)}rem`;
 
+  // Memoized first-name → class color map for ColorizedText. Recomputes only when
+  // party composition changes.
+  const playerColorMap = useMemo(
+    () => Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"])),
+    [campaignParty],
+  );
+
+  // Items the DM might mention in narrative prose. Built from the static catalog
+  // PLUS any DM-awarded loot already in a party member's inventory (so invented
+  // items like "Mysterious Coin" still get a tooltip after they're awarded).
+  // Each entry is { name, color, tooltipNode } — the renderer scans every DM
+  // message for these names and applies a rarity-tinted underline + hover tooltip.
+  const knownItemsForNarrative = useMemo<KnownItem[]>(() => {
+    const items: KnownItem[] = [];
+    const seen = new Set<string>();
+    // 1. Static catalog — full rarity coloring + description + effect list
+    for (const item of getAllCatalogItems()) {
+      const key = item.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rarityColor = RARITY_COLORS[item.rarity];
+      const tooltipNode = tipBoxNode(
+        item.name,
+        <>
+          <div style={{ color: rarityColor, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>
+            {RARITY_LABELS[item.rarity]}
+          </div>
+          <div style={{ color: "#94a3b8", marginBottom: item.effects.some(fx => fx.description) ? "5px" : 0 }}>
+            {item.description}
+          </div>
+          {item.effects.map((fx, fi) => fx.description && (
+            <div key={fi} style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.9em" }}>
+              {fx.description}
+            </div>
+          ))}
+          {item.requiresAttunement && <div style={{ color: "#64748b", fontSize: "0.85em", marginTop: "4px" }}>Requires Attunement</div>}
+        </>,
+        rarityColor,
+      );
+      items.push({ name: item.name, color: rarityColor, tooltipNode });
+    }
+    // 2. DM-awarded loot stored in party inventories (item_meta) — same rarity
+    // treatment using the enriched description + gp value.
+    const validRarities = new Set<LootItem["rarity"]>(["common", "uncommon", "rare", "very_rare", "legendary"]);
+    for (const char of campaignParty) {
+      const meta = char.inventory?.item_meta ?? {};
+      for (const [name, info] of Object.entries(meta)) {
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const rarity = (validRarities.has(info.rarity as LootItem["rarity"]) ? info.rarity : "common") as LootItem["rarity"];
+        const color = RARITY_COLORS[rarity];
+        const tooltipNode = tipBoxNode(
+          name,
+          <>
+            <div style={{ color, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>
+              {RARITY_LABELS[rarity]}
+            </div>
+            <div style={{ color: "#94a3b8", marginBottom: (info.value_gp ?? 0) > 0 ? "5px" : 0 }}>
+              {info.description || "An item awarded by the Dungeon Master."}
+            </div>
+            {(info.value_gp ?? 0) > 0 && (
+              <div style={{ padding: "2px 6px", background: "rgba(251,191,36,0.08)", borderRadius: "4px", color: "#fbbf24", fontSize: "0.85em", fontWeight: "bold" }}>≈ {info.value_gp} gp</div>
+            )}
+          </>,
+          color,
+        );
+        items.push({ name, color, tooltipNode });
+      }
+    }
+    // 3. Weapons and adventuring items with canonical tooltipData entries.
+    // No rarity color (use a neutral steel tone) but a real description.
+    for (const [name, tip] of Object.entries(WEAPON_TIPS)) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ name, color: "#94a3b8", tooltipNode: tipBox(tip.title, tip.body, "#94a3b8") });
+    }
+    for (const [name, tip] of Object.entries(ITEM_TIPS)) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ name, color: "#94a3b8", tooltipNode: tipBox(tip.title, tip.body, "#94a3b8") });
+    }
+    return items;
+  }, [campaignParty]);
+
   // Portrait lightbox
   const [portraitModal, setPortraitModal] = useState<{ name: string; cls: string; url: string; subtitle?: string } | null>(null);
   const [showBackstory, setShowBackstory] = useState(false);
+
+  // Class-ability flash overlay — a brief colored pulse on the party card portrait
+  // when ANY class ability is invoked. Key bumps each press so the CSS animation
+  // re-fires on rapid repeated clicks.
+  const [abilityFlash, setAbilityFlash] = useState<{ charId: string; color: string; key: number } | null>(null);
+  const abilityFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerAbilityFlash = useCallback((charId: string, color: string) => {
+    setAbilityFlash({ charId, color, key: Date.now() });
+    if (abilityFlashTimerRef.current) clearTimeout(abilityFlashTimerRef.current);
+    abilityFlashTimerRef.current = setTimeout(() => setAbilityFlash(null), 1200);
+  }, []);
 
   // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
@@ -585,6 +945,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const channelRef           = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const userIdRef            = useRef<string | null>(null);
   const narAudioRef          = useRef<HTMLAudioElement | null>(null);
+  const narWarmupRef         = useRef<HTMLAudioElement | null>(null);
   const audioPlayingRef      = useRef(false);
   const messagesRef          = useRef<Message[]>(OPENING_MESSAGES);
   const isTypingRef          = useRef(false);
@@ -594,15 +955,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const restoredTurnStateRef      = useRef<{ order: string[]; index: number } | null>(null);
   const currentSceneRef        = useRef<string>("");
   const enemiesRef             = useRef<CampaignEnemy[]>([]);
-  const rollRequestedUserIdRef = useRef<string | null>(null);
-  const isGroupCheckRollRef    = useRef(false);
+  const rollRequestedUserIdRef     = useRef<string | null>(null);
+  const isGroupCheckRollRef        = useRef(false);
+  const dmFollowUpBlockAdvanceRef  = useRef(false); // set by sendToAI when DM asks same-player follow-up
   const resumeNarrationRef        = useRef<string>("");
+  // True once the resume-state reconciler has run this session — prevents the
+  // recovery flow from re-firing on every state change (which would loop forever).
+  const resumeLootReconciledRef   = useRef<boolean>(false);
   const resumeCurrentPlayerIdRef = useRef<string | null>(null);
+  // True once this client has triggered a resume recap — prevents re-triggering
+  // on the same page load (e.g. if the user re-clicks Begin Adventure or React
+  // re-renders the resume branch). Multi-client races are mitigated by the
+  // [RECAP] marker check on the last DM message.
+  const resumeRecapTriggeredRef   = useRef(false);
   const autoOpenedRef             = useRef(false);
   // Ordered narration slot system — ensures sentences always play in the order they were sent
   const narSlotCounterRef    = useRef(0);
   const narSlotsRef          = useRef<(string | "SKIP" | null)[]>([]);
+  const narSlotTextsRef      = useRef<string[]>([]); // original text per slot — used to regen truncated clips
+  const narSlotRetriedRef    = useRef<boolean[]>([]); // tracks whether a slot was already regen'd to avoid loops
   const narPlaySlotRef       = useRef(0);
+  const fetchClipForSlotRef  = useRef<((slot: number, text: string, fresh: boolean) => Promise<void>) | null>(null);
   // Incremented on every queue reset — lets in-flight ElevenLabs fetches detect they're stale
   // and skip writing to the (now-reused) slot array, preventing old audio from clobbering new.
   const narGenerationRef     = useRef(0);
@@ -805,8 +1178,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (idx >= 0) setActiveCharIdx(idx);
   }, [currentTurnIndex, turnOrder, campaignParty]);
 
-  // Close pass-turn submenu whenever the turn moves
-  useEffect(() => { setPassTurnOpen(false); }, [currentTurnIndex]);
 
   // Persist turn state to DB whenever it changes so campaigns resume at the right position
   useEffect(() => {
@@ -827,6 +1198,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [params.id]);
   useEffect(() => { charWriteRef.current = charWrite; }, [charWrite]);
+
+  // Build a compact body for /api/suggest-actions that includes the rest of the
+  // party (name + HP + status) and any live enemies. Without this context the
+  // suggester sees only the DM's prose, so when the DM says "Ekko gave it
+  // something real tonight" the model can mis-suggest "Ask if Ekko is still
+  // alive" even though Ekko is standing right there at full HP.
+  const buildSuggestActionsBody = useCallback((dmResponse: string, char: Character | null) => {
+    const partyCtx = campaignPartyRef.current.map(c => ({
+      name: c.name,
+      class: c.class,
+      race: c.race,
+      hp: c.hp,
+      max_hp: c.max_hp,
+      status_effects: c.status_effects ?? [],
+      isMe: char ? c.id === char.id : false,
+    }));
+    const enemiesCtx = enemiesRef.current
+      .filter(e => !e.is_defeated)
+      .map(e => ({ name: e.name, condition: e.condition, is_defeated: e.is_defeated }));
+    return {
+      dmResponse,
+      character: char,
+      party: partyCtx,
+      enemies: enemiesCtx,
+    };
+  }, []);
 
   useEffect(() => {
     const done = localStorage.getItem("dnd_campaign_tutorial_done");
@@ -860,18 +1257,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTurnOrder(finalOrder);
     setCurrentTurnIndex(finalIndex);
     currentTurnIndexRef.current = finalIndex;
+    // Sync the "Acting" highlight to the current turn player
+    const activePartyIdx = campaignParty.findIndex(c => c.id === finalOrder[finalIndex]);
+    if (activePartyIdx >= 0) setActiveCharIdx(activePartyIdx);
     // Suggestions are handled by the unified suggestion guarantee effect below
   }, [campaignParty.length]);
 
-  // When the active character index changes, sync the character sheet
+  // `character` is the local user's IDENTITY for action submission and game logic.
+  // It must follow the actual turn order — NEVER follow card clicks, otherwise clicking
+  // another player's card to view their sheet swaps the user's identity and the next
+  // action (including dice rolls) gets attributed to the wrong character. That caused
+  // the "DM skips Shmang for no reason" bug — Shmang would silently be added to
+  // roundActions when the user submitted anything after viewing Shmang's card.
   useEffect(() => {
     if (campaignParty.length === 0) return;
-    const c = campaignParty[Math.min(activeCharIdx, campaignParty.length - 1)];
+    let c: Character | undefined;
+    if (turnOrder.length > 1) {
+      // Multiplayer / hotseat — the user plays whoever has the current turn.
+      const turnCharId = turnOrder[currentTurnIndex];
+      c = campaignParty.find(ch => ch.id === turnCharId);
+    } else {
+      // Solo play — there's only one character to play as.
+      c = campaignParty[0];
+    }
     if (c && c.id !== characterRef.current?.id) {
       setCharacter(c);
       characterRef.current = c;
     }
-  }, [activeCharIdx, campaignParty]);
+  }, [currentTurnIndex, turnOrder, campaignParty]);
 
   // ── Load user, character, history ────────────────────────────────────────────
   useEffect(() => {
@@ -1068,10 +1481,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "player_action" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
         setMessages(prev => [...prev, { role: "player", content: payload.content, sender: payload.characterName }]);
-        setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "player", sender: payload.characterName, content: payload.content }]);
+        setLogEntries(prev => [...prev, { id: makeLogId("rt"), timestamp: new Date(), role: "player", sender: payload.characterName, content: payload.content }]);
         // Track this player's action for round reconciliation (skip questions — they don't consume turns)
-        if (payload.characterId && !payload.isQuestion && !roundActionsRef.current.some(a => a.characterId === payload.characterId)) {
-          const updated: RoundAction[] = [...roundActionsRef.current, { characterId: payload.characterId as string, name: (payload.characterName as string) ?? "Unknown", action: payload.content as string }];
+        // Guard: only record if the broadcast has BOTH a character ID and non-empty action text.
+        // An empty/whitespace action could otherwise cause reconciliation to include a player who
+        // didn't actually act, prompting the DM to fabricate their action.
+        const broadcastAction = ((payload.content as string) ?? "").trim();
+        if (payload.characterId && !payload.isQuestion && broadcastAction.length > 0 && !roundActionsRef.current.some(a => a.characterId === payload.characterId)) {
+          const updated: RoundAction[] = [...roundActionsRef.current, { characterId: payload.characterId as string, name: (payload.characterName as string) ?? "Unknown", action: broadcastAction }];
           roundActionsRef.current = updated;
           setRoundActions(updated);
         }
@@ -1082,12 +1499,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (!(payload.content as string)?.trim()) return;
         setIsTyping(false); setStreamingContent("");
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
-        setLogEntries(prev => [...prev, { id: `rt-${Date.now()}`, timestamp: new Date(), role: "dm", content: payload.content }]);
-        const rollTarget = detectDiceRollTarget(payload.content as string);
+        setLogEntries(prev => [...prev, { id: makeLogId("rt"), timestamp: new Date(), role: "dm", content: payload.content }]);
+        const dmDieType  = detectRequiredDiceType(payload.content as string);
+        const rollTarget = dmDieType !== null ? detectDiceRollTarget(payload.content as string) : null;
         const dmRollMode = rollTarget ? detectRollMode(payload.content as string) : "normal";
         setDiceRollTarget(rollTarget);
-        setRequiredDiceType(detectRequiredDiceType(payload.content as string));
+        setRequiredDiceType(dmDieType);
         setRequiredRollMode(dmRollMode !== "normal" ? dmRollMode : null);
+        // Proactively clear roll state for non-roll responses; roll_request broadcast confirms it
+        if (!rollTarget && dmDieType === null) {
+          setRollRequestedUserId(null);
+          rollRequestedUserIdRef.current = null;
+        }
         // Restore the acting character so applyStateChange can gate correctly
         prevActingCharIdRef.current = (payload.actingCharId as string | null) ?? null;
         // Fast HP detection — apply HP change to this player's own character immediately.
@@ -1098,21 +1521,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             const hpDelta = parseHpTag(payload.content as string, firstName);
             if (hpDelta !== 0) {
               const ib = computeInventoryBonuses(myChar.inventory?.items ?? [], myChar.inventory?.weapons ?? []);
-              const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp + hpDelta));
-              const fastChar = { ...myChar, hp: newHp };
+              const fastTempHp0 = myChar.class_resources?.temp_hp ?? 0;
+              let fastTempHp = fastTempHp0;
+              let fastDelta  = hpDelta;
+              if (hpDelta < 0 && fastTempHp > 0) {
+                const dmg = Math.abs(hpDelta); const absorbed = Math.min(fastTempHp, dmg);
+                fastTempHp = fastTempHp - absorbed; fastDelta = -(dmg - absorbed);
+              }
+              const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp + fastDelta));
+              const fastRes = fastTempHp !== fastTempHp0 ? { ...(myChar.class_resources ?? {}), temp_hp: fastTempHp } : (myChar.class_resources ?? {});
+              const fastChar = { ...myChar, hp: newHp, class_resources: fastRes };
               setCharacter(fastChar);
-              setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c));
+              setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c));
               characterRef.current = fastChar;
-              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp } : c);
+              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c);
               pendingHpDeltaRef.current = hpDelta;
-              charWriteRef.current?.(myChar.id, { hp: newHp });
-              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp } });
+              charWriteRef.current?.(myChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) });
+              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) } });
             }
           }
         }
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
-          .then(r => r.json()).then((change: StateChange) => applyStateChange(change)).catch(() => {});
+          .then(r => r.json()).then((change: StateChange) => applyStateChange(change, payload.content as string)).catch(() => {});
         // Focus the party panel on the character whose turn the DM just announced
         if (campaignPartyRef.current.length > 1) {
           const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
@@ -1123,7 +1554,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const order = turnOrderRef.current;
         const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === characterRef.current?.id;
         if (isMyTurnNow && characterRef.current) {
-          fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: payload.content, character: characterRef.current }) })
+          fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(payload.content as string, characterRef.current)) })
             .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
         }
       })
@@ -1151,7 +1582,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             fetch("/api/suggest-actions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dmResponse: lastDmMsg.content, character: characterRef.current }),
+              body: JSON.stringify(buildSuggestActionsBody(lastDmMsg.content, characterRef.current)),
             }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
           }
         }
@@ -1283,21 +1714,67 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, params.id]);
 
-  // RAF auto-scroll — runs continuously while the DM is narrating so the chat
-  // drifts down at a pace that matches text arrival rather than jumping.
+  // ── Chat auto-scroll ────────────────────────────────────────────────────────
+  // Tracks whether the user has intentionally scrolled away from the bottom. When
+  // they do, every auto-scroll source (RAF drift, snap-to-bottom, suggestion-reflow)
+  // backs off until the user returns near the bottom. Previously the three effects
+  // raced against each other and against the user's wheel, producing the "crazy
+  // scrolling" feel during streaming + suggestion arrival.
+  const userInterruptedScrollRef = useRef(false);
+
+  // Detect user scroll-up vs programmatic scrolls (mounted once)
   useEffect(() => {
+    const el = msgContainerRef.current;
+    if (!el) return;
+    let lastTop = el.scrollTop;
+    const onScroll = () => {
+      const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      // Scrolled upward by more than 5px AND ended up far enough from the bottom
+      // → treat as a deliberate user scroll-up. Programmatic auto-scrolls always
+      // step DOWN, so this check rejects them.
+      if (el.scrollTop < lastTop - 5 && fromBottom > 80) {
+        userInterruptedScrollRef.current = true;
+      }
+      // Returned to within 30px of the bottom → re-engage auto-scroll.
+      if (fromBottom < 30) {
+        userInterruptedScrollRef.current = false;
+      }
+      lastTop = el.scrollTop;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Single auto-scroll behavior — drift smoothly while content streams, snap when idle,
+  // never override the user.
+  useEffect(() => {
+    const el = msgContainerRef.current;
+    if (!el) return;
     const active = isTyping || !!streamingContent || !!openingRevealText || !!narRevealText;
     if (!active) {
       if (autoScrollRafRef.current) { cancelAnimationFrame(autoScrollRafRef.current); autoScrollRafRef.current = null; }
-      return;
+      if (userInterruptedScrollRef.current) return;
+      // Idle snap — gives the layout a tick to settle (suggestion panel reflow, etc.)
+      // before we land at the bottom. One snap, not three competing ones.
+      const t = setTimeout(() => {
+        if (!userInterruptedScrollRef.current && msgContainerRef.current) {
+          msgContainerRef.current.scrollTop = msgContainerRef.current.scrollHeight;
+        }
+      }, 60);
+      return () => clearTimeout(t);
     }
-    let rafId: number;
+    // Streaming/revealing — drift toward the bottom each frame.
+    let rafId = 0;
     const tick = () => {
-      const el = msgContainerRef.current;
-      if (el) {
+      if (!userInterruptedScrollRef.current) {
         const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-        if (remaining > 1) {
-          // Ease toward bottom: gentle when close, faster when behind — capped so it never feels like a snap
+        if (remaining > 100) {
+          // Big layout shift (e.g. Suggested Actions panel just appeared and shrank
+          // the chat) — instant snap so the last narration line never sits behind
+          // the suggestions panel even momentarily.
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+        } else if (remaining > 1) {
+          // Gentle drift for the steady text-reveal case.
           el.scrollTop += Math.max(0.8, Math.min(remaining * 0.055, 7));
         }
       }
@@ -1307,30 +1784,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     rafId = requestAnimationFrame(tick);
     autoScrollRafRef.current = rafId;
     return () => { cancelAnimationFrame(rafId); autoScrollRafRef.current = null; };
-  }, [isTyping, streamingContent, openingRevealText, narRevealText]);
-
-  // Instant snap to bottom when a new non-streaming message lands or suggestions change
-  useEffect(() => {
-    if (isTyping || streamingContent || openingRevealText || narRevealText) return;
-    const el = msgContainerRef.current;
-    if (!el) return;
-    const t = setTimeout(() => { el.scrollTop = el.scrollHeight; }, 60);
-    return () => clearTimeout(t);
-  }, [messages, suggestions, isTyping, streamingContent, openingRevealText, narRevealText]);
-
-  // When suggestions appear they shrink the messages container — scroll after the browser
-  // has reflowed so the last message isn't hidden behind the suggestions panel.
-  useEffect(() => {
-    if (!suggestions.length) return;
-    let raf2: number;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        const el = msgContainerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
-    });
-    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
-  }, [suggestions.length]);
+  }, [isTyping, streamingContent, openingRevealText, narRevealText, messages, suggestions]);
 
   // Fallback: if narRevealText is set but audio never fires canplaythrough (quota, error, disabled mid-flight),
   // unblock the reveal after 1.5 s so text is never permanently stuck.
@@ -1340,22 +1794,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return () => clearTimeout(t);
   }, [narRevealText, narRevealIntervalMs]);
 
-  // Global narration watchdog — if narrating stays true for 45 s the audio never ended; unlock the game.
+  // Global narration watchdog — resets every time a new clip begins playing
+  // (narHeartbeat is bumped in playNextInQueue). This way long multi-sentence
+  // narrations never get killed mid-speech; only true stalls (no clip transitions
+  // for 45 s) trigger the unlock.
+  const [narHeartbeat, setNarHeartbeat] = useState(0);
   useEffect(() => {
     if (!narrating) return;
     const t = setTimeout(() => {
-      if (!audioPlayingRef.current) return;
       console.warn("[narration] global watchdog — narrating stuck, force-resetting");
       const el = narAudioRef.current;
       if (el) { el.pause(); el.src = ""; }
       audioPlayingRef.current = false;
       narSlotCounterRef.current = 0;
       narSlotsRef.current = [];
+      narSlotTextsRef.current = [];
+      narSlotRetriedRef.current = [];
       narPlaySlotRef.current = 0;
       setNarrating(false);
     }, 45000);
     return () => clearTimeout(t);
-  }, [narrating]);
+  }, [narrating, narHeartbeat]);
 
   // Guarantee: whenever it's my turn, the DM isn't busy, and suggestions are empty,
   // fetch them from the last DM message. Covers resume, turn changes, and silent fetch failures.
@@ -1373,7 +1832,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     fetch("/api/suggest-actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dmResponse: lastDm.content, character: char }),
+      body: JSON.stringify(buildSuggestActionsBody(lastDm.content, char)),
     })
       .then(r => r.json())
       .then(({ suggestions: s }) => { if (s?.length) setSuggestions(s); })
@@ -1438,8 +1897,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return c === t || c.startsWith(t + " ") || t.startsWith(c + " ");
   }, []);
 
-  const applyStateChange = useCallback(async (change: StateChange) => {
-    const char = characterRef.current;
+  const applyStateChange = useCallback(async (change: StateChange, narrativeContext?: string) => {
+    // Resolve the character this change should land on. The local user's
+    // `characterRef.current` is unreliable: by the time chat-state returns, the
+    // turn has often already advanced, so `characterRef.current` points at the
+    // NEXT player rather than the actor. We resolve in priority order:
+    //   1. Named target — the DM said "Randiezel scoops the gold" → Randiezel.
+    //   2. The acting character — fallback for "you find a sword" style awards.
+    //   3. The local user's character — preserves opening-scene / solo behaviour.
+    let char: Character | null = null;
+    if (change.target_name) {
+      const named = campaignPartyRef.current.find(c => charNameMatches(change.target_name!, c.name));
+      if (named) char = named;
+    }
+    if (!char && prevActingCharIdRef.current) {
+      const actor = campaignPartyRef.current.find(c => c.id === prevActingCharIdRef.current);
+      if (actor) char = actor;
+    }
+    if (!char) char = characterRef.current;
     if (!char) return;
 
     // Determine if this character was the acting character for this DM response.
@@ -1461,6 +1936,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (change.hp_delta !== 0 && !isEffectiveTarget) {
       change = { ...change, hp_delta: 0 };
     }
+    // Temp HP grant: only applies when this character is the recipient.
+    if (change.temp_hp_grant > 0 && !isEffectiveTarget) {
+      change = { ...change, temp_hp_grant: 0 };
+    }
     // Fast detection already applied this HP delta — skip to prevent double-counting.
     if (change.hp_delta !== 0 && pendingHpDeltaRef.current !== 0) {
       change = { ...change, hp_delta: 0 };
@@ -1476,31 +1955,52 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     const hasChange =
       change.hp_delta !== 0 ||
+      change.temp_hp_grant > 0 ||
       (change.spell_slots_used > 0 && (shouldApplySlots || hadPendingCast)) ||
       (isActingChar && hadPendingCast) || // always clear stuck pending cast on the acting char
-      (isExplicitTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
-        change.items_lost.length > 0 || change.weapons_gained.length > 0 ||
-        change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
+      (isEffectiveTarget && (change.gold_delta !== 0 || change.items_gained.length > 0 ||
+        change.items_lost.length > 0 || change.weapons_gained.length > 0)) ||
+      (isExplicitTarget && (change.status_effects_gained.length > 0 || change.status_effects_lost.length > 0)) ||
       change.xp_award > 0;
     if (!hasChange) return;
 
     const charIb         = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
     const effectiveMaxHp = char.max_hp + charIb.hpMaxAdd;
-    const newHp          = Math.max(0, Math.min(effectiveMaxHp, char.hp + change.hp_delta));
-    const newGold    = isExplicitTarget ? Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta) : (char.inventory?.gold ?? 0);
-    const newItems   = isExplicitTarget ? [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained] : (char.inventory?.items ?? []);
-    const newWeapons = isExplicitTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
+
+    // Temp HP tracking (stored in class_resources.temp_hp — no DB migration needed)
+    const currentTempHp = char.class_resources?.temp_hp ?? 0;
+    let newTempHp = currentTempHp;
+    // Grant temp HP first (doesn't stack — take the higher value per D&D 5e rules)
+    if (change.temp_hp_grant > 0) {
+      newTempHp = Math.max(currentTempHp, change.temp_hp_grant);
+    }
+    // Damage hits temp HP before real HP
+    let adjustedHpDelta = change.hp_delta;
+    if (adjustedHpDelta < 0 && newTempHp > 0) {
+      const dmg       = Math.abs(adjustedHpDelta);
+      const absorbed  = Math.min(newTempHp, dmg);
+      newTempHp       = newTempHp - absorbed;
+      adjustedHpDelta = -(dmg - absorbed);
+    }
+
+    const newHp          = Math.max(0, Math.min(effectiveMaxHp, char.hp + adjustedHpDelta));
+    // Loot follows the same effective-target rule HP uses: "you find a potion" (no name) lands on
+    // the acting player; "Thorin finds a potion" lands on Thorin. Without this, items the DM awards
+    // to "you" silently disappear because target_name is null.
+    const newGold    = isEffectiveTarget ? Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta) : (char.inventory?.gold ?? 0);
+    const newItems   = isEffectiveTarget ? [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained] : (char.inventory?.items ?? []);
+    const newWeapons = isEffectiveTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
 
     // Status effects — unconscious tracks HP for any effective target; named conditions require explicit target.
     let newStatuses = [...(char.status_effects ?? [])];
     if (isEffectiveTarget) {
-      if (newHp === 0 && change.hp_delta < 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
+      if (newHp === 0 && adjustedHpDelta < 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
       if (isExplicitTarget) {
         change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
         newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
       }
-    } else if (change.hp_delta !== 0) {
+    } else if (adjustedHpDelta !== 0) {
       if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
     }
@@ -1541,16 +2041,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
 
     const parts: string[] = [];
-    if (change.hp_delta < 0) parts.push(`${Math.abs(change.hp_delta)} damage taken`);
-    if (change.hp_delta > 0) parts.push(`+${change.hp_delta} HP restored`);
-    if (isExplicitTarget && change.gold_delta > 0) parts.push(`+${change.gold_delta}gp`);
-    if (isExplicitTarget && change.gold_delta < 0) parts.push(`${change.gold_delta}gp`);
-    if (isExplicitTarget) change.items_gained.forEach(i => parts.push(`+${i}`));
-    if (isExplicitTarget) change.weapons_gained.forEach(w => parts.push(`+${w}`));
+    if (change.temp_hp_grant > 0 && newTempHp > currentTempHp) parts.push(`+${newTempHp - currentTempHp} THP`);
+    if (change.hp_delta < 0 && currentTempHp > 0 && newTempHp < currentTempHp) {
+      const absorbed = (currentTempHp + (change.temp_hp_grant > 0 ? Math.max(0, change.temp_hp_grant - currentTempHp) : 0)) - newTempHp;
+      if (absorbed > 0) parts.push(`${absorbed} THP absorbed`);
+    }
+    if (adjustedHpDelta < 0) parts.push(`${Math.abs(adjustedHpDelta)} damage taken`);
+    if (adjustedHpDelta > 0) parts.push(`+${adjustedHpDelta} HP restored`);
+    if (isEffectiveTarget && change.gold_delta > 0) parts.push(`+${change.gold_delta}gp`);
+    if (isEffectiveTarget && change.gold_delta < 0) parts.push(`${change.gold_delta}gp`);
+    if (isEffectiveTarget) change.items_gained.forEach(i => parts.push(`+${i}`));
+    if (isEffectiveTarget) change.weapons_gained.forEach(w => parts.push(`+${w}`));
     if (isExplicitTarget) change.status_effects_gained.forEach(s => parts.push(`⚡ ${s}`));
     if (isExplicitTarget) change.status_effects_lost.forEach(s => parts.push(`✓ ${s} cleared`));
     if (shouldApplySlots && change.spell_slots_used > 0 && !hadPendingCast) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
-    if (isExplicitTarget && newHp === 0 && change.hp_delta < 0) parts.push("💀 UNCONSCIOUS");
+    if (isExplicitTarget && newHp === 0 && adjustedHpDelta < 0) parts.push("💀 UNCONSCIOUS");
 
     // XP + level up
     let newXp    = char.xp ?? 0;
@@ -1572,18 +2077,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
     }
 
+    // Rebuild class_resources with updated temp HP
+    const classResChanged = newTempHp !== currentTempHp;
+    const newClassRes = { ...(char.class_resources ?? {}) };
+    if (newTempHp > 0) { newClassRes.temp_hp = newTempHp; } else { delete newClassRes.temp_hp; }
+
+    // Preserve any existing item_meta — and strip entries for items that were lost
+    const survivingItemNames = new Set<string>([...newItems, ...newWeapons]);
+    const carriedMeta = char.inventory?.item_meta ?? {};
+    const trimmedMeta: NonNullable<Character["inventory"]["item_meta"]> = {};
+    for (const [k, v] of Object.entries(carriedMeta)) {
+      if (survivingItemNames.has(k)) trimmedMeta[k] = v;
+    }
+
+    const newInventory: Character["inventory"] = {
+      ...(char.inventory ?? { gold: 0, items: [], weapons: [] }),
+      gold: newGold, items: newItems, weapons: newWeapons,
+    };
+    if (Object.keys(trimmedMeta).length > 0) newInventory.item_meta = trimmedMeta;
+    else delete newInventory.item_meta;
+
     const updatedChar: Character = {
       ...char, hp: newHp, level: newLevel, max_hp: newMaxHp, xp: newXp,
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
-      inventory: { gold: newGold, items: newItems, weapons: newWeapons },
+      class_resources: newClassRes,
+      inventory: newInventory,
     };
-    setCharacter(updatedChar);
+    // Only mutate `character` (the local user's identity) when the target IS the
+    // local user's current character. Otherwise we'd hijack the user's identity
+    // mid-flight (the same root-cause family as the click-to-Acting bug).
+    if (char.id === characterRef.current?.id) {
+      setCharacter(updatedChar);
+      characterRef.current = updatedChar;
+    }
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updatedChar : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updatedChar : c);
 
     const dbUpdate: Record<string, unknown> = {
       hp: newHp, inventory: updatedChar.inventory, xp: newXp,
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
     };
+    if (classResChanged) dbUpdate.class_resources = newClassRes;
     if (leveledUp) { dbUpdate.level = newLevel; dbUpdate.max_hp = newMaxHp; }
     await charWrite(char.id, dbUpdate);
 
@@ -1605,6 +2139,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         level:            newLevel,
         inventory:        updatedChar.inventory,
         spell_slots_used: newSlotsUsed,
+        class_resources:  newClassRes,
         status_effects:   newStatuses,
       },
     });
@@ -1613,7 +2148,219 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const notice = parts.join(" · ");
       setStateNotice(notice);
       setTimeout(() => setStateNotice(null), leveledUp || newHp === 0 ? 8000 : 4000);
-      setLogEntries(prev => [...prev, { id: `state-${Date.now()}`, timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
+      setLogEntries(prev => [...prev, { id: makeLogId("state"), timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
+    }
+
+    // Enrich DM-awarded loot that isn't in the static catalog so players see real
+    // tooltips and values for invented items. Only the recipient enriches —
+    // observers get the meta via the second character_sync broadcast below.
+    if (isEffectiveTarget) {
+      const newlyAwarded = [...change.items_gained, ...change.weapons_gained];
+      const needsMeta = newlyAwarded.filter(name => {
+        if (!name) return false;
+        if (getItemByName(name)) return false;
+        if (WEAPON_TIPS[name] || ITEM_TIPS[name]) return false;
+        if (updatedChar.inventory.item_meta?.[name]) return false;
+        return true;
+      });
+      if (needsMeta.length > 0) {
+        fetch("/api/item-details", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ items: needsMeta, context: narrativeContext ?? "" }),
+        })
+          .then(r => r.ok ? r.json() : { items: [] })
+          .then((data: { items?: Array<{ name: string; description: string; value_gp?: number; rarity?: string; type?: string }> }) => {
+            const list = Array.isArray(data.items) ? data.items : [];
+            if (list.length === 0) return;
+            // Look up the latest version of the recipient in the party — they
+            // may not be the local user's `character`, so we can't assume
+            // `characterRef.current` is the right place to read from.
+            const recipient = campaignPartyRef.current.find(c => c.id === char.id);
+            if (!recipient) return;
+            const validRarities = new Set(["common", "uncommon", "rare", "very_rare", "legendary"]);
+            const existingMeta = recipient.inventory.item_meta ?? {};
+            const mergedMeta: NonNullable<Character["inventory"]["item_meta"]> = { ...existingMeta };
+            for (const it of list) {
+              if (!it.name) continue;
+              const rarity = validRarities.has(it.rarity ?? "") ? (it.rarity as "common" | "uncommon" | "rare" | "very_rare" | "legendary") : "common";
+              mergedMeta[it.name] = {
+                description: typeof it.description === "string" ? it.description : "",
+                value_gp:    typeof it.value_gp === "number" && it.value_gp >= 0 ? it.value_gp : 0,
+                rarity,
+                type:        typeof it.type === "string" ? it.type : undefined,
+              };
+            }
+            const newInv = { ...recipient.inventory, item_meta: mergedMeta };
+            const enrichedChar = { ...recipient, inventory: newInv };
+            // Only update `character` if the recipient happens to be the local user's current char
+            if (characterRef.current?.id === recipient.id) {
+              setCharacter(enrichedChar);
+              characterRef.current = enrichedChar;
+            }
+            setCampaignParty(prev => prev.map(c => c.id === recipient.id ? { ...c, inventory: newInv } : c));
+            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === recipient.id ? { ...c, inventory: newInv } : c);
+            charWriteRef.current?.(recipient.id, { inventory: newInv });
+            channelRef.current?.send({
+              type: "broadcast", event: "character_sync",
+              payload: { charId: recipient.id, inventory: newInv },
+            });
+          })
+          .catch(err => console.warn("[item-details]", err));
+      }
+    }
+  }, [charWrite, charNameMatches]);
+
+  // ── Resume-loot reconciliation ────────────────────────────────────────────────
+  // On resume, the DM's most recent message is loaded from the DB but its state
+  // changes (items, gold, weapons, status effects) are NOT re-extracted — the
+  // assumption is that the original session already persisted those changes.
+  // When the original applyStateChange ran on the wrong character (the legacy
+  // identity-hijack bug), the DB never recorded the loot and the recipient was
+  // left empty-handed forever. This function re-runs chat-state on the last DM
+  // message and additively recovers anything missing.
+  //
+  // Idempotency rules:
+  //   • items_gained / weapons_gained — added only if NOT already present
+  //   • status_effects_gained        — added only if NOT already present
+  //   • status_effects_lost          — removed only if currently present
+  //   • gold_delta                   — applied only when items/weapons were
+  //                                    also missing (heuristic: if loot is
+  //                                    missing, gold probably is too)
+  //   • hp_delta, xp_award, spell_slots_used — SKIPPED (re-applying would
+  //                                    double-count damage / progression).
+  const reconcileResumeLoot = useCallback(async () => {
+    if (resumeLootReconciledRef.current) return;
+    resumeLootReconciledRef.current = true; // mark BEFORE awaiting so concurrent triggers no-op
+
+    const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
+    if (!lastDm || !lastDm.content?.trim()) return;
+
+    let change: StateChange;
+    try {
+      const res = await fetch("/api/chat-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ narrative: lastDm.content }),
+      });
+      change = await res.json() as StateChange;
+    } catch (err) {
+      console.warn("[resume reconcile] chat-state fetch failed:", err);
+      return;
+    }
+
+    // Resolve the recipient (same priority chain as applyStateChange).
+    let target: Character | undefined;
+    if (change.target_name) {
+      target = campaignPartyRef.current.find(c => charNameMatches(change.target_name!, c.name));
+    }
+    if (!target && prevActingCharIdRef.current) {
+      target = campaignPartyRef.current.find(c => c.id === prevActingCharIdRef.current);
+    }
+    if (!target) return; // nothing to reconcile against
+
+    const inv = target.inventory ?? { gold: 0, items: [], weapons: [] };
+    const itemsLower   = new Set((inv.items   ?? []).map(s => s.toLowerCase()));
+    const weaponsLower = new Set((inv.weapons ?? []).map(s => s.toLowerCase()));
+    const statusesLower = new Set((target.status_effects ?? []).map(s => s.toLowerCase()));
+
+    const missingItems   = change.items_gained.filter(i => !itemsLower.has(i.toLowerCase()));
+    const missingWeapons = change.weapons_gained.filter(w => !weaponsLower.has(w.toLowerCase()));
+    const missingStatuses = change.status_effects_gained.filter(s => !statusesLower.has(s.toLowerCase()));
+    const presentStatusesToLose = change.status_effects_lost.filter(s => statusesLower.has(s.toLowerCase()));
+
+    const lootWasMissing = missingItems.length > 0 || missingWeapons.length > 0;
+    const goldDelta      = lootWasMissing && change.gold_delta !== 0 ? change.gold_delta : 0;
+
+    if (missingItems.length === 0 && missingWeapons.length === 0 && missingStatuses.length === 0 && presentStatusesToLose.length === 0 && goldDelta === 0) {
+      return; // nothing missing — DB state is already correct
+    }
+
+    const newItems   = [...(inv.items   ?? []), ...missingItems];
+    const newWeapons = [...(inv.weapons ?? []), ...missingWeapons];
+    const newGold    = Math.max(0, (inv.gold ?? 0) + goldDelta);
+    const newStatuses = [
+      ...(target.status_effects ?? []).filter(s => !presentStatusesToLose.includes(s)),
+      ...missingStatuses,
+    ];
+
+    const newInventory: Character["inventory"] = {
+      ...inv,
+      gold: newGold,
+      items: newItems,
+      weapons: newWeapons,
+    };
+    const updated: Character = { ...target, inventory: newInventory, status_effects: newStatuses };
+
+    if (characterRef.current?.id === target.id) {
+      setCharacter(updated);
+      characterRef.current = updated;
+    }
+    setCampaignParty(prev => prev.map(c => c.id === target!.id ? updated : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === target!.id ? updated : c);
+    await charWrite(target.id, { inventory: newInventory, status_effects: newStatuses });
+    channelRef.current?.send({
+      type: "broadcast", event: "character_sync",
+      payload: { charId: target.id, inventory: newInventory, status_effects: newStatuses },
+    });
+
+    // Notify the user — they should see they finally got their loot
+    const parts: string[] = [];
+    missingItems.forEach(i => parts.push(`+${i}`));
+    missingWeapons.forEach(w => parts.push(`+${w}`));
+    if (goldDelta > 0) parts.push(`+${goldDelta}gp`);
+    missingStatuses.forEach(s => parts.push(`⚡ ${s}`));
+    if (parts.length > 0) {
+      const notice = `Recovered loot for ${target.name}: ${parts.join(" · ")}`;
+      setStateNotice(notice);
+      setTimeout(() => setStateNotice(null), 6000);
+      setLogEntries(prev => [...prev, { id: makeLogId("resume-loot"), timestamp: new Date(), role: "system", content: `🪙 ${notice}` }]);
+    }
+
+    // Enrich any DM-invented items so tooltips / values appear in the UI
+    const targetSnapshot = target;
+    const needsMeta = [...missingItems, ...missingWeapons].filter(name =>
+      !getItemByName(name) && !WEAPON_TIPS[name] && !ITEM_TIPS[name] && !newInventory.item_meta?.[name]
+    );
+    if (needsMeta.length > 0) {
+      fetch("/api/item-details", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ items: needsMeta, context: lastDm.content }),
+      })
+        .then(r => r.ok ? r.json() : { items: [] })
+        .then((data: { items?: Array<{ name: string; description: string; value_gp?: number; rarity?: string; type?: string }> }) => {
+          const list = Array.isArray(data.items) ? data.items : [];
+          if (list.length === 0) return;
+          const recipient = campaignPartyRef.current.find(c => c.id === targetSnapshot.id);
+          if (!recipient) return;
+          const validRarities = new Set(["common", "uncommon", "rare", "very_rare", "legendary"]);
+          const mergedMeta: NonNullable<Character["inventory"]["item_meta"]> = { ...(recipient.inventory.item_meta ?? {}) };
+          for (const it of list) {
+            if (!it.name) continue;
+            const rarity = validRarities.has(it.rarity ?? "") ? (it.rarity as "common" | "uncommon" | "rare" | "very_rare" | "legendary") : "common";
+            mergedMeta[it.name] = {
+              description: typeof it.description === "string" ? it.description : "",
+              value_gp:    typeof it.value_gp === "number" && it.value_gp >= 0 ? it.value_gp : 0,
+              rarity,
+              type:        typeof it.type === "string" ? it.type : undefined,
+            };
+          }
+          const enrichedInv = { ...recipient.inventory, item_meta: mergedMeta };
+          const enrichedChar = { ...recipient, inventory: enrichedInv };
+          if (characterRef.current?.id === recipient.id) {
+            setCharacter(enrichedChar);
+            characterRef.current = enrichedChar;
+          }
+          setCampaignParty(prev => prev.map(c => c.id === recipient.id ? { ...c, inventory: enrichedInv } : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === recipient.id ? { ...c, inventory: enrichedInv } : c);
+          charWriteRef.current?.(recipient.id, { inventory: enrichedInv });
+          channelRef.current?.send({
+            type: "broadcast", event: "character_sync",
+            payload: { charId: recipient.id, inventory: enrichedInv },
+          });
+        })
+        .catch(err => console.warn("[resume reconcile][item-details]", err));
     }
   }, [charWrite, charNameMatches]);
 
@@ -1626,12 +2373,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const entry = narSlotsRef.current[slot];
     if (entry === null || entry === undefined) return; // not ready yet — will retry when set
     narPlaySlotRef.current++;
-    if (entry === "SKIP") { playNextInQueue(); return; }
+    const playingSlot = slot; // remember which slot this clip belongs to for retry logic
+    if (entry === "SKIP") {
+      if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
+      playNextInQueue();
+      return;
+    }
 
     const el = narAudioRef.current;
     if (!el) { playNextInQueue(); return; }
 
     audioPlayingRef.current = true;
+    const slotText = narSlotTextsRef.current[playingSlot] ?? "";
+    console.log(`[narration] slot ${playingSlot} starting (${slotText.length} chars): "${slotText.slice(0, 60)}${slotText.length > 60 ? "…" : ""}"`);
 
     // Per-clip stuck-audio failsafe — cleared as soon as onended/onerror fire normally
     let stuckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1641,12 +2395,66 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       el.oncanplaythrough = null;
       el.onerror          = null;
       el.onended          = null;
+      el.onpause          = null;
+      el.onplay           = null;
       audioPlayingRef.current = false;
       if (narPlaySlotRef.current >= narSlotCounterRef.current) setNarrating(false);
       playNextInQueue();
     };
 
-    el.onended = cleanup;
+    // Two-axis truncation detection — speech runs at ~12-15 chars/sec, so a clip should
+    // be at least text.length / 25 seconds long (allowing fast voices). And once playing,
+    // currentTime should approach duration. Either failure mode regen's with fresh:true.
+    const tryRegen = (reason: string): boolean => {
+      const text = narSlotTextsRef.current[playingSlot];
+      const alreadyRetried = narSlotRetriedRef.current[playingSlot];
+      if (!text || alreadyRetried) return false;
+      console.warn(`[narration] ${reason} (slot ${playingSlot}) — regenerating`);
+      narSlotRetriedRef.current[playingSlot] = true;
+      narSlotsRef.current[playingSlot] = null;
+      narPlaySlotRef.current = playingSlot; // rewind to replay once fresh URL is ready
+      if (stuckTimer) { clearTimeout(stuckTimer); stuckTimer = null; }
+      el.oncanplaythrough = null;
+      el.onerror          = null;
+      el.onended          = null;
+      el.onplay           = null;
+      el.onpause          = null;
+      try { el.pause(); } catch { /* ignore */ }
+      audioPlayingRef.current = false;
+      fetchClipForSlotRef.current?.(playingSlot, text, true);
+      return true;
+    };
+
+    const onEndedCheck = () => {
+      const dur = el.duration;
+      const cur = el.currentTime;
+      console.log(`[narration] slot ${playingSlot} ended: ${cur.toFixed(2)}s / ${dur.toFixed(2)}s`);
+      // Failure mode A: file's reported duration is fine but playback ended very early
+      // (true mid-stream cutoff — rare but real).
+      if (dur > 1 && cur > 0 && cur < dur * 0.92) {
+        if (tryRegen(`mid-stream cutoff (${cur.toFixed(1)}s / ${dur.toFixed(1)}s)`)) return;
+      }
+      cleanup();
+    };
+
+    // Defensive resume — if SOMETHING pauses the audio mid-playback while we still expect
+    // it to be playing (currentTime well below duration and we haven't requested a pause),
+    // call play() again. This catches any external pause source (visibility changes, focus
+    // loss, react re-renders, third-party effects) that would otherwise leave narration
+    // permanently stuck mid-sentence.
+    el.onpause = () => {
+      // Only treat as unexpected if the clip hasn't reached its end and we still think we're playing
+      if (!audioPlayingRef.current) return;
+      const dur = el.duration;
+      const cur = el.currentTime;
+      if (!Number.isFinite(dur) || dur <= 0) return;
+      if (cur >= dur - 0.15) return; // natural end — onended will fire
+      console.warn(`[narration] unexpected pause at ${cur.toFixed(2)}s / ${dur.toFixed(2)}s (slot ${playingSlot}) — resuming`);
+      const p = el.play();
+      if (p instanceof Promise) p.catch(err => console.warn("[narration] resume failed:", err));
+    };
+
+    el.onended = onEndedCheck;
     el.onerror = cleanup;
     el.volume  = narMutedRef.current ? 0 : narVolumeRef.current;
     el.src = entry as string;
@@ -1655,12 +2463,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // after load() can silently fail on strict console browsers.
     el.oncanplaythrough = () => {
       el.oncanplaythrough = null;
-      // When the first sentence loads, compute how fast to type so text matches the voice pace
-      if (slot === 0 && narSlot0TextRef.current && el.duration > 0) {
-        const avgGroupSize = 1.3; // chars per RevealText interval tick
-        const groups = narSlot0TextRef.current.length / avgGroupSize;
-        const computed = Math.round((el.duration * 1000) / groups);
-        setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
+      // Failure mode B: file's internal duration is shorter than the text would require —
+      // ElevenLabs returned an MP3 that's "complete" but only covers part of the speech.
+      // 25 chars/sec is the upper bound of fast speech; anything shorter than text/25 is bad.
+      const text = narSlotTextsRef.current[playingSlot];
+      const dur  = el.duration;
+      if (text && dur > 0 && Number.isFinite(dur) && dur < text.length / 25) {
+        if (tryRegen(`duration too short for text (${dur.toFixed(1)}s for ${text.length} chars, need ≥${(text.length / 25).toFixed(1)}s)`)) return;
       }
       // If onended never fires (CDN stall, browser quirk), force-cleanup after duration + 8 s buffer
       const clipMs = el.duration > 0 ? Math.ceil(el.duration * 1000) + 8000 : 30000;
@@ -1672,25 +2481,50 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }, clipMs);
       setNarrating(true);
+      setNarHeartbeat(h => h + 1); // bump watchdog — fresh clip is playing
+      // Start text reveal the moment audio actually begins playing, not when it's merely buffered.
+      // This guarantees voice and text are in sync — no blinking cursor before narrator speaks.
+      if (slot === 0 && narSlot0TextRef.current) {
+        const dur = el.duration;
+        el.onplay = () => {
+          el.onplay = null;
+          if (dur > 0) {
+            const avgGroupSize = 1.3;
+            const groups = (narSlot0TextRef.current?.length ?? 0) / avgGroupSize;
+            const computed = Math.round((dur * 1000) / groups);
+            setNarRevealIntervalMs(Math.max(24, Math.min(160, computed)));
+          }
+        };
+      }
       const p = el.play();
       if (p instanceof Promise) p.catch(() => cleanup());
+
+      // While this clip plays, pre-warm the browser's HTTP cache for the next one.
+      // Stored in narWarmupRef (not a local variable) so the element is not GC'd
+      // before loading completes — ensuring canplaythrough fires near-instantly
+      // on the main element instead of waiting for a full network round-trip.
+      const nextSlot = narPlaySlotRef.current; // already incremented past current
+      const nextEntry = narSlotsRef.current[nextSlot];
+      if (nextEntry && nextEntry !== "SKIP" && typeof nextEntry === "string") {
+        if (!narWarmupRef.current) narWarmupRef.current = new Audio();
+        const warmup = narWarmupRef.current;
+        warmup.preload = "auto";
+        warmup.src = nextEntry;
+        warmup.load();
+      }
     };
     el.load();
   }, []);
 
-  const enqueueNarration = useCallback(async (text: string) => {
-    const myGen = narGenerationRef.current; // capture at enqueue time
-    const slot = narSlotCounterRef.current++;
-    if (slot === 0) narSlot0TextRef.current = text; // first sentence length drives the reveal rate
-    narSlotsRef.current[slot] = null; // reserve — not ready yet
+  // Internal fetch — shared by initial enqueue and truncation retries
+  const fetchClipForSlot = useCallback(async (slot: number, text: string, fresh: boolean) => {
+    const myGen = narGenerationRef.current;
     try {
       const res = await fetch("/api/narrate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ text, voice: selectedVoiceRef.current ?? "chronicler" }),
+        body:    JSON.stringify({ text, voice: selectedVoiceRef.current ?? "chronicler", ...(fresh && { fresh: true }) }),
       });
-      // If a new DM response started while this fetch was in flight, discard the result.
-      // Writing stale audio to the now-reset slot array causes the wrong clip to play.
       if (narGenerationRef.current !== myGen) return;
       if (!res.ok) {
         if (res.status === 402) {
@@ -1709,6 +2543,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
     if (narGenerationRef.current === myGen) playNextInQueue();
   }, [playNextInQueue]);
+
+  // Expose latest fetcher to playNextInQueue (used for truncation regen)
+  useEffect(() => { fetchClipForSlotRef.current = fetchClipForSlot; }, [fetchClipForSlot]);
+
+  const enqueueNarration = useCallback(async (text: string) => {
+    // Defensive scrub + split — every entry point into the queue (streaming, resume,
+    // party-event, cached replay) runs through here.
+    //   • stripTtsArtifacts removes leaked system tokens ([HP:Aria:-9], [1d8+3],
+    //     etc.) and markdown asterisks before they reach the TTS engine.
+    //   • pullNarrationChunks splits text > ~280 chars so a single mega-clip never
+    //     blows past the 45s watchdog.
+    const scrubbed = stripTtsArtifacts(text);
+    if (!scrubbed) return;
+    const { chunks } = pullNarrationChunks(scrubbed, true);
+    const toEnqueue = chunks.length > 0 ? chunks : (scrubbed.trim() ? [scrubbed] : []);
+    if (toEnqueue.length === 0) return;
+    const tasks: Promise<void>[] = [];
+    for (const chunkText of toEnqueue) {
+      const slot = narSlotCounterRef.current++;
+      if (slot === 0) narSlot0TextRef.current = chunkText;
+      narSlotsRef.current[slot] = null;
+      narSlotTextsRef.current[slot] = chunkText;
+      narSlotRetriedRef.current[slot] = false;
+      tasks.push(fetchClipForSlot(slot, chunkText, false));
+    }
+    await Promise.all(tasks);
+  }, [fetchClipForSlot]);
   // Keep the loading-screen effect's narration call up to date
   useEffect(() => { enqueueNarrationRef.current = enqueueNarration; }, [enqueueNarration]);
 
@@ -1720,7 +2581,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setPartyChangePending(false);
     setIsTyping(true); isTypingRef.current = true;
     setStreamingContent("");
-    narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+    narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narSlotTextsRef.current = []; narSlotRetriedRef.current = []; narPlaySlotRef.current = 0;
     audioPlayingRef.current = false;
     narSlot0TextRef.current = null;
     try {
@@ -1740,22 +2601,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         full += chunk; narBuf += chunk;
         if (full.length >= 15 || /[.!?…]/.test(full)) setStreamingContent(full);
         if (narrationEnabledRef.current) {
-          const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
-          if (m) {
-            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; } // stop at roll request
-            else { const s = stripSystemLeaks(m[1]); if (s) enqueueNarration(s); narBuf = narBuf.slice(m[0].length); }
+          const { chunks: sents, remaining } = pullNarrationChunks(narBuf, false);
+          let stopped = false;
+          for (const s of sents) {
+            if (/\broll\s+a\s+d\d+\b/i.test(s)) { narBuf = ""; stopped = true; break; }
+            const cleaned = stripSystemLeaks(s);
+            if (cleaned) enqueueNarration(cleaned);
           }
+          if (!stopped) narBuf = remaining;
         }
       }
-      if (narrationEnabledRef.current && narBuf.trim().length > 30) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      if (narrationEnabledRef.current && narBuf.trim().length > 8) {
+        const { chunks: tail } = pullNarrationChunks(narBuf, true);
+        for (const s of tail) {
+          const cleaned = stripSystemLeaks(s);
+          if (cleaned) enqueueNarration(cleaned);
+        }
+      }
       setMessages(prev => [...prev, { role: "dm", content: full }]);
-      setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
+      setLogEntries(prev => [...prev, { id: makeLogId("dm"), timestamp: new Date(), role: "dm", content: full }]);
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
         .then(({ error }) => { if (error) console.error("[party event]", error); });
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full, actingCharId: characterRef.current?.id ?? null } });
       const isPartyEventMyTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === characterRef.current?.id;
       if (isPartyEventMyTurn && characterRef.current) {
-        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: characterRef.current }) })
+        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(full, characterRef.current)) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
     } catch { /* best effort */ } finally {
@@ -1781,7 +2651,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const char = characterRef.current;
     if (!char) return;
     const hitDie     = CLASS_HIT_DIE[char.class] ?? 8;
-    const roll       = Math.ceil(Math.random() * hitDie);
+    const roll       = Math.floor(Math.random() * hitDie) + 1;
     const conMod     = Math.floor((char.constitution - 10) / 2);
     const gained     = Math.max(1, roll + conMod);
     const restIb     = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
@@ -1809,7 +2679,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const notice = `Short Rest: d${hitDie} rolled ${roll} + CON ${conMod >= 0 ? "+" : ""}${conMod} = +${gained} HP${isWarlock ? " · Pact slots restored" : ""}`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
-    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 ${notice}` }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("rest"), timestamp: new Date(), role: "system", content: `🌙 ${notice}` }]);
   }, [charWrite]);
 
   const handleLongRest = useCallback(async () => {
@@ -1830,7 +2700,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const notice = `Long Rest: HP fully restored (${longMaxHp}), spell slots & class abilities recovered, conditions cleared`;
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 6000);
-    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("rest"), timestamp: new Date(), role: "system", content: `☀️ Long Rest — ${char.name} is fully restored.` }]);
   }, [charWrite]);
 
   const handleUseClassAbility = useCallback(async (resourceKey: string, cost: number) => {
@@ -1844,24 +2714,42 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const currentUsed = (char.class_resources ?? {})[resourceKey] ?? 0;
     const available = Math.max(0, maxVal - currentUsed);
     if (available < cost && resDef.unit !== "passive") return;
+    // Play the synthesized class-ability cue (rage growl, ki gong, etc.). For
+    // wild_shape, the form isn't known yet — the form-specific bear/wolf/eagle
+    // voice fires later when the DM streams the [WILDSHAPE:Name:Form] tag.
+    playAbilitySound(resourceKey);
+    // Brief colored pulse on the active card portrait — color matches the
+    // resource's theme so each ability has a unique visual signature.
+    triggerAbilityFlash(char.id, resDef.color);
     const newUsed = currentUsed + cost;
     const newClassResources = { ...(char.class_resources ?? {}), [resourceKey]: newUsed };
-    const updated = { ...char, class_resources: newClassResources };
+    // Self-applied persistent buffs. Currently: Rage on/off — "Enter Rage"
+    // (cost > 0) adds the Raging status; "End Rage" (cost 0) removes it.
+    // The card glow + 🔥 badge come for free via getCardEffectGlow.
+    let newStatusEffects = char.status_effects ?? [];
+    if (resourceKey === "rage") {
+      if (cost > 0) {
+        if (!newStatusEffects.includes("Raging")) newStatusEffects = [...newStatusEffects, "Raging"];
+      } else {
+        newStatusEffects = newStatusEffects.filter(s => s !== "Raging");
+      }
+    }
+    const updated = { ...char, class_resources: newClassResources, status_effects: newStatusEffects };
     setCharacter(updated);
     characterRef.current = updated;
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
     campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updated : c);
-    await charWrite(char.id, { class_resources: newClassResources });
+    await charWrite(char.id, { class_resources: newClassResources, status_effects: newStatusEffects });
     channelRef.current?.send({
       type: "broadcast", event: "character_sync",
       payload: {
         charId: char.id, hp: char.hp, max_hp: char.max_hp,
         xp: char.xp, level: char.level,
         inventory: char.inventory, spell_slots_used: char.spell_slots_used ?? {},
-        class_resources: newClassResources, status_effects: char.status_effects ?? [],
+        class_resources: newClassResources, status_effects: newStatusEffects,
       },
     });
-  }, [charWrite]);
+  }, [charWrite, triggerAbilityFlash]);
 
   const handlePartyShortRest = useCallback(async () => {
     const party = campaignPartyRef.current;
@@ -1869,7 +2757,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
     const updates = party.map(char => {
       const hitDie    = CLASS_HIT_DIE[char.class] ?? 8;
-      const roll      = Math.ceil(Math.random() * hitDie);
+      const roll      = Math.floor(Math.random() * hitDie) + 1;
       const conMod    = Math.floor((char.constitution - 10) / 2);
       const gained    = Math.max(1, roll + conMod);
       const ib        = computeInventoryBonuses(char.inventory?.items ?? [], char.inventory?.weapons ?? []);
@@ -1878,32 +2766,38 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const isWarlock = char.class === "Warlock";
       const newSlots  = isWarlock ? {} : { ...(char.spell_slots_used ?? {}) };
       const newStatus = (char.status_effects ?? []).filter(s => !["Prone", "Frightened", "Stunned"].includes(s));
-      return { char, newHp, newSlots, newStatus, gained };
+      // Reset short-rest class resources (Monk ki, Barbarian rage, etc.)
+      const shortResetKeys = SHORT_REST_RESET_KEYS[char.class] ?? [];
+      const isBardL5Plus   = char.class === "Bard" && char.level >= 5;
+      const newClassRes    = { ...(char.class_resources ?? {}) };
+      for (const key of shortResetKeys) delete newClassRes[key];
+      if (isBardL5Plus) delete newClassRes["bardic_inspiration"];
+      return { char, newHp, newSlots, newStatus, newClassRes, gained };
     });
 
     await Promise.all(updates.map(u =>
-      charWrite(u.char.id, { hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus })
+      charWrite(u.char.id, { hp: u.newHp, spell_slots_used: u.newSlots, class_resources: u.newClassRes, status_effects: u.newStatus })
     ));
 
     setCampaignParty(prev => prev.map(c => {
       const u = updates.find(x => x.char.id === c.id);
-      return u ? { ...c, hp: u.newHp, spell_slots_used: u.newSlots, status_effects: u.newStatus } : c;
+      return u ? { ...c, hp: u.newHp, spell_slots_used: u.newSlots, class_resources: u.newClassRes, status_effects: u.newStatus } : c;
     }));
 
     const activeU = updates.find(u => u.char.id === characterRef.current?.id);
     if (activeU) {
-      const updated = { ...activeU.char, hp: activeU.newHp, spell_slots_used: activeU.newSlots, status_effects: activeU.newStatus };
+      const updated = { ...activeU.char, hp: activeU.newHp, spell_slots_used: activeU.newSlots, class_resources: activeU.newClassRes, status_effects: activeU.newStatus };
       setCharacter(updated); characterRef.current = updated;
     }
 
     updates.forEach(u => channelRef.current?.send({
       type: "broadcast", event: "character_sync",
-      payload: { charId: u.char.id, hp: u.newHp, max_hp: u.char.max_hp, xp: u.char.xp, level: u.char.level, inventory: u.char.inventory, spell_slots_used: u.newSlots, class_resources: u.char.class_resources ?? {}, status_effects: u.newStatus },
+      payload: { charId: u.char.id, hp: u.newHp, max_hp: u.char.max_hp, xp: u.char.xp, level: u.char.level, inventory: u.char.inventory, spell_slots_used: u.newSlots, class_resources: u.newClassRes, status_effects: u.newStatus },
     }));
     const summary = updates.map(u => `${u.char.name} +${u.gained} HP`).join(" · ");
     setStateNotice(`Party Short Rest: ${summary}`);
     setTimeout(() => setStateNotice(null), 6000);
-    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `🌙 Party Short Rest — ${summary}` }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("rest"), timestamp: new Date(), role: "system", content: `🌙 Party Short Rest — ${summary}` }]);
   }, [charWrite]);
 
   const handlePartyLongRest = useCallback(async () => {
@@ -1918,17 +2812,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
 
     await Promise.all(updates.map(u =>
-      charWrite(u.char.id, { hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus })
+      charWrite(u.char.id, { hp: u.maxHp, spell_slots_used: {}, class_resources: {}, status_effects: u.newStatus })
     ));
 
     setCampaignParty(prev => prev.map(c => {
       const u = updates.find(x => x.char.id === c.id);
-      return u ? { ...c, hp: u.maxHp, spell_slots_used: {}, status_effects: u.newStatus } : c;
+      return u ? { ...c, hp: u.maxHp, spell_slots_used: {}, class_resources: {}, status_effects: u.newStatus } : c;
     }));
 
     const activeU = updates.find(u => u.char.id === characterRef.current?.id);
     if (activeU) {
-      const updated = { ...activeU.char, hp: activeU.maxHp, spell_slots_used: {}, status_effects: activeU.newStatus };
+      const updated = { ...activeU.char, hp: activeU.maxHp, spell_slots_used: {}, class_resources: {}, status_effects: activeU.newStatus };
       setCharacter(updated); characterRef.current = updated;
     }
 
@@ -1939,7 +2833,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const names = updates.map(u => u.char.name).join(", ");
     setStateNotice("Party Long Rest: Full HP restored, all spell slots recovered");
     setTimeout(() => setStateNotice(null), 6000);
-    setLogEntries(prev => [...prev, { id: `rest-${Date.now()}`, timestamp: new Date(), role: "system", content: `☀️ Party Long Rest — ${names} fully restored.` }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("rest"), timestamp: new Date(), role: "system", content: `☀️ Party Long Rest — ${names} fully restored.` }]);
   }, [charWrite]);
 
   // ── Combat: enemy generation and state tracking ───────────────────────────────
@@ -2017,7 +2911,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[ROUND RECONCILIATION[^\]]*\]/gi, "")
       .replace(/\[ALL PLAYERS HAVE ACTED[^\]]*\]/gi, "")
       .replace(/\[CURRENT TURN[^\]]*\]/gi, "")
+      .replace(/\[RECAP\]\s*/gi, "")
       .replace(/\[HP:[^\]]+\]/gi, "")
+      .replace(/\[THP:[^\]]+\]/gi, "")
+      .replace(/\[NO-?TURN\]/gi, "")
+      .replace(/\[WILDSHAPE:[^\]]+\]/gi, "")
+      .replace(/\[RAGE:[^\]]+\]/gi, "")
+      .replace(/\[INSPIRED:[^\]]+\]/gi, "")
+      .replace(/\[MARK:[^\]]+\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -2025,8 +2926,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Strip attack-roll math lines — e.g. "11 + 3 [STR] + 2 [Prof] = 16 — hits AC 14!"
       // Identified by bracket-enclosed stat/modifier labels specific to these math displays
       .replace(/\b\d+[^.!?\n]*\[(?:STR|DEX|CON|INT|WIS|CHA|Prof|Spell ATK|\+\d[^\]]*)\][^.!?\n]*[.!?]?/gi, "")
-      // Strip "Roll a dN." game-mechanic instructions — these are not DM narration
-      .replace(/\bRoll\s+a\s+d\d+[^.!?]*[.!?]/gi, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }, []);
@@ -2061,8 +2960,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         new RegExp(`roll[s]?[^.!?]{0,80}\\bfor\\s+${esc}\\b`, "i"),
         // "Aria, you need to / must / have to / should roll"
         new RegExp(`\\b${esc}[,.]?\\s+(?:you|your)\\s+(?:need|must|have to|should)`, "i"),
-        // "Aria's turn / roll / check / save"
-        new RegExp(`\\b${esc}'s?\\s+(?:turn|roll|check|saving throw|save)`, "i"),
+        // "Aria's roll / check / save" — deliberately excludes "turn" ("Barnabus's turn" is not a roll request)
+        new RegExp(`\\b${esc}'s?\\s+(?:roll|check|saving throw|save)`, "i"),
         // "need Aria to roll" / "have Aria make" / "let's have Aria roll" / "ask Aria to make"
         new RegExp(`\\b(?:need|have|ask|want|let(?:'s)?)\\s+(?:\\w+\\s+){0,2}${esc}\\s+to\\s+(?:roll|make)`, "i"),
       ];
@@ -2100,19 +2999,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; _retryCount?: number }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     // Reset narration queue unless we want to continue from a prior DM response (e.g. reconciliation after allActed)
     if (!opts?.preserveNarration) {
-      // Bump generation and clear queued slots so in-flight TTS fetches for the old
-      // response are discarded. Do NOT pause the audio element — the currently playing
-      // clip must finish naturally so narration never cuts off mid-sentence.
-      // The clip's onended handler will see the empty new queue and clean up correctly.
-      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
-      narSlot0TextRef.current   = null;
+      // Stop any in-flight audio immediately so old narration never bleeds into new DM text.
+      if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
+      audioPlayingRef.current = false;
+      setNarrating(false);
+      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narSlotTextsRef.current = []; narSlotRetriedRef.current = []; narPlaySlotRef.current = 0;
+      narSlot0TextRef.current = null;
       setNarRevealText(null);
       setNarRevealIntervalMs(null);
     }
@@ -2232,6 +3131,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.skippedPlayerName && { skippedPlayerName: opts.skippedPlayerName }),
           ...(opts?.isGroupCheckResult && { isGroupCheckResult: true }),
           ...(opts?.isQuestion && { isQuestion: true }),
+          ...(opts?.isResumeRecap && { resumeRecap: true }),
           ...(turnOrderNames.length > 1 && !opts?.roundSummary?.length && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
         }),
@@ -2253,21 +3153,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         narBuf += chunk;
         // Only surface content once we have a meaningful fragment — prevents bare "PlayerName," flashes
         if (full.length >= 15 || /[.!?…]/.test(full)) setStreamingContent(full);
-        // Sentence-level streaming narration — suppressed during opening loading screen
+        // Sentence-level streaming narration — pulls EVERY complete sentence per chunk so
+        // a single big chunk doesn't dump the whole response into one mega-clip.
         if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
-          const m = narBuf.match(/^([\s\S]{40,}?[.!?…]["']?)\s+/);
-          if (m) {
+          const { chunks: sents, remaining } = pullNarrationChunks(narBuf, false);
+          for (const s of sents) {
             // Stop streaming narration at a roll request — post-roll text may be truncated
             // from the display, so we must not narrate it
-            if (/\broll\s+a\s+d\d+\b/i.test(m[1])) { narBuf = ""; narDone = true; }
-            else {
-              const narSentence = stripSystemLeaks(m[1]);
-              if (narSentence) {
-                enqueueNarration(narSentence);
-              }
-              narBuf = narBuf.slice(m[0].length);
-            }
+            if (/\broll\s+a\s+d\d+\b/i.test(s)) { narBuf = ""; narDone = true; break; }
+            const cleaned = stripSystemLeaks(s);
+            if (cleaned) enqueueNarration(cleaned);
           }
+          if (!narDone) narBuf = remaining;
         }
       }
       // Client-side safeguard: truncate anything the DM wrote after a roll request.
@@ -2291,18 +3188,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      // Enqueue any remaining narBuf — threshold is 8 chars (not 30) so short call-to-action
-      // sentences like "Your move!" or "What do you do?" are not silently dropped.
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) enqueueNarration(stripSystemLeaks(narBuf.trim()));
+      // Final flush — split anything remaining into sentence-sized chunks so we never
+      // dump a multi-paragraph response as one giant TTS clip (which the watchdog kills).
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) {
+        const { chunks: tail } = pullNarrationChunks(narBuf, true);
+        for (const s of tail) {
+          const cleaned = stripSystemLeaks(s);
+          if (cleaned) enqueueNarration(cleaned);
+        }
+      }
 
       // Guard: catch two classes of degenerate response:
       // 1. Raw fragment — no sentence-ending punctuation (e.g. "Shmang,")
       // 2. Strip-degenerate — passes the raw check but stripSystemLeaks reduces it to a bare
       //    fragment at display time (e.g. "Randiezel, roll a d20." → display shows "Randiezel,")
       const displayFull = stripSystemLeaks(full).trim();
-      const isDegenerate = !/[.!?…]/.test(full.trim())  // raw fragment
-        || !displayFull                                    // strips to empty (e.g. "Roll a d20.")
-        || (displayFull.length < 20 && !/[.!?…]/.test(displayFull)); // strips to short bare fragment
+      const isDegenerate =
+        !/[.!?…]/.test(full.trim()) ||
+        !displayFull ||
+        (displayFull.length < 20 && !/[.!?…]/.test(displayFull));
       if (isDegenerate) {
         const retryCount = (opts?._retryCount ?? 0) + 1;
         if (retryCount <= 3) {
@@ -2315,15 +3219,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         full = "";
       }
 
-      // Route through narration-synced reveal when voice is active; add directly to messages otherwise
       if (full) {
+        // Always add to messages so the chat history is complete regardless of narration mode
+        setMessages(prev => [...prev, { role: "dm", content: full }]);
         if (narrationEnabledRef.current && !campaignLoadingRef.current) {
           setNarRevealText(full);
           // narRevealIntervalMs will be set when slot-0 audio canplaythrough fires
-        } else {
-          setMessages(prev => [...prev, { role: "dm", content: full }]);
         }
-        setLogEntries(prev => [...prev, { id: `dm-${Date.now()}`, timestamp: new Date(), role: "dm", content: full }]);
+        setLogEntries(prev => [...prev, { id: makeLogId("dm"), timestamp: new Date(), role: "dm", content: full }]);
       }
       if (isOpeningScene && campaignLoadingRef.current) setLoadDmDone(true);
 
@@ -2349,8 +3252,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         targetChar = prevActingChar ?? currentTurnChar ?? characterRef.current;
       }
 
-      const validRollTarget  = targetChar?.name ?? rollTarget;
-      const targetUserId     = targetChar?.user_id ?? null;
+      // Only activate the dice UI when we know what die to roll — a named target without
+      // a detected die type means the DM is just addressing the player, not requesting a roll.
+      const validRollTarget  = detectedDieType !== null ? (targetChar?.name ?? rollTarget) : null;
+      const targetUserId     = detectedDieType !== null ? (targetChar?.user_id ?? null) : null;
       const detectedRollMode = (validRollTarget || detectedDieType) ? detectRollMode(full) : "normal";
       setDiceRollTarget(validRollTarget ?? null);
       setRequiredDiceType(detectedDieType);
@@ -2385,6 +3290,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const partyNames = campaignPartyRef.current.map(c => c.name);
         const dmTurnName = detectNextTurnPlayer(full, partyNames);
         const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
+
+        // Determine whether any valid party first name appears within the IMMEDIATE
+        // closing-question window (80 chars before the last "?"). This is the
+        // signal for "the DM is addressing a real party member at the end". If
+        // no valid name appears near the "?" but the response still ends with "?"
+        // the DM likely hallucinated a name (e.g. addressed someone not in the
+        // party) — in that case we trust the engine's pre-computed intent and
+        // let the deferred advance run instead of blocking it.
+        const tailFull   = full.slice(-400);
+        const lastQIdx   = tailFull.lastIndexOf("?");
+        const nearQWin   = lastQIdx >= 0 ? tailFull.slice(Math.max(0, lastQIdx - 80), lastQIdx + 1) : "";
+        const anyPartyNameNearQ = nearQWin && partyNames.some(n => {
+          const fn = n.split(" ")[0];
+          if (!fn || fn.length < 2) return false;
+          const esc = fn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return new RegExp(`\\b${esc}\\b`, "i").test(nearQWin);
+        });
+
         if (dmTurnChar) {
           const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
           if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
@@ -2393,26 +3316,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
             if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
             channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+          } else if (dmTurnIdx >= 0) {
+            // DM addressed the current player — it's a follow-up, block the deferred advance
+            dmFollowUpBlockAdvanceRef.current = true;
           }
-        } else if (opts?.prevPlayerName) {
-          // No explicit next-player found — check if the DM's closing question is directed at the
-          // previous player (follow-up: "Shmang, what element would you like?"). If so, rewind to them.
-          // This is a within-turn follow-up, not a repeated turn, so it is always allowed.
+        } else if (opts?.prevPlayerName && anyPartyNameNearQ) {
+          // No explicit detection match. Check if the DM's closing question is a
+          // follow-up to the previous player (e.g. "Shmang, which element?"). The
+          // prev player's name must appear IMMEDIATELY before the "?" — not
+          // somewhere earlier in the narrative — otherwise an unrelated mention
+          // of the prev player's name (e.g. "Shmang's father walked into the
+          // forest") would falsely trigger this branch.
           const prevChar = campaignPartyRef.current.find(c => c.name === opts.prevPlayerName);
           if (prevChar) {
             const prevIdx = turnOrderRef.current.indexOf(prevChar.id);
-            if (prevIdx >= 0 && prevIdx !== currentTurnIndexRef.current) {
-              const tail = full.slice(-350);
+            if (prevIdx >= 0 && lastQIdx >= 0) {
               const firstName = prevChar.name.split(" ")[0];
               const escPrev = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              // Last ? in the tail — check if the player's name and "you/your" both appear near it
-              const lastQIdx = tail.lastIndexOf("?");
-              if (lastQIdx >= 0) {
-                const nearQ = tail.slice(Math.max(0, lastQIdx - 220), lastQIdx + 1);
-                const isFollowUp = new RegExp(`\\b${escPrev}\\b`, "i").test(nearQ)
-                  && /\byou(?:r)?\b/i.test(nearQ);
-                if (isFollowUp) {
-                  // Don't erase the previous action — handleSend will replace it when they answer
+              // Tightened window: 80 chars before "?" only. Prevents earlier
+              // narrative mentions of the prev player from triggering a false follow-up.
+              const nameNearQ = new RegExp(`\\b${escPrev}\\b`, "i").test(nearQWin);
+              const isFollowUp = nameNearQ
+                && (/\byou(?:r)?\b/i.test(nearQWin)
+                  || /what (?:does|will|would|can|shall) /i.test(nearQWin)
+                  || /how (?:does|will|would|should) /i.test(nearQWin)
+                  || new RegExp(`(?:does|will|is|are|can|should|would|did|do)\\s+\\b${escPrev}\\b`, "i").test(nearQWin));
+              if (isFollowUp) {
+                dmFollowUpBlockAdvanceRef.current = true;
+                if (prevIdx !== currentTurnIndexRef.current) {
                   setCurrentTurnIndex(prevIdx);
                   currentTurnIndexRef.current = prevIdx;
                   channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
@@ -2421,6 +3352,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 }
               }
             }
+          }
+        }
+
+        // Safety net: block the deferred advance only when the DM's closing "?"
+        // addresses a REAL party member. If the response ends with "?" but no
+        // valid party name appears near it (e.g. DM hallucinated "Barnabus, what
+        // do you do?"), let the deferred advance run so the engine's intended
+        // nextPlayer becomes the active player — that prevents the highlight
+        // from getting stuck on the previous actor.
+        if (!dmFollowUpBlockAdvanceRef.current && full.trimEnd().endsWith("?") && anyPartyNameNearQ) {
+          dmFollowUpBlockAdvanceRef.current = true;
+        }
+      }
+
+      // [NO-TURN] tag — the DM signals that the player's submission was either:
+      //   (a) a failed/invalid action attempt (wrong class feature, no spell slot,
+      //       trying a non-prepared spell, out-of-resource, etc.), OR
+      //   (b) a clarification request ("which element?", "what form?") that needs
+      //       the player to respond before the action actually resolves.
+      // In BOTH cases the player's turn must NOT be consumed:
+      //   1. Block the deferred turn advance.
+      //   2. Remove the player's entry from roundActions so they still owe an action.
+      // Without (2), the reconciliation logic still thinks they acted this round.
+      if (/\[NO-?TURN\]/i.test(full) && opts?.prevPlayerName) {
+        dmFollowUpBlockAdvanceRef.current = true;
+        const prevChar = campaignPartyRef.current.find(c => c.name === opts.prevPlayerName);
+        if (prevChar) {
+          const trimmed = roundActionsRef.current.filter(a => a.characterId !== prevChar.id);
+          if (trimmed.length !== roundActionsRef.current.length) {
+            roundActionsRef.current = trimmed;
+            setRoundActions(trimmed);
           }
         }
       }
@@ -2507,6 +3469,160 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
+      // Fast TEMP-HP detection — when the DM writes a [THP:Name:+N] tag, apply
+      // the temp-HP grant to that party member immediately (don't wait for the
+      // async chat-state extraction). Runs against EVERY party member so
+      // healing/buffs aimed at another player (e.g. Aid, Heroism on an ally)
+      // also light up the recipient's card without delay.
+      if (!isOpeningScene) {
+        for (const partyMember of campaignPartyRef.current) {
+          const firstName = partyMember.name.split(" ")[0];
+          const thpGrant = parseThpTag(full, firstName);
+          if (thpGrant <= 0) continue;
+          const currentThp = partyMember.class_resources?.temp_hp ?? 0;
+          // D&D 5e: temp HP doesn't stack — take the larger of current vs new grant
+          if (thpGrant <= currentThp) continue;
+          const newRes = { ...(partyMember.class_resources ?? {}), temp_hp: thpGrant };
+          const updated = { ...partyMember, class_resources: newRes };
+          if (characterRef.current?.id === partyMember.id) {
+            setCharacter(updated);
+            characterRef.current = updated;
+          }
+          setCampaignParty(prev => prev.map(c => c.id === partyMember.id ? updated : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === partyMember.id ? updated : c);
+          charWriteRef.current?.(partyMember.id, { class_resources: newRes });
+          channelRef.current?.send({
+            type: "broadcast", event: "character_sync",
+            payload: { charId: partyMember.id, class_resources: newRes },
+          });
+        }
+      }
+
+      // Fast WILD SHAPE detection — when the DM writes a [WILDSHAPE:Name:Form] tag,
+      // mirror it onto the druid's status_effects ("Wild Shape: Bear") so the
+      // party card portrait morphs into the beast emoji, AND play the form-
+      // specific bear/wolf/eagle voice. A "[WILDSHAPE:Name:revert]" tag (or
+      // 'human' / 'natural') strips the status and reverts the portrait.
+      if (!isOpeningScene) {
+        for (const partyMember of campaignPartyRef.current) {
+          const firstName = partyMember.name.split(" ")[0];
+          const formOrRevert = parseWildShapeTag(full, firstName);
+          if (formOrRevert === null) continue;
+          const currentStatuses = partyMember.status_effects ?? [];
+          let newStatuses: string[];
+          if (formOrRevert === "revert") {
+            // Capture the form name from the status BEFORE we strip it, so we
+            // can replay the same form-specific sound on revert that fired on
+            // transform (e.g. bear-growl in, bear-growl out).
+            const wsStatus = currentStatuses.find(s => /^Wild Shape:/i.test(s));
+            const priorForm = wsStatus ? wsStatus.replace(/^Wild Shape:\s*/i, "").trim() : "";
+            newStatuses = currentStatuses.filter(s => !/^Wild Shape:/i.test(s));
+            if (newStatuses.length === currentStatuses.length) continue; // nothing to remove
+            playAbilitySound("wild_shape", priorForm || undefined);
+          } else {
+            const tagged = `Wild Shape: ${formOrRevert}`;
+            if (currentStatuses.some(s => s.toLowerCase() === tagged.toLowerCase())) continue;
+            newStatuses = [
+              ...currentStatuses.filter(s => !/^Wild Shape:/i.test(s)),
+              tagged,
+            ];
+            // Form-specific voice — passes the form so the bear/wolf/eagle
+            // voice can fire instead of the generic one.
+            playAbilitySound("wild_shape", formOrRevert);
+          }
+          const updated = { ...partyMember, status_effects: newStatuses };
+          if (characterRef.current?.id === partyMember.id) {
+            setCharacter(updated);
+            characterRef.current = updated;
+          }
+          setCampaignParty(prev => prev.map(c => c.id === partyMember.id ? updated : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === partyMember.id ? updated : c);
+          charWriteRef.current?.(partyMember.id, { status_effects: newStatuses });
+          channelRef.current?.send({
+            type: "broadcast", event: "character_sync",
+            payload: { charId: partyMember.id, status_effects: newStatuses },
+          });
+        }
+      }
+
+      // Fast persistent-buff detection — RAGE, INSPIRED, MARK. The DM emits
+      // these tags when a buff is granted or expires; we mirror them onto
+      // status_effects so the card glow + badge update in real-time across all
+      // clients without waiting for chat-state to round-trip.
+      if (!isOpeningScene) {
+        for (const partyMember of campaignPartyRef.current) {
+          const firstName = partyMember.name.split(" ")[0];
+          const currentStatuses = partyMember.status_effects ?? [];
+          let newStatuses = currentStatuses;
+          let changed = false;
+          // RAGE — the DM tracks when a barbarian's rage ends (no attack last
+          // round, knocked out, voluntary end). Engine handles the start (player
+          // click); the DM controls the off-switch via [RAGE:Name:off].
+          const rage = parseRageTag(full, firstName);
+          if (rage === "off") {
+            if (newStatuses.includes("Raging")) {
+              newStatuses = newStatuses.filter(s => s !== "Raging");
+              changed = true;
+            }
+          } else if (rage === "on") {
+            if (!newStatuses.includes("Raging")) {
+              newStatuses = [...newStatuses, "Raging"];
+              playAbilitySound("rage");
+              changed = true;
+            }
+          }
+          // INSPIRED — bard grants the die to an ally, or the ally uses/expires it.
+          const inspired = parseInspiredTag(full, firstName);
+          if (inspired) {
+            const inspiredEntry = newStatuses.find(s => /^Inspired/.test(s));
+            if ("off" in inspired) {
+              if (inspiredEntry) {
+                newStatuses = newStatuses.filter(s => !/^Inspired/.test(s));
+                changed = true;
+              }
+            } else {
+              const tagged = `Inspired (${inspired.die})`;
+              if (inspiredEntry !== tagged) {
+                newStatuses = [...newStatuses.filter(s => !/^Inspired/.test(s)), tagged];
+                playAbilitySound("bardic_inspiration");
+                changed = true;
+              }
+            }
+          }
+          // MARK — ranger applies Hunter's Mark to a target, or drops/moves it.
+          const mark = parseMarkTag(full, firstName);
+          if (mark) {
+            const markEntry = newStatuses.find(s => /^Hunter's Mark/i.test(s));
+            if ("off" in mark) {
+              if (markEntry) {
+                newStatuses = newStatuses.filter(s => !/^Hunter's Mark/i.test(s));
+                changed = true;
+              }
+            } else {
+              const tagged = mark.target ? `Hunter's Mark: ${mark.target}` : "Hunter's Mark";
+              if (markEntry !== tagged) {
+                newStatuses = [...newStatuses.filter(s => !/^Hunter's Mark/i.test(s)), tagged];
+                playAbilitySound("hunters_mark");
+                changed = true;
+              }
+            }
+          }
+          if (!changed) continue;
+          const updated = { ...partyMember, status_effects: newStatuses };
+          if (characterRef.current?.id === partyMember.id) {
+            setCharacter(updated);
+            characterRef.current = updated;
+          }
+          setCampaignParty(prev => prev.map(c => c.id === partyMember.id ? updated : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === partyMember.id ? updated : c);
+          charWriteRef.current?.(partyMember.id, { status_effects: newStatuses });
+          channelRef.current?.send({
+            type: "broadcast", event: "character_sync",
+            payload: { charId: partyMember.id, status_effects: newStatuses },
+          });
+        }
+      }
+
       // Fast HP detection — apply HP change to this character immediately before chat-state returns.
       if (!isOpeningScene && pendingHpDeltaRef.current === 0) {
         const actingChar = characterRef.current;
@@ -2515,15 +3631,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const hpDelta = parseHpTag(full, firstName);
           if (hpDelta !== 0) {
             const ib = computeInventoryBonuses(actingChar.inventory?.items ?? [], actingChar.inventory?.weapons ?? []);
-            const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp + hpDelta));
-            const fastChar = { ...actingChar, hp: newHp };
+            const fastTempHp0 = actingChar.class_resources?.temp_hp ?? 0;
+            let fastTempHp = fastTempHp0;
+            let fastDelta  = hpDelta;
+            if (hpDelta < 0 && fastTempHp > 0) {
+              const dmg = Math.abs(hpDelta); const absorbed = Math.min(fastTempHp, dmg);
+              fastTempHp = fastTempHp - absorbed; fastDelta = -(dmg - absorbed);
+            }
+            const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp + fastDelta));
+            const fastRes = fastTempHp !== fastTempHp0 ? { ...(actingChar.class_resources ?? {}), temp_hp: fastTempHp } : (actingChar.class_resources ?? {});
+            const fastChar = { ...actingChar, hp: newHp, class_resources: fastRes };
             setCharacter(fastChar);
-            setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c));
+            setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c));
             characterRef.current = fastChar;
-            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp } : c);
+            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c);
             pendingHpDeltaRef.current = hpDelta;
-            charWriteRef.current?.(actingChar.id, { hp: newHp });
-            channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp } });
+            charWriteRef.current?.(actingChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) });
+            channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) } });
           }
         }
       }
@@ -2532,7 +3656,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!isOpeningScene) {
         fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full }) })
           .then(r => r.json())
-          .then((change: StateChange) => applyStateChange(change))
+          .then((change: StateChange) => applyStateChange(change, full))
           .catch((err) => console.error("[chat-state] error", err));
       }
 
@@ -2545,12 +3669,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         || !nextTurnCharId
         || nextTurnChar?.user_id === userId;
       if (isLocalTurn && !opts?.allActed && nextTurnChar) {
-        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dmResponse: full, character: nextTurnChar }) })
+        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(full, nextTurnChar)) })
           .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
       }
 
       // Round management: reconcile when every party member has acted (count-based, not position-based)
-      if (opts?.trackRound && !rollTarget) {
+      if (opts?.trackRound && !validRollTarget) {
         const order = turnOrderRef.current;
         if (order.length > 1) {
           const partySize = campaignPartyRef.current.length;
@@ -2636,9 +3760,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     channelRef.current?.send({ type: "broadcast", event: "round_reset",  payload: {} });
     channelRef.current?.send({ type: "broadcast", event: "turn_taken",   payload: { userId, newIndex: 0 } });
     if (campaignPartyRef.current.length > 1) setActiveCharIdx(0);
-    // Strip pass entries from the DM summary — the DM should only see actual player actions.
-    // Passed players are absent from the resolution; enemies still target all present characters.
-    const dmSummary = summary.filter(a => a.action !== "passed their turn");
+    // Strip pass entries and empty actions from the DM summary — the DM should only see
+    // genuine player submissions. Letting an empty entry through gives the DM only a name with
+    // no action, which it then fabricates an action for (the "DM acts for a player" bug).
+    const dmSummary = summary.filter(a => a.action && a.action.trim().length > 0 && a.action !== "passed their turn");
     const lastActor = dmSummary[dmSummary.length - 1]?.name ?? summary[summary.length - 1]?.name ?? null;
     await sendToAI(msgs, false, { roundSummary: dmSummary, prevPlayerName: lastActor, preserveNarration: true });
   };
@@ -2719,7 +3844,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const playerMsg: Message = { role: "player", content: text, sender: character?.name ?? "You" };
     const updatedMessages    = [...messages, playerMsg];
     setMessages(updatedMessages);
-    setLogEntries(prev => [...prev, { id: `player-${Date.now()}`, timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("player"), timestamp: new Date(), role: "player", sender: playerMsg.sender, content: text }]);
     channelRef.current?.send({ type: "broadcast", event: "player_action", payload: { senderId: userId, content: text, characterName: character?.name, characterId: character?.id, isQuestion } });
 
     // Record this player's action for round tracking (not for roll submissions or questions)
@@ -2743,14 +3868,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
 
     let nextPlayerName: string | null = null;
+    // Always defer turn advancement until after the DM responds — the DM may direct the next roll
+    // to the same player (e.g. damage roll after a hit), so we must not advance prematurely.
+    let pendingTurnAdvanceIdx: number | null = null;
     if (isRollSubmit && !wasGroupCheckRoll && order.length > 1) {
-      // Roll submitted: DM resolves the roll, then advance to the next unacted player's turn.
+      // Roll submitted: defer advance just like regular actions. The DM routing determines the next
+      // player — if the same player needs a follow-up roll, the rewind + rollRequested guard will keep
+      // the turn on them; if the action is fully resolved, detectNextTurnPlayer advances to the next.
       const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
-      const nextCid = order[nextIdx];
-      nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
-      setCurrentTurnIndex(nextIdx);
-      currentTurnIndexRef.current = nextIdx;
-      channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === order[nextIdx])?.name ?? null;
+      pendingTurnAdvanceIdx = nextIdx;
     } else if (isRollSubmit && wasGroupCheckRoll && order.length > 1) {
       // Group check roll — keep the same player's turn; DM resolves the check and returns to them
       nextPlayerName = campaignPartyRef.current.find(c => c.id === order[currentTurnIndexRef.current])?.name ?? null;
@@ -2758,11 +3885,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
         const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
-        const nextCid = order[nextIdx];
-        nextPlayerName = campaignPartyRef.current.find(c => c.id === nextCid)?.name ?? null;
-        setCurrentTurnIndex(nextIdx);
-        currentTurnIndexRef.current = nextIdx;
-        channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: nextIdx } });
+        nextPlayerName = campaignPartyRef.current.find(c => c.id === order[nextIdx])?.name ?? null;
+        // Store for deferred application — sendToAI's DM routing may override this
+        pendingTurnAdvanceIdx = nextIdx;
       }
     }
 
@@ -2770,6 +3895,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       && roundActionsRef.current.length >= campaignPartyRef.current.length
       && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
+    // Capture current turn index before the DM responds so we can detect whether
+    // (The previous "round-complete short circuit" that fired reconciliation
+    // directly without a bridge has been removed. It bypassed sendToAI, which
+    // meant the [NO-TURN] tag — used when the DM rejects an invalid action
+    // attempt — could never fire on the last submission of a round. The
+    // BRIDGE RESPONSE ONLY prompt and the [NO-TURN] detection inside sendToAI
+    // together replace what the short-circuit was defending against: the
+    // bridge prompt forbids questions, and [NO-TURN] removes the player from
+    // roundActions if their action wasn't actually valid, which keeps
+    // pendingReconciliation from firing for an invalid last action.)
+
+    // sendToAI's DM-driven routing already moved the turn to the correct player.
+    const turnIdxBeforeDM = currentTurnIndexRef.current;
+    dmFollowUpBlockAdvanceRef.current = false; // reset before each DM call
     pendingReconciliationRef.current = null;
     await sendToAI(updatedMessages, false, {
       trackRound:     order.length > 1,
@@ -2781,7 +3920,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       ...(isQuestion && { isQuestion: true }),
     });
 
-    // If sendToAI detected all players have acted, trigger round reconciliation
+    // Apply the deferred turn advancement only if:
+    // 1. The DM's routing didn't already move the turn to a different player, AND
+    // 2. The DM didn't request a roll from the current player (e.g. damage roll after a hit), AND
+    // 3. The DM didn't ask the same player a follow-up question (e.g. "which element?")
+    const rollPendingAfterDM = rollRequestedUserIdRef.current !== null;
+    if (pendingTurnAdvanceIdx !== null
+        && currentTurnIndexRef.current === turnIdxBeforeDM
+        && !rollPendingAfterDM
+        && !dmFollowUpBlockAdvanceRef.current) {
+      setCurrentTurnIndex(pendingTurnAdvanceIdx);
+      currentTurnIndexRef.current = pendingTurnAdvanceIdx;
+      channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: pendingTurnAdvanceIdx } });
+      if (campaignPartyRef.current.length > 1) {
+        const advCharId = turnOrderRef.current[pendingTurnAdvanceIdx];
+        const advPartyIdx = campaignPartyRef.current.findIndex(c => c.id === advCharId);
+        if (advPartyIdx >= 0) setActiveCharIdx(advPartyIdx);
+      }
+    }
+
+    // If sendToAI detected all players have acted (edge case — allActedForDM was
+    // false at submission time but became true via in-flight broadcasts), trigger
+    // round reconciliation. With the short-circuit above this path is rare.
     const pending = pendingReconciliationRef.current as { messages: Message[]; summary: { name: string; action: string }[] } | null;
     if (pending) {
       pendingReconciliationRef.current = null;
@@ -2793,17 +3953,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const dropItem = useCallback(async (itemName: string, itemType: "item" | "weapon") => {
     const char = characterRef.current;
     if (!char) return;
+    const droppedMeta = char.inventory.item_meta?.[itemName];
     const dropped: DroppedItem = {
       id:            `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name:          itemName,
       type:          itemType,
       fromCharacter: char.name,
       fromUserId:    userIdRef.current!,
+      ...(droppedMeta && { meta: droppedMeta }),
     };
-    const newInv = {
+    const itemsLeft   = itemType === "item"   ? char.inventory.items.filter(i => i !== itemName)   : char.inventory.items;
+    const weaponsLeft = itemType === "weapon" ? char.inventory.weapons.filter(w => w !== itemName) : char.inventory.weapons;
+    const stillHasItem = itemsLeft.includes(itemName) || weaponsLeft.includes(itemName);
+    const newMeta: Character["inventory"]["item_meta"] = { ...(char.inventory.item_meta ?? {}) };
+    if (!stillHasItem) delete newMeta[itemName];
+    const newInv: Character["inventory"] = {
       ...char.inventory,
-      items:   itemType === "item"   ? char.inventory.items.filter(i => i !== itemName)   : char.inventory.items,
-      weapons: itemType === "weapon" ? char.inventory.weapons.filter(w => w !== itemName) : char.inventory.weapons,
+      items:   itemsLeft,
+      weapons: weaponsLeft,
+      ...(Object.keys(newMeta).length > 0 ? { item_meta: newMeta } : { item_meta: undefined }),
     };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
     await charWrite(char.id, { inventory: newInv });
@@ -2815,15 +3983,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const from = characterRef.current;
     const to   = campaignPartyRef.current.find(c => c.id === targetCharId);
     if (!from || !to || from.id === to.id) return;
-    const fromNewInv = {
+    // Transfer item_meta entry along with the item so tooltips survive the trade
+    const transferredMeta = from.inventory.item_meta?.[itemName];
+    const fromItemsLeft   = itemType === "item"   ? from.inventory.items.filter(i => i !== itemName)   : from.inventory.items;
+    const fromWeaponsLeft = itemType === "weapon" ? from.inventory.weapons.filter(w => w !== itemName) : from.inventory.weapons;
+    const stillHasItem    = fromItemsLeft.includes(itemName) || fromWeaponsLeft.includes(itemName);
+    const fromMeta: Character["inventory"]["item_meta"] = { ...(from.inventory.item_meta ?? {}) };
+    if (!stillHasItem) delete fromMeta[itemName];
+    const fromNewInv: Character["inventory"] = {
       ...from.inventory,
-      items:   itemType === "item"   ? from.inventory.items.filter(i => i !== itemName)   : from.inventory.items,
-      weapons: itemType === "weapon" ? from.inventory.weapons.filter(w => w !== itemName) : from.inventory.weapons,
+      items:   fromItemsLeft,
+      weapons: fromWeaponsLeft,
+      ...(Object.keys(fromMeta).length > 0 ? { item_meta: fromMeta } : { item_meta: undefined }),
     };
-    const toNewInv = {
+    const toMeta: Character["inventory"]["item_meta"] = { ...(to.inventory.item_meta ?? {}) };
+    if (transferredMeta) toMeta[itemName] = transferredMeta;
+    const toNewInv: Character["inventory"] = {
       ...to.inventory,
       items:   itemType === "item"   ? [...(to.inventory?.items   ?? []), itemName] : (to.inventory?.items   ?? []),
       weapons: itemType === "weapon" ? [...(to.inventory?.weapons ?? []), itemName] : (to.inventory?.weapons ?? []),
+      ...(Object.keys(toMeta).length > 0 && { item_meta: toMeta }),
     };
     setCharacter(prev => prev?.id === from.id ? { ...prev, inventory: fromNewInv } : prev);
     setCampaignParty(prev => prev.map(c =>
@@ -2845,10 +4024,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (!char) return;
     setDroppedItems(prev => prev.filter(i => i.id !== dropped.id));
     channelRef.current?.send({ type: "broadcast", event: "item_taken", payload: { id: dropped.id } });
-    const newInv = {
+    const mergedMeta: Character["inventory"]["item_meta"] = { ...(char.inventory.item_meta ?? {}) };
+    if (dropped.meta) mergedMeta[dropped.name] = dropped.meta;
+    const newInv: Character["inventory"] = {
       ...char.inventory,
       items:   dropped.type === "item"   ? [...char.inventory.items, dropped.name]   : char.inventory.items,
       weapons: dropped.type === "weapon" ? [...char.inventory.weapons, dropped.name] : char.inventory.weapons,
+      ...(Object.keys(mergedMeta).length > 0 && { item_meta: mergedMeta }),
     };
     setCharacter(prev => prev ? { ...prev, inventory: newInv } : null);
     await charWrite(char.id, { inventory: newInv });
@@ -2890,7 +4072,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const notice = parts.join(" · ");
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
-    setLogEntries(prev => [...prev, { id: `use-${Date.now()}`, timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
+    setLogEntries(prev => [...prev, { id: makeLogId("use"), timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
   }, [charWrite]);
 
   // ── Party management ─────────────────────────────────────────────────────────
@@ -2982,6 +4164,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narGenerationRef.current++;
     narSlotCounterRef.current = 0;
     narSlotsRef.current = [];
+    narSlotTextsRef.current = [];
+    narSlotRetriedRef.current = [];
     narPlaySlotRef.current = 0;
     setShowDice(false);
     setRequiredDiceType(null);
@@ -3004,12 +4188,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
   const isPartyLeader       = !!character && character.id === partyLeaderId;
-  // True when the character whose turn it is belongs to this user — in couch co-op all chars
-  // share the same user_id so this is always true; in pure multiplayer it restricts to your own turns.
-  const canPassTurn = (() => {
-    const turnChar = campaignParty.find(c => c.id === currentTurnPlayerId);
-    return !turnChar || turnChar.user_id === userId;
-  })();
   const isMyTurn            = rollRequestedUserId
     ? rollRequestedUserId === userId
     : (turnOrder.length <= 1 || currentTurnPlayerId === character?.id);
@@ -3266,6 +4444,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     if (el) { el.src = "/silence.wav"; el.load(); el.play().catch(() => {}); }
                   }
                   window.__dndMusicPlay?.();
+                  // Prime the Web Audio context and preload the wild-shape audio
+                  // clips so the first AI-triggered ability sound (which fires
+                  // mid-stream, outside any gesture) plays reliably.
+                  primeAbilitySounds();
+                  preloadWildShapeAudio();
 
                   const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
                   if (isNewCampaign) {
@@ -3335,9 +4518,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     }
 
                     setSessionStarted(true);
-                    if (resumeNarrationRef.current) {
+
+                    // Resume recap: generate a fresh AI recap so the party catches up to where
+                    // they left off. Skip if the latest DM message already starts with [RECAP]
+                    // (another client just generated one, or this is a page-reload after a recap).
+                    // The guard ref prevents re-triggering on the same page load.
+                    const lastDmIsRecap = !!resumeNarrationRef.current && /^\s*\[RECAP\]/i.test(resumeNarrationRef.current);
+                    if (!resumeRecapTriggeredRef.current && !lastDmIsRecap) {
+                      resumeRecapTriggeredRef.current = true;
+                      setTimeout(() => {
+                        if (isTypingRef.current) return;
+                        void sendToAI(messagesRef.current, false, { isResumeRecap: true });
+                      }, 400);
+                    } else if (resumeNarrationRef.current) {
                       enqueueNarration(resumeNarrationRef.current);
                     }
+                    // Recover any loot the original session failed to persist (e.g. legacy
+                    // applyStateChange identity-hijack bug). Idempotent — only adds items
+                    // the recipient is currently missing.
+                    void reconcileResumeLoot();
                   }
                 }}>
                 Begin Adventure
@@ -3449,7 +4648,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       // the dropdown click, so onended never fires), silently
                       // breaking all future narration.
                       if (narAudioRef.current) { narAudioRef.current.pause(); narAudioRef.current.src = ""; }
-                      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narPlaySlotRef.current = 0;
+                      narGenerationRef.current++; narSlotCounterRef.current = 0; narSlotsRef.current = []; narSlotTextsRef.current = []; narSlotRetriedRef.current = []; narPlaySlotRef.current = 0;
                       narSlot0TextRef.current = null;
                       audioPlayingRef.current = false;
                       setNarrating(false);
@@ -3604,9 +4803,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         )}
 
-        {/* Messages */}
-        <div ref={msgContainerRef} style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: "14px" }}>
-          {messages.map((msg, idx) => (
+        {/* Messages — the bottom padding scales up when the Suggested Actions panel is
+            present so the last narration line is never visually flush with (or covered by)
+            the suggestions. Reduced back to 8px when there's no suggestion panel below. */}
+        <div ref={msgContainerRef} style={{ flex: 1, overflowY: "auto", padding: `0 16px ${suggestions.length > 0 ? 64 : 8}px`, display: "flex", flexDirection: "column", gap: "14px" }}>
+          {(narRevealText && messages.length > 0 && messages[messages.length - 1].role === "dm"
+            ? messages.slice(0, -1)
+            : messages
+          ).map((msg, idx) => (
             <div key={idx} className="animate-fade-in" style={{ alignSelf: msg.role === "player" ? "flex-end" : "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: msg.role === "player" ? "flex-end" : "flex-start" }}>
               {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
               {msg.role === "dm"     && <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>}
@@ -3617,7 +4821,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 color:      msg.role === "system" ? "#94a3b8" : "white",
                 textAlign:  msg.role === "system" ? "center" : "left",
               }}>
-                {msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={Object.fromEntries(campaignParty.map(c => [c.name.split(" ")[0], CLASS_COLORS[c.class] ?? "#94a3b8"]))} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}
+                {msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={playerColorMap} knownItems={knownItemsForNarrative} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}
                 {msg.imageUrl && (
                   <img
                     src={msg.imageUrl}
@@ -3663,36 +4867,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
           )}
 
-          {/* Narration-synced reveal — text types at speech pace once audio duration is known */}
-          {narRevealText && (
+          {/* Narration-synced reveal — only shown once audio interval is known (narrator is speaking) */}
+          {narRevealText && narRevealIntervalMs !== null && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
-                {narRevealIntervalMs !== null
-                  ? <RevealText
-                      text={stripSystemLeaks(narRevealText)}
-                      intervalMs={narRevealIntervalMs}
-                      onComplete={() => {
-                        const content = narRevealText;
-                        setNarRevealText(null);
-                        setNarRevealIntervalMs(null);
-                        setMessages(prev => [...prev, { role: "dm", content }]);
-                      }}
-                    />
-                  : <span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />
-                }
+                <RevealText
+                  text={stripSystemLeaks(narRevealText)}
+                  intervalMs={narRevealIntervalMs}
+                  onComplete={() => {
+                    setNarRevealText(null);
+                    setNarRevealIntervalMs(null);
+                    // Message already committed to messages state in sendToAI — no re-add needed
+                  }}
+                />
               </div>
             </div>
           )}
 
-          {/* Streaming */}
-          {(isTyping || streamingContent) && !narRevealText && (
+          {/* Streaming / audio-loading placeholder — visible until narration reveal takes over */}
+          {(isTyping || streamingContent || (narRevealText && narRevealIntervalMs === null)) && narRevealIntervalMs === null && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
-                {streamingContent
+                {streamingContent && !narrationEnabled
                   ? <><StreamingText text={stripSystemLeaks(streamingContent)} /><span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
-                  : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
+                  : narRevealText
+                    ? <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>Narrator is speaking…</span>
+                    : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
                 }
               </div>
             </div>
@@ -3700,20 +4902,48 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggested actions — hidden while a dice roll is pending or active */}
+        {/* Suggested actions — hidden while a dice roll is pending or active.
+            The list collapses to a single header bar when the player wants
+            more narration-reading real estate. State persists across reloads. */}
         {suggestions.length > 0 && !dmBusy && isMyTurn && !showDice && !pendingDiceShow && (
-          <div style={{ padding: "10px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.04)" }}>
-            <p style={{ fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Suggested actions</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={() => handleSend(s)} disabled={narrating}
-                  style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: `${(chatFontSize * 0.91).toFixed(2)}rem`, border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
-                  onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; } }}
-                  onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; } }}>
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div style={{ padding: suggestionsCollapsed ? "6px 16px" : "10px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.04)", transition: "padding 0.18s ease" }}>
+            <button
+              onClick={toggleSuggestionsCollapsed}
+              title={suggestionsCollapsed ? "Show suggested actions" : "Hide suggested actions to read more narration"}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "none", border: "none", padding: "0", margin: suggestionsCollapsed ? "0" : "0 0 8px 0",
+                color: "#475569", cursor: "pointer", textAlign: "left",
+                fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`,
+                textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = "#94a3b8"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}
+            >
+              <span>
+                Suggested actions
+                {suggestionsCollapsed && (
+                  <span style={{ marginLeft: "8px", color: "#6d5a9c", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
+                    ({suggestions.length} hidden)
+                  </span>
+                )}
+              </span>
+              <span style={{ fontSize: `${(chatFontSize * 0.85).toFixed(2)}rem`, lineHeight: 1, transform: suggestionsCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block" }}>
+                ▾
+              </span>
+            </button>
+            {!suggestionsCollapsed && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {suggestions.map((s, i) => (
+                  <button key={i} onClick={() => handleSend(s)} disabled={narrating}
+                    style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: `${(chatFontSize * 0.91).toFixed(2)}rem`, border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
+                    onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; } }}
+                    onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; } }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -3842,12 +5072,81 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", pointerEvents: isTyping ? "none" : "auto", opacity: dmBusy ? 0.5 : 1, transition: "opacity 0.2s" }}>
 
         {/* ── Party tab ── */}
-        {sidebarTab === "party" && (
+        {sidebarTab === "party" && (() => {
+          // ── Rest gating per D&D 5e rules ─────────────────────────────────────
+          // Cannot rest during combat (enemies present and not yet defeated), while
+          // the DM is mid-response, or while a dice roll is pending. These are the
+          // legitimate "safe enough to recover" conditions.
+          const restInCombat   = combatActive && enemies.some(e => !e.is_defeated);
+          const restDmBusy     = isTyping || narrating;
+          const restRollPending = !!rollRequestedUserId;
+          const restDisabled   = restInCombat || restDmBusy || restRollPending;
+          const restDisabledReason = restInCombat   ? "Cannot rest during combat — defeat or flee the enemies first."
+                                   : restRollPending ? "Cannot rest while a dice roll is pending."
+                                   : restDmBusy      ? "Cannot rest while the DM is narrating."
+                                   : null;
+          const shortRestTip = restDisabledReason
+            ? { title: "Short Rest — Unavailable", body: restDisabledReason }
+            : MECHANIC_TIPS.SHORT_REST;
+          const longRestTip = restDisabledReason
+            ? { title: "Long Rest — Unavailable", body: restDisabledReason }
+            : MECHANIC_TIPS.LONG_REST;
+          return (
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
               <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Party ({campaignParty.length})
               </h3>
+            </div>
+
+            {/* Party-wide rest buttons — gated by D&D rules (no combat, no pending roll/narration) */}
+            <div style={{ display: "flex", gap: "7px", marginBottom: "14px", paddingBottom: "14px", borderBottom: "1px solid var(--border)" }}>
+              <button
+                onClick={restDisabled ? undefined : handlePartyShortRest}
+                disabled={restDisabled}
+                style={{
+                  flex: 1, padding: "8px", borderRadius: "7px", fontSize: "0.75rem", fontWeight: "bold",
+                  border: `1px solid ${restDisabled ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.4)"}`,
+                  background: restDisabled ? "rgba(245,158,11,0.04)" : "rgba(245,158,11,0.1)",
+                  color: restDisabled ? "rgba(245,158,11,0.45)" : "#f59e0b",
+                  cursor: restDisabled ? "not-allowed" : "pointer",
+                  opacity: restDisabled ? 0.65 : 1,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => {
+                  if (!restDisabled) e.currentTarget.style.background = "rgba(245,158,11,0.22)";
+                  showTooltip(tipBox(shortRestTip.title, shortRestTip.body, "#f59e0b"), e);
+                }}
+                onMouseLeave={e => {
+                  if (!restDisabled) e.currentTarget.style.background = "rgba(245,158,11,0.1)";
+                  hideTooltip();
+                }}
+              >
+                🌙 Short Rest
+              </button>
+              <button
+                onClick={restDisabled ? undefined : handlePartyLongRest}
+                disabled={restDisabled}
+                style={{
+                  flex: 1, padding: "8px", borderRadius: "7px", fontSize: "0.75rem", fontWeight: "bold",
+                  border: `1px solid ${restDisabled ? "rgba(99,102,241,0.18)" : "rgba(99,102,241,0.4)"}`,
+                  background: restDisabled ? "rgba(99,102,241,0.04)" : "rgba(99,102,241,0.1)",
+                  color: restDisabled ? "rgba(129,140,248,0.45)" : "#818cf8",
+                  cursor: restDisabled ? "not-allowed" : "pointer",
+                  opacity: restDisabled ? 0.65 : 1,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => {
+                  if (!restDisabled) e.currentTarget.style.background = "rgba(99,102,241,0.22)";
+                  showTooltip(tipBox(longRestTip.title, longRestTip.body, "#818cf8"), e);
+                }}
+                onMouseLeave={e => {
+                  if (!restDisabled) e.currentTarget.style.background = "rgba(99,102,241,0.1)";
+                  hideTooltip();
+                }}
+              >
+                ☀️ Long Rest
+              </button>
             </div>
 
             {/* Turn-skip banner */}
@@ -3860,25 +5159,38 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             {/* Player cards — campaign party (always visible) or presence fallback */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: droppedItems.length > 0 ? "20px" : 0 }}>
               {campaignParty.map((char, idx) => {
-                const isActive      = idx === activeCharIdx;
+                // `isActive` (which drives the "Acting" pill) follows the real turn order
+                // now — NOT the clicked-card index. Clicking a card only opens that
+                // character's sheet for viewing; it never makes them the active player.
                 const isDiceTarget  = diceRollTarget === char.name;
                 const isCurrentTurn = turnOrder.length > 1 && char.id === currentTurnPlayerId;
+                const isActive      = isCurrentTurn;
                 const cardInv      = char.inventory ?? { gold: 0, items: [], weapons: [] };
                 const cardIb       = computeInventoryBonuses(cardInv.items, cardInv.weapons);
                 const cardMaxHp    = char.max_hp + cardIb.hpMaxAdd;
+                const tempHp       = char.class_resources?.temp_hp ?? 0;
                 const pct          = Math.max(0, Math.min(100, (char.hp / Math.max(1, cardMaxHp)) * 100));
                 const color        = pct > 60 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
                 const classEmoji   = CLASS_EMOJI[char.class] ?? "⚔️";
+                // While Wild Shaped, the status_effects array carries an entry
+                // like "Wild Shape: Bear" — the form emoji becomes the portrait
+                // and overrides the class glyph (and the photo portrait too).
+                const wildShapeStatus = (char.status_effects ?? []).find(s => /^Wild Shape:/i.test(s));
+                const wildShapeFormName = wildShapeStatus ? wildShapeStatus.replace(/^Wild Shape:\s*/i, "").trim() : null;
+                const wildShapeResolved = wildShapeFormName ? resolveWildShapeForm(wildShapeFormName) : null;
+                const wildShapeEmoji    = wildShapeResolved?.form.emoji ?? (wildShapeFormName ? FALLBACK_BEAST_EMOJI : null);
                 const dominantEff  = getDominantEffect(char.status_effects ?? []);
                 const effectGlow   = getCardEffectGlow(char.status_effects ?? []);
-                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.9)" : dominantEff ? dominantEff.badgeColor : "var(--border)";
-                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.3)";
+                const classHex     = CLASS_COLORS[char.class] ?? "#8b5cf6";
+                const classRgb     = hexToRgb(classHex);
+                const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? `rgba(${classRgb},0.9)` : dominantEff ? dominantEff.badgeColor : "var(--border)";
+                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? `rgba(${classRgb},0.16)` : "rgba(0,0,0,0.3)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
                 return (
                   <div key={char.id}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); if (char.id !== character?.id) setSidebarTab("sheet"); } }}
-                    style={{ position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" }}>
+                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span
@@ -3890,11 +5202,41 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div
                           onClick={char.portrait_url ? e => { e.stopPropagation(); setPortraitModal({ name: char.name, cls: char.class, url: char.portrait_url!, subtitle: `${char.race} ${char.class} · Level ${char.level}` }); } : undefined}
-                          style={{ width: fs(3.2), height: fs(3.2), borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? "rgba(139,92,246,0.7)" : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none", cursor: char.portrait_url ? "zoom-in" : "default" }}>
-                          {char.portrait_url ? (
+                          style={{ position: "relative", width: fs(3.2), height: fs(3.2), borderRadius: "50%", overflow: "hidden", border: `2px solid ${isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? `rgba(${classRgb},0.7)` : "var(--border)"}`, background: "rgba(0,0,0,0.4)", animation: isDiceTarget ? "diceTargetGlow 1.2s ease-in-out infinite" : "none", cursor: char.portrait_url ? "zoom-in" : "default" }}>
+                          {wildShapeEmoji ? (
+                            wildShapeResolved ? (
+                              <img
+                                src={wildShapeImagePath(wildShapeResolved.key)}
+                                alt={`Wild Shape: ${wildShapeFormName}`}
+                                title={`Wild Shaped: ${wildShapeFormName}`}
+                                onError={e => {
+                                  // Image not pre-generated — fall back to the beast emoji
+                                  const img = e.currentTarget;
+                                  img.style.display = "none";
+                                  const fb = img.nextElementSibling as HTMLElement | null;
+                                  if (fb) fb.style.display = "flex";
+                                }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }}
+                              />
+                            ) : null
+                          ) : char.portrait_url ? (
                             <img src={char.portrait_url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                           ) : (
                             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(1.1) }}>{classEmoji}</div>
+                          )}
+                          {wildShapeEmoji && (
+                            <div
+                              style={{ display: wildShapeResolved ? "none" : "flex", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: fs(1.55), background: "rgba(34,197,94,0.18)" }}
+                              title={`Wild Shaped: ${wildShapeFormName}`}
+                            >
+                              {wildShapeEmoji}
+                            </div>
+                          )}
+                          {abilityFlash && abilityFlash.charId === char.id && (
+                            <div
+                              key={abilityFlash.key}
+                              style={{ position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none", background: `radial-gradient(circle, ${abilityFlash.color}cc 0%, ${abilityFlash.color}55 45%, transparent 75%)`, animation: "abilityFlash 1.1s ease-out forwards", mixBlendMode: "screen" }}
+                            />
                           )}
                         </div>
                       </div>
@@ -3919,8 +5261,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       </div>
                     </div>
-                    <div style={{ width: "100%", height: "6px", background: "#3f3f46", borderRadius: "3px", overflow: "hidden", marginBottom: "7px" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
+                    <div style={{ marginBottom: tempHp > 0 ? "3px" : "7px" }}>
+                      <div style={{ width: "100%", height: "6px", background: "#3f3f46", borderRadius: "3px", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease" }} />
+                      </div>
+                      {tempHp > 0 && (
+                        <div style={{ width: "100%", height: "3px", background: "#3f3f46", borderRadius: "2px", overflow: "hidden", marginTop: "2px" }}>
+                          <div style={{ width: `${Math.min(100, (tempHp / Math.max(1, cardMaxHp)) * 100)}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#fbbf24)", boxShadow: "0 0 5px rgba(251,191,36,0.6)", transition: "width 0.4s ease" }} />
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -3931,6 +5280,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         >
                           {Math.min(char.hp, cardMaxHp)}/{cardMaxHp} HP{cardIb.hpMaxAdd > 0 ? " ✦" : ""}
                         </span>
+                        {tempHp > 0 && (
+                          <span style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: 700, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "4px", padding: "0 4px", cursor: "help" }}
+                            onMouseEnter={e => showTooltip(tipBox("Temporary Hit Points", `+${tempHp} temporary HP — absorbs incoming damage before your real HP. Does not stack; the higher value is always kept. Clears on long rest.`, "#f59e0b"), e)}
+                            onMouseLeave={hideTooltip}
+                          >+{tempHp} THP</span>
+                        )}
                         <span style={{ fontSize: fs(0.65), color: "#f59e0b", fontWeight: 600, cursor: "help" }}
                           onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.GOLD.title, MECHANIC_TIPS.GOLD.body, "#f59e0b"), e)}
                           onMouseLeave={hideTooltip}
@@ -3944,14 +5299,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
-                        )}
-                        {isMyTurn && char.id === character?.id && campaignParty.length > 1 && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setPassTurnOpen(v => !v); }}
-                            style={{ background: passTurnOpen ? "rgba(139,92,246,0.28)" : "rgba(139,92,246,0.12)", border: `1px solid ${passTurnOpen ? "rgba(139,92,246,0.7)" : "rgba(139,92,246,0.35)"}`, color: "#a78bfa", cursor: "pointer", fontSize: fs(0.62), padding: "2px 8px", borderRadius: "4px", lineHeight: 1.4, fontWeight: 600, transition: "all 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.28)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.7)"; showTooltip(tipBox(MECHANIC_TIPS.PASS_TURN.title, MECHANIC_TIPS.PASS_TURN.body), e); }}
-                            onMouseLeave={e => { e.currentTarget.style.background = passTurnOpen ? "rgba(139,92,246,0.28)" : "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = passTurnOpen ? "rgba(139,92,246,0.7)" : "rgba(139,92,246,0.35)"; hideTooltip(); }}
-                          >{passTurnOpen ? "↑ Cancel" : "Pass Turn"}</button>
                         )}
                       </div>
                     </div>
@@ -4046,26 +5393,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       );
                     })()}
-                    {/* Pass-turn submenu — only on the active player's own card */}
-                    {isMyTurn && char.id === character?.id && passTurnOpen && campaignParty.length > 1 && (
-                      <div onClick={e => e.stopPropagation()} style={{ marginTop: "8px", padding: "7px 8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.28)", borderRadius: "8px" }}>
-                        <div style={{ fontSize: fs(0.6), color: "#64748b", marginBottom: "5px", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 700 }}>Pass turn to…</div>
-                        {campaignParty.filter(c => c.id !== character?.id).map(targetChar => {
-                          const targetIdx = campaignParty.findIndex(c => c.id === targetChar.id);
-                          return (
-                            <button key={targetChar.id}
-                              onClick={e => { e.stopPropagation(); setPassTurnOpen(false); handleTurnSkip(targetChar, targetIdx); }}
-                              style={{ display: "flex", alignItems: "center", gap: "7px", width: "100%", padding: "5px 7px", borderRadius: "6px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", transition: "background 0.12s" }}
-                              onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.2)"; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                            >
-                              <span style={{ fontSize: fs(0.75), color: CLASS_COLORS[targetChar.class] ?? "white", fontWeight: 700 }}>{targetChar.name}</span>
-                              <span style={{ fontSize: fs(0.65), color: "#64748b" }}>{targetChar.race} {targetChar.class}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(raw => {
@@ -4082,10 +5409,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           const durationLine = duration ? `Duration: ${duration}` : `Duration: ${eff.defaultDuration}`;
                           return (
                             <div key={raw}
-                              style={{ width: fs(1.7), height: fs(1.7), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.0), flexShrink: 0 }}
+                              style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: fs(1.7), height: eff.bonusLabel ? "auto" : fs(1.7), padding: eff.bonusLabel ? "2px 5px" : "0", gap: "1px", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.0), flexShrink: 0 }}
                               onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\n${durationLine}`, eff.badgeColor), e)}
                               onMouseLeave={hideTooltip}
-                            >{eff.icon}</div>
+                            >
+                              {eff.icon}
+                              {eff.bonusLabel && <span style={{ fontSize: fs(0.52), color: eff.badgeColor, fontWeight: 700, lineHeight: 1 }}>{eff.bonusLabel}</span>}
+                            </div>
                           );
                         })}
                       </div>
@@ -4152,24 +5482,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 </div>
               )}
 
-              {/* Party-wide rests — always visible to party leader */}
-              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
-                <p style={{ fontSize: fs(0.68), color: "#64748b", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Party Rest</p>
-                <div style={{ display: "flex", gap: "7px" }}>
-                  <button onClick={handlePartyShortRest}
-                    style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.08)", color: "#f59e0b", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.SHORT_REST.title, MECHANIC_TIPS.SHORT_REST.body, "#f59e0b"), e); }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; hideTooltip(); }}>
-                    🌙 Short Rest
-                  </button>
-                  <button onClick={handlePartyLongRest}
-                    style={{ flex: 1, padding: "7px", borderRadius: "7px", fontSize: "0.73rem", fontWeight: "bold", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: "#818cf8", cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; showTooltip(tipBox(MECHANIC_TIPS.LONG_REST.title, MECHANIC_TIPS.LONG_REST.body, "#818cf8"), e); }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; hideTooltip(); }}>
-                    ☀️ Long Rest
-                  </button>
-                </div>
-              </div>
             </div>
             )}
 
@@ -4219,7 +5531,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Character Sheet tab ── */}
         {sidebarTab === "sheet" && (
@@ -4384,11 +5697,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     onMouseEnter={e => { if (character.portrait_url) { (e.currentTarget as HTMLDivElement).style.borderColor = `${CLASS_COLORS[character.class] ?? "#8b5cf6"}99`; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 20px ${CLASS_COLORS[character.class] ?? "#8b5cf6"}33`; } }}
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${CLASS_COLORS[character.class] ?? "var(--border)"}40`; (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
                   >
-                    {character.portrait_url ? (
-                      <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
-                    ) : (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>🧙</div>
-                    )}
+                    {(() => {
+                      const wsStatus = (character.status_effects ?? []).find(s => /^Wild Shape:/i.test(s));
+                      const wsFormName = wsStatus ? wsStatus.replace(/^Wild Shape:\s*/i, "").trim() : null;
+                      const wsResolved = wsFormName ? resolveWildShapeForm(wsFormName) : null;
+                      const wsEmoji    = wsResolved?.form.emoji ?? (wsFormName ? FALLBACK_BEAST_EMOJI : null);
+                      if (wsResolved) {
+                        return (
+                          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                            <img
+                              src={wildShapeImagePath(wsResolved.key)}
+                              alt={`Wild Shape: ${wsFormName}`}
+                              title={`Wild Shaped: ${wsFormName}`}
+                              onError={e => { const img = e.currentTarget; img.style.display = "none"; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                            <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: fs(5), background: "rgba(34,197,94,0.2)" }} title={`Wild Shaped: ${wsFormName}`}>
+                              {wsResolved.form.emoji}
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (wsEmoji) {
+                        return (
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(5), background: "rgba(34,197,94,0.2)" }} title={`Wild Shaped: ${wsFormName}`}>
+                            {wsEmoji}
+                          </div>
+                        );
+                      }
+                      return character.portrait_url ? (
+                        <img src={character.portrait_url} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: fs(4) }}>🧙</div>
+                      );
+                    })()}
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: CLASS_COLORS[character.class] ?? "white" }}>{character.name}</div>
@@ -4789,15 +6131,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     ...(character.inventory?.items   ?? []).map(i => ({ name: i, slot: "item"   as const })),
                   ].map(({ name, slot }, idx) => {
                     const catalogItem: LootItem | undefined = getItemByName(name);
-                    const rarityColor = catalogItem ? RARITY_COLORS[catalogItem.rarity] : "#475569";
-                    const icon        = catalogItem ? ITEM_ICONS[catalogItem.type] : (slot === "weapon" ? "⚔" : "🎒");
+                    const dmMeta      = character.inventory?.item_meta?.[name];
+                    const metaRarity  = dmMeta?.rarity ?? "common";
+                    const rarityColor = catalogItem
+                      ? RARITY_COLORS[catalogItem.rarity]
+                      : dmMeta ? RARITY_COLORS[metaRarity] : "#475569";
+                    const dmIconKey   = dmMeta?.type as keyof typeof ITEM_ICONS | undefined;
+                    const icon        = catalogItem
+                      ? ITEM_ICONS[catalogItem.type]
+                      : dmIconKey && ITEM_ICONS[dmIconKey]
+                        ? ITEM_ICONS[dmIconKey]
+                        : (slot === "weapon" ? "⚔" : "🎒");
                     const isHovered   = hoveredItem === `${slot}-${idx}`;
                     const itemKey     = `${slot}-${idx}`;
                     return (
                       <div key={itemKey} style={{ marginBottom: "4px" }}>
                         <div style={{ position: "relative" }}>
                           <div
-                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: tradingItem?.name === name && tradingItem?.slot === slot ? "6px 6px 0 0" : "6px", fontSize: fs(0.82), border: `1px solid ${tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.45)" : catalogItem ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(0,0,0,0.2)", borderRadius: tradingItem?.name === name && tradingItem?.slot === slot ? "6px 6px 0 0" : "6px", fontSize: fs(0.82), border: `1px solid ${tradingItem?.name === name && tradingItem?.slot === slot ? "rgba(139,92,246,0.45)" : (catalogItem || dmMeta) ? rarityColor + "44" : "transparent"}`, cursor: "default", transition: "border-color 0.15s" }}
                             onMouseEnter={e => {
                               setHoveredItem(itemKey);
                               if (catalogItem) {
@@ -4806,6 +6157,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     <div style={{ color: "#94a3b8", marginBottom: catalogItem.effects.some(fx => fx.description) ? "5px" : 0 }}>{catalogItem.description}</div>
                                     {catalogItem.effects.map((fx, fi) => fx.description && <div key={fi} style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", borderRadius: "4px", marginBottom: "2px", color: fx.description.startsWith("⚠️") ? "#ef4444" : "#c4b5fd", fontSize: "0.9em" }}>{fx.description}</div>)}
                                     {catalogItem.requiresAttunement && <div style={{ color: "#64748b", fontSize: "0.85em", marginTop: "4px" }}>Requires Attunement</div>}
+                                  </>, rarityColor), e);
+                              } else if (dmMeta) {
+                                showTooltip(tipBoxNode(name, <>
+                                    <div style={{ color: rarityColor, fontSize: "0.85em", fontWeight: "bold", marginBottom: "4px" }}>{RARITY_LABELS[metaRarity]}</div>
+                                    <div style={{ color: "#94a3b8", marginBottom: (dmMeta.value_gp ?? 0) > 0 ? "5px" : 0 }}>{dmMeta.description || "An item awarded by the Dungeon Master."}</div>
+                                    {(dmMeta.value_gp ?? 0) > 0 && (
+                                      <div style={{ padding: "2px 6px", background: "rgba(251,191,36,0.08)", borderRadius: "4px", color: "#fbbf24", fontSize: "0.85em", fontWeight: "bold" }}>≈ {dmMeta.value_gp} gp</div>
+                                    )}
                                   </>, rarityColor), e);
                               } else {
                                 const fallback = WEAPON_TIPS[name] ?? ITEM_TIPS[name];
@@ -4817,10 +6176,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
                               <span style={{ flexShrink: 0 }}>{icon}</span>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: catalogItem ? rarityColor : "#e2e8f0" }}>{name}</div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: (catalogItem || dmMeta) ? rarityColor : "#e2e8f0" }}>{name}</div>
                                 {catalogItem && (
                                   <div style={{ fontSize: fs(0.58), color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
                                     {RARITY_LABELS[catalogItem.rarity]}{catalogItem.requiresAttunement ? " · Attunement" : ""}{catalogItem.cursed ? " ⚠️" : ""}
+                                  </div>
+                                )}
+                                {!catalogItem && dmMeta && (
+                                  <div style={{ fontSize: fs(0.58), color: rarityColor, fontWeight: "bold", letterSpacing: "0.04em" }}>
+                                    {RARITY_LABELS[metaRarity]}{(dmMeta.value_gp ?? 0) > 0 ? ` · ${dmMeta.value_gp} gp` : ""}
                                   </div>
                                 )}
                               </div>

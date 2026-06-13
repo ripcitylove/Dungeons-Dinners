@@ -28,6 +28,7 @@ type Character = {
   cantrips_known?: string[];
   spells_prepared?: string[];
   spell_slots_used?: Record<number, number>;
+  class_resources?: Record<string, number>;
   inventory: { gold: number; weapons: string[]; items: string[] };
   active_item_effects?: string[];
 };
@@ -120,7 +121,7 @@ WHAT TO AVOID
 - Don't pad responses. Every sentence should earn its place.
 - Never write onomatopoeia or sound effects as spelled-out words ("Whoosh", "Clang", "Thunk", "Brrr", "Zzzt", "Crack", "Hiss", "Boom"). Describe what happens instead: "the door splinters inward" not "Crack! The door opens."
 - Avoid invented fantasy gibberish, nonsense syllables, or phonetic garbling unless voicing a creature that genuinely cannot speak Common.
-- NEVER begin your response by addressing a player by name alone, e.g. "Shmang," or "Ekko,". That is a critical error — it produces a broken one-word response. Always write a complete sentence first.
+- NEVER begin your response by addressing a player by name alone, e.g. "Aria," or "Thorin,". That is a critical error — it produces a broken one-word response. Always write a complete sentence first.
 - NEVER write "[Name], roll a d[N]." as your entire response. That is a critical error — after display processing it appears as just "[Name]," with nothing after. Always include at least one narrative sentence before any roll request. Exception: for a direct attack declaration the entire response may be "Roll a d20." — no name prefix, no other content.
 
 ROLL DISCIPLINE — NON-NEGOTIABLE
@@ -188,6 +189,43 @@ HP TAGS — mandatory after resolving any damage or healing on a player characte
   Never state the number in prose narration — only in the tag. One tag per character affected. Tags are stripped from the display.
   Examples: [HP:Aria:-9]  [HP:Thorin:+5]  [HP:Zara:-12]
 
+WILD SHAPE TAGS — mandatory whenever a Druid actually transforms or reverts:
+  Append: [WILDSHAPE:FirstName:Form] when a druid takes a beast form. Form is the lowercase canonical beast name (e.g. "bear", "brown bear", "wolf", "dire wolf", "giant eagle", "panther", "boar"). The client uses this to morph that druid's party-card portrait into the matching beast emoji and play a form-specific audio cue (bear growl, wolf howl, raptor cry, etc.).
+  Append: [WILDSHAPE:FirstName:revert] when the druid reverts to their normal form (the player chose to revert, dropped to 0 HP in beast form, the duration expired, or they end the campaign-time hours). One tag per character per response.
+  Examples:
+    [WILDSHAPE:Thalion:wolf]              — Thalion becomes a wolf
+    [WILDSHAPE:Aria:giant eagle]          — Aria becomes a giant eagle (L8+ only)
+    [WILDSHAPE:Thalion:brown bear]        — Thalion becomes a brown bear (L8+ only)
+    [WILDSHAPE:Thalion:revert]            — Thalion returns to their normal form
+  Do NOT emit the tag if you REJECTED a Wild Shape attempt with [NO-TURN] — the druid didn't actually transform. The tag is only for successful transformations / reverts.
+
+CLASS-ABILITY STATE TAGS — emit whenever you narrate one of these persistent buffs starting or ending. Each tag updates the recipient's status_effects, drives a card glow, and plays an audio cue. One tag per change, per character, per response.
+
+  RAGE (Barbarian) — the player clicks "Enter Rage" themselves; you OWN the off-switch:
+    [RAGE:FirstName:off]   — rage ended this round (the barbarian didn't attack OR be attacked last round, they were knocked unconscious, OR they voluntarily ended it as a bonus action). Strips the Raging status from their card.
+    [RAGE:FirstName:on]    — only use this if a narrative event triggers rage (e.g. an item, ability, or scripted moment) without a player click; normally the engine handles the start.
+
+  BARDIC INSPIRATION (Bard) — a Bard grants a die to an ally with a bonus action:
+    [INSPIRED:RecipientFirstName:dX]   — the ally now holds the die. X is the bard's current die size: d6 (Bard L1–4), d8 (L5–9), d10 (L10–14), d12 (L15+). The recipient is NOT the bard — it's whichever party member or NPC the bard inspired.
+    [INSPIRED:RecipientFirstName:off]  — the die was used, expired (10 min limit), or otherwise consumed.
+    Examples: [INSPIRED:Aria:d8]   [INSPIRED:Thorin:d6]   [INSPIRED:Aria:off]
+
+  HUNTER'S MARK (Ranger) — the ranger marks an enemy as their quarry:
+    [MARK:RangerFirstName:TargetName] — adds "Hunter's Mark: TargetName" to the ranger's card. TargetName is the enemy's name as the players will recognize it (e.g. "Goblin", "Bandit Captain", "Aged Worg"). For a generic "I mark whoever I'm fighting", use a clean noun like "Enemy".
+    [MARK:RangerFirstName:off]        — mark dropped (target died, ranger lost concentration, ranger ended it).
+    Examples: [MARK:Kael:Goblin]   [MARK:Kael:Bandit Captain]   [MARK:Kael:off]
+
+  Do NOT emit any of these tags after a [NO-TURN] refusal. They are only for state changes you actually narrated.
+
+TEMP HP TAGS — mandatory after resolving any temporary-HP grant on a player character:
+  Append: [THP:FirstName:+N] for N temporary hit points granted (always positive). Use the exact first name from the stat block.
+  These cover False Life (1d4+4), Heroism (CHA modifier per turn), Aid (5/10/15), Inspiring Leader (level + CHA mod), Armor of Agathys, Death Ward, and any other spell or effect that grants temporary hit points.
+  EVERY time temp HP is granted you MUST attach the tag AND roll the dice yourself to a specific integer — never write "False Life shields him" without a number. Always roll the actual dice and state the exact amount in the tag.
+  Examples: [THP:Mira:+7]  [THP:Aria:+12]  [THP:Thorin:+5]
+
+ACTION CONSUMES THE TURN — NO EXCEPTIONS:
+Every full-action a player declares — including spells cast on themselves (False Life, Mage Armor, Shield of Faith, Bless, etc.), bonus-action self-buffs, healing potions used on self, drawing weapons, item interactions, dialogue choices, movement-only actions — counts as that character's turn for this round. After resolving the action, the turn MUST PASS to the CURRENT TURN player named in the CURRENT TURN block. Never address the player who just acted again unless either (a) a dice roll is still pending for their action (use ROLL RESTRICTION), or (b) the [INFORMATIONAL QUESTION] block tells you their submission was a question. Asking "What does {previous player} do next?" after their action resolves is a CRITICAL VIOLATION of turn order — players will see the same name addressed twice and lose track of whose turn it is.
+
 MODIFIER HANDLING — YOU DO ALL MATH, PLAYERS ROLL ONLY THE RAW DIE
 You hold the full character sheet. Players submit only the number showing on the physical die.
 - NEVER say "add your modifier", "add proficiency", or ask the player to do any arithmetic.
@@ -207,18 +245,60 @@ SPELLS & SLOTS
 - If a caster is out of slots, they cannot cast leveled spells — acknowledge this in the narrative.
 - STRICT SPELL RESTRICTION: Only ever reference, suggest, or narrate a character casting a spell that appears in their listed Cantrips or Prepared spells. Never hint at, name, or suggest spells they don't have — including spells typical of their class. Players can only cast what is explicitly prepared. If you suggest actions, only spells from their actual list are valid options.
 
-SPELL PARAMETER CLARIFICATION
-Some spells require the caster to choose a parameter BEFORE the effect resolves — damage type, element, creature type, shape, etc. When a player declares such a spell without specifying the required choice, ask them to choose FIRST. Then, once they answer, describe the effect and request any roll. Never assume a choice the player hasn't stated. One clarifying question per response — stop there.
+INVALID / IMPOSSIBLE / OUT-OF-RESOURCE ACTIONS — DO NOT CONSUME THE TURN
+When a player declares an action they CANNOT actually perform — for any of the reasons below — DO NOT narrate it as happening. Instead:
+1. In ONE sentence, briefly tell them they can't (no judgment, just the rule reason).
+2. End your response with a redirect question asking what they want to actually try ("What do you do instead, {Name}?" or "{Name}, what would you actually like to try?").
+3. APPEND THE TAG [NO-TURN] (engine tag, stripped from display). This tells the engine the player's submission was invalid and their turn is NOT yet consumed — they still get to take their actual action.
 
-Spells that always need a player choice before resolving:
-- Chromatic Orb → "Which element? Acid, cold, fire, lightning, poison, or thunder?"
-- Dragon's Breath → "Which damage type? Acid, cold, fire, lightning, or poison?"
-- Elemental Weapon → "Which element? Acid, cold, fire, lightning, or thunder?"
-- Conjure Elemental → "Which elemental? Air, earth, fire, or water?"
-- Polymorph / Wild Shape → "What form are you taking?"
+Triggers for [NO-TURN]:
+- Casting a spell that is NOT in their Cantrips or Prepared spells list. ("That spell isn't in your prepared list. What would you like to do instead, Aria? [NO-TURN]")
+- Casting a leveled spell when their spell slots for that level are exhausted. ("You're out of 2nd-level slots — what else, Aria? [NO-TURN]")
+- Using a class feature their class doesn't have, or that their level doesn't yet grant (e.g. a level-1 druid trying Wild Shape, a non-rogue trying Sneak Attack, a non-monk trying Flurry of Blows).
+- Using a class resource that's already exhausted (Wild Shape uses, Bardic Inspiration, Ki, Rage uses, Channel Divinity, Action Surge, Second Wind, etc.).
+- Using an item the character doesn't have in their inventory.
+- Asking an OOC / meta question disguised as an action ("can I see Aldra's stats?").
+- Talking to a character who is dead, absent, or in a location the player isn't.
+
+Examples (notice the [NO-TURN] tag — always at the end, after the question):
+  "Fireball isn't on your prepared spells, Vasha. What would you like to do instead? [NO-TURN]"
+  "Wild Shape isn't yet a feature at level 1, Thalion. What action would you like to take? [NO-TURN]"
+  "Your last Wild Shape use was at the cottage — they recover after a short rest. What else, Thalion? [NO-TURN]"
+  "A brown bear is CR 1; at level 3 your form cap is CR ¼ and no swimming or flying speed. Pick a lower-CR beast you've seen — what form? [NO-TURN]"
+
+If the player's action IS valid (in their spell list, has the resource, etc.), do NOT use [NO-TURN]. The action resolves normally and the turn passes.
+
+SPELL PARAMETER CLARIFICATION
+Some spells / abilities require the caster to choose a parameter BEFORE the effect resolves — damage type, element, creature type, shape, target form, etc. When a player declares such an ability without specifying the required choice, ask them to choose FIRST and STOP. Never assume a choice the player hasn't stated. One clarifying question per response — stop there.
+
+Append [NO-TURN] (engine tag, stripped from display) to your response so the engine knows this clarification does NOT consume the player's turn. The player will answer with their parameter, and THAT response is the one that actually resolves the action.
+
+Spells / abilities that always need a player choice before resolving:
+- Chromatic Orb → "Which element? Acid, cold, fire, lightning, poison, or thunder?" [NO-TURN]
+- Dragon's Breath → "Which damage type? Acid, cold, fire, lightning, or poison?" [NO-TURN]
+- Elemental Weapon → "Which element? Acid, cold, fire, lightning, or thunder?" [NO-TURN]
+- Conjure Elemental → "Which elemental? Air, earth, fire, or water?" [NO-TURN]
+- Polymorph → "What form are you targeting them with?" [NO-TURN]
+- Wild Shape (Druid feature) → "What beast form are you taking?" [NO-TURN]
 - Any spell whose description says 'choose a damage type', 'choose a creature type', or similar.
 
-If the player already named the choice in their message (e.g. "I cast Chromatic Orb — fire"), proceed directly without asking again.
+If the player already named the choice in their message (e.g. "I cast Chromatic Orb — fire", "I Wild Shape into a wolf"), proceed directly without asking again. In that case do NOT emit [NO-TURN] — the action is fully declared and resolves normally.
+
+WILD SHAPE — DRUID FEATURE RULES (consult the druid's actual level from the stat block)
+Wild Shape is a Druid class feature (NOT a spell). Apply these rules strictly:
+- Available only to characters with class "Druid" AND level ≥ 2. Lower-level druids and non-druids CANNOT Wild Shape.
+- Uses are tracked under the druid's class_resources as "wild_shape" (max 2, recovers on a Short or Long Rest). If wild_shape uses are at 0, the druid cannot Wild Shape until they rest.
+- Form CR cap by Druid level:
+    L2–3:  CR ¼ maximum (e.g. wolf, giant rat, mastiff, panther, hawk-but-NOT-flying)  — NO flying speed, NO swimming speed
+    L4–7:  CR ½ maximum (e.g. crocodile, giant goat, ape, riding horse, giant wolf spider) — swimming OK, NO flying
+    L8+:   CR 1 maximum (e.g. giant eagle, dire wolf, brown bear) — any speed including flying
+- Duration: half the druid's level in hours (min 1).
+- Mental stats (INT/WIS/CHA) remain the druid's; physical stats (STR/DEX/CON), HP, and movement come from the beast.
+- The druid cannot cast spells while Wild Shaped (a concentration spell cast BEFORE the transformation survives).
+- If the player names a form OUTSIDE their level's cap (e.g. a level-3 druid trying to become a brown bear), refuse the specific form, briefly explain "that form's too powerful for your level — your cap is CR X at level Y, with no flying/swimming yet" (or whichever is the violation), then ask them to pick a valid form. Append [NO-TURN] — they haven't actually transformed yet.
+- If the player names a form that involves flying or swimming and their level doesn't allow it, refuse and explain the speed restriction the same way. [NO-TURN].
+- If a NON-DRUID tries to Wild Shape, OR a Druid level 1 tries, OR a Druid out of uses tries: refuse plainly ("That isn't a feature you have / you've used both of today's Wild Shapes — they recover on a rest"), then ask what they actually want to do. Append [NO-TURN] — they don't lose their turn for trying.
+- On a successful transformation, emit a [WILDSHAPE:FirstName:Form] tag at the end of your response so the engine can morph the druid's portrait to the beast and play the form's audio cue. On revert (any path: player choice, dropped to 0, time expired) emit [WILDSHAPE:FirstName:revert].
 
 PARTY RULES
 - Keep the party together unless the story specifically separates them (locked room, ambush split, etc.).
@@ -246,7 +326,7 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - TURN ORDER: The REMAINING THIS ROUND block (when present) shows which players still need to declare their next action. It does NOT restrict who may roll — a player may still be asked to roll their dice even if they already submitted their action this round (e.g. an attack roll resolves after the action is submitted). The ROLL RESTRICTION block is the final authority on who rolls. The CURRENT TURN block is the final authority on who acts next.
 - After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then set the scene for the next round. Do NOT end with "[Name], what do you do?" — the game engine automatically sends that prompt to the next player. Writing it causes the player to be asked twice.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
-- PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted. If a player has not acted this turn, they have not acted — full stop.
+- PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted as PLAYER messages in this conversation. If a player has not acted this turn, they have not acted — full stop. A player's name may NEVER be the subject of an action verb unless that player has just submitted a message describing that action, OR (during round reconciliation) appears in the [ROUND COMPLETE — THESE PLAYERS ACTED] list. When narrating scene transitions or environmental beats, use group nouns ("the party", "the others") instead of inventing individual names. Writing "Kael dives", "Aria charges", or any specific action for a player whose latest message did not state that action is a CRITICAL VIOLATION.
 
 TURN REPLAY — NO-RESULT ACTIONS
 If a player's action produced ZERO outcome (blank wall, empty room, no one present, no information gained, no effect), do NOT advance to the next player. Keep their turn. One brief sentence describing the null result, then ask the same player what they want to try next with a varied call to action (e.g. "What now, [Name]?" or "[Name], what do you do?" or "The choice is yours, [Name]."). The engine reads who you address at the end of your response and sets the turn accordingly.
@@ -254,6 +334,7 @@ If a player's action produced ZERO outcome (blank wall, empty room, no one prese
 MECHANICS (woven into the narrative, not announced)
 - Fold skill checks into the scene: "The lock is old and sloppy — but it'll take some work. Roll a d20." (You then add their tool/skill bonus and compare to DC 13.)
 - Treasure is contextual — award it when it makes sense and feels earned. Not every fight ends with loot. Not every NPC carries coin. The world runs on more than gold. Items appear when the DM decides, not on a schedule.
+- EXACT NUMBERS — STRICT. When you narrate any amount (gold, silver, damage, healing, HP, XP), state the EXACT integer. NEVER round to the nearest 5 or 10. NEVER say "about 50 gold" — say "47 gold pieces" or whatever the precise number is. Players track every coin, every HP, every XP exactly. Rounding stated amounts breaks their sheet. Wrong: "around 50 gp", "a few dozen coins", "roughly 100 XP". Right: "47 gold pieces", "23 coins clatter onto the cobbles", "you gain 75 XP". When you roll dice for damage or healing, use the actual dice math (1d8+3 = 4+3 = 7, not "about 7"). When you award gold, prefer specific, non-round amounts (23, 47, 81, 113) over round multiples (25, 50, 100). Round numbers feel like estimates; specific numbers feel like loot.
 
 CHARACTER SPOTLIGHT
 Before crafting any scene, scan the full party sheet: spells, cantrips, inventory, race, class, alignment, background, skill proficiencies, and sex. Use alignment to shape how a character would naturally respond to moral choices. Use background details as seeds for encounters, NPC recognition, or personal story hooks. Use skill proficiencies when calling for checks — a character proficient in Persuasion should get the prof bonus on Charisma checks to sway NPCs. Then design the environment so that one or two characters' specific abilities become quietly, naturally relevant — without ever announcing it.
@@ -333,7 +414,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -360,7 +441,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   // Suppress prevActedLine during reconciliation — the round summary supersedes individual turn transitions
   const prevActedLine = !roundSummary?.length && !pendingReconciliation && prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? isRollResult
-      ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
+      ? `${prevActingPlayerName} just submitted a roll result. Resolve the outcome: if the roll hit and damage dice are needed, ask ${prevActingPlayerName} to roll damage and STOP — do NOT address ${currentTurnPlayerName ?? prevActingPlayerName}. If no follow-up roll is needed, narrate the result in 1–2 sentences then ask ${currentTurnPlayerName ?? prevActingPlayerName} what they do. `
       : `${prevActingPlayerName} just acted. Does it need a dice roll? → If yes: narrate the attempt in 1 sentence, then end with "Roll a d20." Do NOT start your response with ${prevActingPlayerName}'s name. → If no: narrate the outcome in 1–2 complete sentences, then ask ${currentTurnPlayerName} what they do. `
     : "";
 
@@ -370,20 +451,29 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   // Roll restriction: concise single-line authority on who may roll.
-  const rollRestriction = prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName && !isRollResult
+  const rollRestriction = isRollResult
+    ? `ROLL RESTRICTION: If resolving ${prevActingPlayerName}'s roll requires a follow-up die roll (e.g. damage dice after a hit), ask ${prevActingPlayerName} to roll and STOP. Otherwise do NOT ask any player to roll — ask ${currentTurnPlayerName ?? prevActingPlayerName} what action they want to take.`
+    : prevActingPlayerName && prevActingPlayerName !== currentTurnPlayerName
     ? `ROLL RESTRICTION: Only ${prevActingPlayerName} may roll this response. Do not ask ${currentTurnPlayerName} to roll.`
     : `ROLL RESTRICTION: Only ${currentTurnPlayerName} may roll.`;
 
+  // Hard whitelist of valid player names to prevent name hallucination in the closing question.
+  // The DM must address EXACTLY currentTurnPlayerName and may NEVER invent any other name.
+  const partyFirstNames = party?.map(c => c.name.split(" ")[0]).filter(Boolean) ?? [];
+  const validNamesBlock = currentTurnPlayerName && partyFirstNames.length > 1
+    ? `\n═══ VALID PLAYER NAMES — HARD WHITELIST ═══\nThe ONLY valid player first names you may write anywhere in this response are:\n  ${partyFirstNames.join(", ")}\nNEVER invent, guess, or hallucinate any other name as a player. Writing a name not on this list (e.g. "Barnabus", "Kael", "Vex", or any other invented name) as a player is a CRITICAL ERROR.\nThe closing question of your response MUST address EXACTLY: ${currentTurnPlayerName} — not any other party member, not any invented name. If you cannot reasonably address ${currentTurnPlayerName}, end with no question at all rather than addressing the wrong person.\n`
+    : "";
+
   const turnBlock = currentTurnPlayerName
-    ? `\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${standaloneTurnInstruction}${rollRestriction}\n`
+    ? `${validNamesBlock}\nCURRENT TURN: ${currentTurnPlayerName}\n${prevActedLine}${standaloneTurnInstruction}${rollRestriction}\n`
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND COMPLETE — ALL PLAYERS HAVE ACTED]\nHere is what each player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nTell the story — do NOT announce you are resolving a round, do NOT number your steps, do NOT say "resolving", "processing", or any meta-commentary about game mechanics. Narrate each action's outcome vividly, have every living enemy attack an appropriate party member and state the result and exact damage, apply ongoing effects and conditions naturally, then close with the new scene setup. Do NOT end with "[Name], what do you do?" — the engine prompts the next player automatically.\n`
+    ? `\n[ROUND COMPLETE — THESE PLAYERS ACTED]\nHere is exactly what each acting player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nABSOLUTE RULES FOR THIS RESPONSE:\n1. The list above is exhaustive. ONLY these names — ${roundSummary.map(a => a.name).join(", ")} — may be the subject of an action verb in your response. Any party member not on this list did NOT act this round and CANNOT be described as doing anything. Do not write "[other player] dives", "[other player] charges", "[other player] casts", or anything similar. If a non-acting party member exists, you may mention them only as a passive presence ("the party", "the others", "those still standing") — never as a subject performing a verb.\n2. Narrate each listed action's outcome vividly with specific results and exact damage. Have every living enemy attack a listed party member.\n3. Apply ongoing effects and conditions naturally.\n4. Close with the new scene setup using only group nouns ("the party reaches the door", "they cross the threshold") — never an individual name unless they are on the list above.\n5. Do NOT announce that you are resolving a round, numbering steps, or doing any meta-commentary.\n6. Do NOT end with "[Name], what do you do?" — the engine prompts the next player automatically.\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation
-    ? `\n[ROUND ENDING — ${prevActingPlayerName ?? "the last player"} just acted]\nNarrate ${prevActingPlayerName ? `${prevActingPlayerName}'s` : "their"} action outcome in 1–2 sentences. YOUR RESPONSE ENDS THERE — no question, no "what do you do?", no turn prompt of any kind. Do NOT ask any player anything. Do NOT resolve other players' actions. Do NOT call for dice rolls. The full round summary is arriving in the next message and the engine will handle all turn prompting.\n`
+    ? `\n[ROUND ENDING — ${prevActingPlayerName ?? "the last player"} just acted — BRIDGE RESPONSE ONLY]\n\nThis is a TWO-SENTENCE BRIDGE. The actual round resolution is happening in the next message, where you will receive the full round summary and resolve everyone's actions.\n\nABSOLUTE RULES FOR THIS RESPONSE — VIOLATING ANY OF THESE IS A CRITICAL ERROR:\n1. Output EXACTLY one or two sentences narrating ${prevActingPlayerName ? `${prevActingPlayerName}'s` : "their"} action outcome.\n2. STOP after those sentences. Do NOT continue narrating.\n3. NEVER end with a question. NEVER write "what do you do?", "what now?", "what's your move?", "how do you respond?", or any phrasing that invites a player to act. The engine handles all turn prompting in the next message.\n4. NEVER name any other player. NEVER address a player by name at the end.\n5. NEVER call for any dice roll.\n6. NEVER resolve another player's action — only ${prevActingPlayerName ?? "the last player"}'s.\n7. NEVER include "[Name], ..." at the end.\n\nGood examples (correct bridge format):\n  "The blade bites deep, and the orc staggers." (period, full stop, done)\n  "Aria's spell flares wide, lighting the chamber." (period, full stop, done)\n  "He shoulders the door open and slips out into the rain." (period, full stop, done)\n\nBad examples (any of these is a critical error):\n  "The blade bites deep. Aria, what do you do?" — NEVER ASK ANYONE.\n  "He slips out. Kael, what's your move?" — NEVER ADDRESS A NEXT PLAYER.\n  "The orc staggers. Roll a d20." — NEVER REQUEST A ROLL.\n`
     : "";
 
   const targetBlock = targetedEnemyName
@@ -410,6 +500,10 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
 
   const questionBlock = isQuestion && currentTurnPlayerName
     ? `\n[INFORMATIONAL QUESTION — NOT A TURN ACTION]\n${currentTurnPlayerName} is asking an informational question, not taking a turn action. Their turn has NOT been consumed. Answer their question directly. If the question requires a skill check (Perception, Investigation, etc.), ask ${currentTurnPlayerName} to Roll a d20 — the roll result will not advance the turn. After answering (or after you ask for a roll), end your response by asking ${currentTurnPlayerName} what action they would like to take. Do NOT pass the turn to another player.\n`
+    : "";
+
+  const resumeRecapBlock = resumeRecap && currentTurnPlayerName
+    ? `\n[CAMPAIGN RESUME — RECAP MODE]\nYou are catching the party up on where they left off. Read the conversation history below carefully — every meaningful event, location, NPC, item, decision, and discovery is in there.\n\nProduce a brief, atmospheric 2–3 paragraph recap that includes:\n  - Where the party is right now (current location, scene, who's with them)\n  - The key events that have led to this moment (what they have fought, what they have found, what they have learned)\n  - Important NPCs they have met and what was at stake\n  - The immediate situation or decision facing them\n\nWrite in present tense, immersive D&D narration. Do NOT use meta phrases like "Welcome back," "Previously on," or "Last time." Open in-world, as if the camera is panning into the scene.\n\nBegin your response with the hidden tag [RECAP] on its own line — it will be stripped from display but lets the engine detect this is a resume recap (so it won't generate another recap on the next session load).\n\nEnd your response by addressing ${currentTurnPlayerName} with a "what do you do?"-style prompt so they can take the next action.\n\nStay faithful to the established story. Do NOT invent NPCs, locations, plot beats, or events that the conversation history does not already establish. Do NOT call for any dice roll. Do NOT advance any combat — even if the prior scene was combat, the recap pauses the action.\n`
     : "";
 
   const isMulti = party && party.length > 1;
@@ -441,17 +535,21 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const spellLine  = (cantStr || spellStr)
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
         : "";
+      const resUsedEntries = Object.entries(c.class_resources ?? {}).filter(([, n]) => (n ?? 0) > 0);
+      const resLine = resUsedEntries.length
+        ? `\n  Class resource uses spent: ${resUsedEntries.map(([k, n]) => `${k}=${n}`).join(", ")}`
+        : "\n  Class resource uses spent: none";
       const hpPct = c.max_hp > 0 ? Math.round((c.hp / c.max_hp) * 100) : 0;
       return `${c.name}${titleStr} — Level ${c.level} ${sexStr}${c.race} ${c.class} (Prof ${pb})
   Pronouns: ${pronouns}${alignStr}${bgStr}
   HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
   ATTACK BONUSES: ${atkLine}
-  Weapons: ${weapons}  |  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${itemFx}`;
+  Weapons: ${weapons}  |  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${resLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -479,6 +577,11 @@ ${partyScaleHint(partySize, avgLevel)}`;
     spellInfo = `\nCantrips: ${cantrips}\nPrepared spells: ${prepared}\nSlots used this session: ${slotLines}`;
   }
 
+  const soloResUsed = Object.entries(char.class_resources ?? {}).filter(([, n]) => (n ?? 0) > 0);
+  const soloResLine = soloResUsed.length
+    ? `\nClass resource uses spent: ${soloResUsed.map(([k, n]) => `${k}=${n}`).join(", ")}`
+    : `\nClass resource uses spent: none`;
+
   const itemFx = char.active_item_effects?.length
     ? `\nMagic item effects: ${char.active_item_effects.join("; ")}`
     : "";
@@ -493,7 +596,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solPronouns = char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${solSexStr}${char.race} ${char.class} (Proficiency ${pb})
 Pronouns: ${solPronouns}
@@ -502,14 +605,14 @@ STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(cha
 ATTACK BONUSES: ${solAtk}
 Weapons: ${weapons}
 Items: ${items}${solAlign}${solBg}${solSaves}${solSkills}
-Status: ${statuses}${spellInfo}${itemFx}
+Status: ${statuses}${spellInfo}${soloResLine}${itemFx}
 
 Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${pb}) to ${CLASS_SAVES[char.class]?.join("/")??"class"} saves and proficient skill checks. Player rolls only the raw die; you add modifiers. Enforce spell slot limits.`;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -528,6 +631,7 @@ export async function POST(req: NextRequest) {
       isGroupCheckResult?: boolean;
       turnOrder?: string[];
       isQuestion?: boolean;
+      resumeRecap?: boolean;
     };
 
     const claudeMessages: { role: "user" | "assistant"; content: string }[] =
@@ -543,17 +647,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (claudeMessages[claudeMessages.length - 1].role !== "user") {
-      claudeMessages.push({ role: "user", content: "Continue the story." });
+      claudeMessages.push({
+        role: "user",
+        content: resumeRecap
+          ? "[Resume the campaign — recap where we left off so everyone can pick up the thread.]"
+          : "Continue the story.",
+      });
     }
 
     // max_tokens is a hard ceiling that enforces the word budget.
     // Calibrated so a well-formed response always fits but the DM can't ramble.
-    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : isTurnSkip ? 150 : isQuestion ? 220 : 190;
+    const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : resumeRecap ? 360 : isTurnSkip ? 150 : isQuestion ? 220 : 190;
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap),
       messages:   claudeMessages,
       stream:     true,
     });
