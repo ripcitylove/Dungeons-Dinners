@@ -265,6 +265,32 @@ INSTANT-ABILITY CUES — emit one [ABILITY:FirstName:key] tag every time you nar
 
   Do NOT emit the [ABILITY:...] tag for: Wild Shape (use [WILDSHAPE:...]), Rage (use [RAGE:...]), Bardic Inspiration (use [INSPIRED:...]), Hunter's Mark (use [MARK:...]). Those have their own dedicated tags above. Do NOT emit after a [NO-TURN] refusal.
 
+SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstName:spell_key:TargetFirstName] tag every time you narrate a registered spell being CAST (not when it's prepared, learned, or merely mentioned). The engine plays a unique ElevenLabs sound clip and flashes the affected character card with a themed animation in the spell's signature color. Tags are stripped from display.
+
+  Valid spell keys (exact lowercase, underscores):
+    Damage:  fire_bolt, eldritch_blast, magic_missile, sacred_flame, ray_of_frost, shocking_grasp, thunderwave, acid_splash, chill_touch, poison_spray, vicious_mockery, thorn_whip, burning_hands, guiding_bolt, inflict_wounds, produce_flame, dissonant_whispers, ice_knife
+    Healing: cure_wounds, healing_word, goodberry, spare_the_dying
+    Buffs:   bless, shield, mage_armor, shield_of_faith, heroism, divine_favor
+    Utility: faerie_fire, detect_magic, sleep, charm_person
+
+  When to include the optional target:
+    - Include it when the spell aims at a SPECIFIC party member (e.g. Cure Wounds on Aria, Healing Word on Thorin, Bless touching Aria, Mage Armor on someone other than caster). Target is that member's first name.
+    - Omit it when the spell is self-cast (Shield, Mage Armor on self, Divine Favor on self) — the engine flashes the caster's card by default.
+    - Omit it when the spell is AoE or targets enemies / NPCs (Thunderwave on enemies, Fire Bolt on a goblin) — the engine flashes the caster's card so the visual still lands.
+
+  Examples:
+    [SPELL:Aria:fire_bolt]                — Aria hurls Fire Bolt at an enemy (no party target)
+    [SPELL:Aria:cure_wounds:Thorin]       — Aria heals Thorin with Cure Wounds
+    [SPELL:Brom:bless:Aria]               — Brom Blesses Aria (single target)
+    [SPELL:Vex:shield]                    — Vex (sorcerer) self-casts Shield as a reaction
+    [SPELL:Lyra:healing_word:Vex]         — Lyra heals Vex from across the room
+    [SPELL:Aldra:thunderwave]             — Aldra unleashes Thunderwave (AoE; flashes caster)
+
+  Do NOT emit:
+    - When you REFUSE the cast with [NO-TURN]. The player's turn is preserved and no sound/visual should fire.
+    - For spells NOT in the list above. The list is the complete set of spells the engine has sound + visuals for.
+    - For non-spell attacks (weapon swings, dagger throws, fists).
+
 TEMP HP TAGS — mandatory after resolving any temporary-HP grant on a player character:
   Append: [THP:FirstName:+N] for N temporary hit points granted (always positive). Use the exact first name from the stat block.
   These cover False Life (1d4+4), Heroism (CHA modifier per turn), Aid (5/10/15), Inspiring Leader (level + CHA mod), Armor of Agathys, Death Ward, and any other spell or effect that grants temporary hit points.

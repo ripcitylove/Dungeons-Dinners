@@ -526,9 +526,126 @@ const ABILITY_AUDIO: Record<string, { src: string; maxMs?: number }> = {
   pact_boon:            { src: "/sounds/abilities/pact_boon.mp3",            maxMs: 3200 },
 };
 
+// ── Real-audio voices (spells) ───────────────────────────────────────────────
+// Generated via scripts/generate-spell-sounds.mjs. Each entry plays when the
+// DM emits a [SPELL:Caster:key] tag in narration. Keys are snake_case.
+export const SPELL_AUDIO: Record<string, { src: string; maxMs?: number }> = {
+  // Damage
+  fire_bolt:          { src: "/sounds/spells/fire_bolt.mp3",          maxMs: 1800 },
+  eldritch_blast:     { src: "/sounds/spells/eldritch_blast.mp3",     maxMs: 2200 },
+  magic_missile:      { src: "/sounds/spells/magic_missile.mp3",      maxMs: 2200 },
+  sacred_flame:       { src: "/sounds/spells/sacred_flame.mp3",       maxMs: 2000 },
+  ray_of_frost:       { src: "/sounds/spells/ray_of_frost.mp3",       maxMs: 1900 },
+  shocking_grasp:     { src: "/sounds/spells/shocking_grasp.mp3",     maxMs: 1600 },
+  thunderwave:        { src: "/sounds/spells/thunderwave.mp3",        maxMs: 2400 },
+  acid_splash:        { src: "/sounds/spells/acid_splash.mp3",        maxMs: 1800 },
+  chill_touch:        { src: "/sounds/spells/chill_touch.mp3",        maxMs: 2000 },
+  poison_spray:       { src: "/sounds/spells/poison_spray.mp3",       maxMs: 1800 },
+  vicious_mockery:    { src: "/sounds/spells/vicious_mockery.mp3",    maxMs: 1900 },
+  thorn_whip:         { src: "/sounds/spells/thorn_whip.mp3",         maxMs: 1700 },
+  burning_hands:      { src: "/sounds/spells/burning_hands.mp3",      maxMs: 2200 },
+  guiding_bolt:       { src: "/sounds/spells/guiding_bolt.mp3",       maxMs: 2000 },
+  inflict_wounds:     { src: "/sounds/spells/inflict_wounds.mp3",     maxMs: 1900 },
+  produce_flame:      { src: "/sounds/spells/produce_flame.mp3",      maxMs: 1800 },
+  dissonant_whispers: { src: "/sounds/spells/dissonant_whispers.mp3", maxMs: 2400 },
+  ice_knife:          { src: "/sounds/spells/ice_knife.mp3",          maxMs: 1900 },
+  // Healing
+  cure_wounds:        { src: "/sounds/spells/cure_wounds.mp3",        maxMs: 2200 },
+  healing_word:       { src: "/sounds/spells/healing_word.mp3",       maxMs: 1900 },
+  goodberry:          { src: "/sounds/spells/goodberry.mp3",          maxMs: 1700 },
+  spare_the_dying:    { src: "/sounds/spells/spare_the_dying.mp3",    maxMs: 2000 },
+  // Buffs / Protection
+  bless:              { src: "/sounds/spells/bless.mp3",              maxMs: 2400 },
+  shield:             { src: "/sounds/spells/shield.mp3",             maxMs: 1800 },
+  mage_armor:         { src: "/sounds/spells/mage_armor.mp3",         maxMs: 2200 },
+  shield_of_faith:    { src: "/sounds/spells/shield_of_faith.mp3",    maxMs: 2200 },
+  heroism:            { src: "/sounds/spells/heroism.mp3",            maxMs: 2400 },
+  divine_favor:       { src: "/sounds/spells/divine_favor.mp3",       maxMs: 1900 },
+  // Utility
+  faerie_fire:        { src: "/sounds/spells/faerie_fire.mp3",        maxMs: 2200 },
+  detect_magic:       { src: "/sounds/spells/detect_magic.mp3",       maxMs: 2200 },
+  sleep:              { src: "/sounds/spells/sleep.mp3",              maxMs: 2400 },
+  charm_person:       { src: "/sounds/spells/charm_person.mp3",       maxMs: 2400 },
+};
+
+export const KNOWN_SPELL_KEYS = Object.keys(SPELL_AUDIO);
+
+// ── Spell visual metadata ────────────────────────────────────────────────────
+// Each spell gets an animation kind (drives the CSS keyframe via the
+// `spell-fx-<kind>` class) and a tint color. The display name is the canonical
+// spell name as it appears in player chat. targetSide tells the engine which
+// card to flash: "target" for spells aimed at others (Fire Bolt, Cure Wounds
+// when healing an ally), "caster" for self-targeting spells (Shield, Mage
+// Armor), or "both" for AoE / multi-target (Bless, Thunderwave).
+export type SpellAnimKind =
+  | "heal" | "fire" | "cold" | "lightning" | "thunder" | "acid" | "poison"
+  | "radiant" | "necrotic" | "force" | "psychic" | "physical" | "buff" | "enchant";
+
+export const SPELL_META: Record<string, { name: string; anim: SpellAnimKind; color: string; targetSide: "caster" | "target" | "both" }> = {
+  // Damage
+  fire_bolt:          { name: "Fire Bolt",          anim: "fire",      color: "#f97316", targetSide: "target" },
+  eldritch_blast:     { name: "Eldritch Blast",     anim: "force",     color: "#8b5cf6", targetSide: "target" },
+  magic_missile:      { name: "Magic Missile",      anim: "force",     color: "#a78bfa", targetSide: "target" },
+  sacred_flame:       { name: "Sacred Flame",       anim: "radiant",   color: "#fde047", targetSide: "target" },
+  ray_of_frost:       { name: "Ray of Frost",       anim: "cold",      color: "#60a5fa", targetSide: "target" },
+  shocking_grasp:     { name: "Shocking Grasp",     anim: "lightning", color: "#fbbf24", targetSide: "target" },
+  thunderwave:        { name: "Thunderwave",        anim: "thunder",   color: "#94a3b8", targetSide: "both"   },
+  acid_splash:        { name: "Acid Splash",        anim: "acid",      color: "#22c55e", targetSide: "target" },
+  chill_touch:        { name: "Chill Touch",        anim: "necrotic",  color: "#a855f7", targetSide: "target" },
+  poison_spray:       { name: "Poison Spray",       anim: "poison",    color: "#84cc16", targetSide: "target" },
+  vicious_mockery:    { name: "Vicious Mockery",    anim: "psychic",   color: "#ec4899", targetSide: "target" },
+  thorn_whip:         { name: "Thorn Whip",         anim: "physical",  color: "#16a34a", targetSide: "target" },
+  burning_hands:      { name: "Burning Hands",      anim: "fire",      color: "#ef4444", targetSide: "both"   },
+  guiding_bolt:       { name: "Guiding Bolt",       anim: "radiant",   color: "#fde047", targetSide: "target" },
+  inflict_wounds:     { name: "Inflict Wounds",     anim: "necrotic",  color: "#7c3aed", targetSide: "target" },
+  produce_flame:      { name: "Produce Flame",      anim: "fire",      color: "#f97316", targetSide: "target" },
+  dissonant_whispers: { name: "Dissonant Whispers", anim: "psychic",   color: "#ec4899", targetSide: "target" },
+  ice_knife:          { name: "Ice Knife",          anim: "cold",      color: "#3b82f6", targetSide: "target" },
+  // Healing — green
+  cure_wounds:        { name: "Cure Wounds",        anim: "heal",      color: "#22c55e", targetSide: "target" },
+  healing_word:       { name: "Healing Word",       anim: "heal",      color: "#4ade80", targetSide: "target" },
+  goodberry:          { name: "Goodberry",          anim: "heal",      color: "#65a30d", targetSide: "target" },
+  spare_the_dying:    { name: "Spare the Dying",    anim: "heal",      color: "#86efac", targetSide: "target" },
+  // Buffs / protection — gold/violet
+  bless:              { name: "Bless",              anim: "buff",      color: "#fde68a", targetSide: "both"   },
+  shield:             { name: "Shield",             anim: "buff",      color: "#a78bfa", targetSide: "caster" },
+  mage_armor:         { name: "Mage Armor",         anim: "buff",      color: "#c4b5fd", targetSide: "caster" },
+  shield_of_faith:    { name: "Shield of Faith",    anim: "buff",      color: "#fde68a", targetSide: "target" },
+  heroism:            { name: "Heroism",            anim: "buff",      color: "#fbbf24", targetSide: "target" },
+  divine_favor:       { name: "Divine Favor",       anim: "buff",      color: "#fcd34d", targetSide: "caster" },
+  // Utility / enchant
+  faerie_fire:        { name: "Faerie Fire",        anim: "enchant",   color: "#f472b6", targetSide: "target" },
+  detect_magic:       { name: "Detect Magic",       anim: "enchant",   color: "#a78bfa", targetSide: "caster" },
+  sleep:              { name: "Sleep",              anim: "enchant",   color: "#818cf8", targetSide: "target" },
+  charm_person:       { name: "Charm Person",       anim: "enchant",   color: "#f472b6", targetSide: "target" },
+};
+
 /** Preload all known class-ability audio clips. Safe to call multiple times. */
 export function preloadAbilityAudio(): void {
   for (const key of Object.keys(ABILITY_AUDIO)) preloadAudio(ABILITY_AUDIO[key].src);
+}
+
+/** Preload all known spell audio clips. Safe to call multiple times. */
+export function preloadSpellAudio(): void {
+  for (const key of Object.keys(SPELL_AUDIO)) preloadAudio(SPELL_AUDIO[key].src);
+}
+
+function findSpellAudio(spellKey: string): { el: HTMLAudioElement; maxMs?: number } | null {
+  const entry = SPELL_AUDIO[spellKey];
+  if (!entry) return null;
+  const el = preloadAudio(entry.src);
+  if (!el) return null;
+  if (_audioCache[entry.src] === "failed") return null;
+  return { el, maxMs: entry.maxMs };
+}
+
+/**
+ * Plays the audio cue for a spell cast. No synth fallback — if the clip is
+ * missing, no sound plays (spells without registered audio are simply silent).
+ */
+export function playSpellSound(spellKey: string, volume = 0.7): void {
+  const match = findSpellAudio(spellKey);
+  if (match) playRealClip(match, volume);
 }
 
 function findAbilityAudio(resourceKey: string): { el: HTMLAudioElement; maxMs?: number } | null {

@@ -17,7 +17,7 @@ import {
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
 import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS, resolveItemTip } from "../../../lib/tooltipData";
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
-import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio } from "../../../lib/classAbilitySounds";
+import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio, playSpellSound, preloadSpellAudio, SPELL_META } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 
@@ -364,6 +364,21 @@ function parseAbilityTags(text: string, firstName: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) keys.push(m[1].toLowerCase());
   return keys;
+}
+
+/** Parses every [SPELL:Caster:spell_key] or [SPELL:Caster:spell_key:Target]
+ *  tag in a DM response. Returns the (caster, spell_key, optional target)
+ *  tuples in narration order. The engine plays the sound + flashes the
+ *  appropriate card per spell. Caster is matched against the full text so
+ *  the parser works regardless of which character we're scanning for. */
+function parseSpellTags(text: string): Array<{ caster: string; key: string; target?: string }> {
+  const re = /\[SPELL:([A-Za-z][A-Za-z'\- ]*?):([a-z_]+)(?::([A-Za-z][A-Za-z'\- ]*?))?\]/g;
+  const out: Array<{ caster: string; key: string; target?: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out.push({ caster: m[1].trim(), key: m[2].toLowerCase(), target: m[3]?.trim() || undefined });
+  }
+  return out;
 }
 
 /** Returns the last [MARK:FirstName:on|off|target] verdict for a ranger applying
@@ -1130,6 +1145,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     abilityFlashTimerRef.current = setTimeout(() => setAbilityFlash(null), 1200);
   }, []);
 
+  // Spell visual effect on a target party card. Each invocation bumps `key` so
+  // the CSS animation re-fires on rapid casts. The overlay element is rendered
+  // on the affected character card and tinted with the spell's theme color.
+  const [spellFlash, setSpellFlash] = useState<{ charId: string; anim: string; color: string; key: number } | null>(null);
+  const spellFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerSpellFlash = useCallback((charId: string, anim: string, color: string) => {
+    setSpellFlash({ charId, anim, color, key: Date.now() });
+    if (spellFlashTimerRef.current) clearTimeout(spellFlashTimerRef.current);
+    spellFlashTimerRef.current = setTimeout(() => setSpellFlash(null), 1600);
+  }, []);
+
+  // Card "shuffled-off-the-deck" turn-end animation. Plays for ~1.6s on the
+  // character whose turn just ended. The animation is gated to a single card
+  // at a time so multiple turn changes don't overlap.
+  const [turnEndCardId, setTurnEndCardId] = useState<string | null>(null);
+  const turnEndCardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerTurnEndAnim = useCallback((charId: string) => {
+    setTurnEndCardId(charId);
+    if (turnEndCardTimerRef.current) clearTimeout(turnEndCardTimerRef.current);
+    turnEndCardTimerRef.current = setTimeout(() => setTurnEndCardId(null), 1700);
+  }, []);
+
   // Stat / currency tooltip hover
   const [hoveredStat,      setHoveredStat]        = useState<string | null>(null);
   const [hoveredCurrency,  setHoveredCurrency]    = useState<string | null>(null);
@@ -1462,6 +1499,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [params.id, GLOBAL_CHAR_FIELDS]);
   useEffect(() => { charWriteRef.current = charWrite; }, [charWrite]);
+
+  // Turn-end card animation — when currentTurnIndex changes, the character
+  // who JUST finished their turn gets the "shuffled-off-the-deck" spin. The
+  // previous turn-holder is captured via a ref so the effect doesn't fire on
+  // initial mount or party rebuilds.
+  const prevTurnCharIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (turnOrder.length <= 1) { prevTurnCharIdRef.current = turnOrder[0] ?? null; return; }
+    const newTurnCharId = turnOrder[currentTurnIndex] ?? null;
+    const prevTurnCharId = prevTurnCharIdRef.current;
+    if (prevTurnCharId && prevTurnCharId !== newTurnCharId) {
+      triggerTurnEndAnim(prevTurnCharId);
+    }
+    prevTurnCharIdRef.current = newTurnCharId;
+  }, [currentTurnIndex, turnOrder, triggerTurnEndAnim]);
 
   // Build a compact body for /api/suggest-actions that includes the rest of the
   // party (name + HP + status) and any live enemies. Without this context the
@@ -3303,6 +3355,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[INSPIRED:[^\]]+\]/gi, "")
       .replace(/\[MARK:[^\]]+\]/gi, "")
       .replace(/\[ABILITY:[^\]]+\]/gi, "")
+      .replace(/\[SPELL:[^\]]+\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -4094,6 +4147,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             }, i * 220);
           });
         }
+      }
+
+      // Fast SPELL detection — the DM emits [SPELL:Caster:spell_key] or
+      // [SPELL:Caster:spell_key:Target] tags whenever a registered spell is
+      // cast. Each tag plays the matching ElevenLabs clip and flashes the
+      // affected party card with the spell's theme color and animation.
+      // targetSide decides which card flashes: "caster" (self-buff), "target"
+      // (damage / heal aimed at another), or "both" (AoE / multi-target buff).
+      if (!isOpeningScene) {
+        const spellHits = parseSpellTags(full);
+        const partyByFirst = new Map<string, { id: string; name: string }>();
+        for (const m of campaignPartyRef.current) partyByFirst.set(m.name.split(" ")[0].toLowerCase(), { id: m.id, name: m.name });
+        spellHits.forEach(({ caster, key, target }, i) => {
+          const meta = SPELL_META[key];
+          setTimeout(() => {
+            playSpellSound(key);
+            if (!meta) return;
+            const casterMember = partyByFirst.get(caster.split(" ")[0].toLowerCase());
+            const targetMember = target ? partyByFirst.get(target.split(" ")[0].toLowerCase()) : undefined;
+            if (meta.targetSide === "caster" && casterMember) {
+              triggerSpellFlash(casterMember.id, meta.anim, meta.color);
+            } else if (meta.targetSide === "target" && targetMember) {
+              triggerSpellFlash(targetMember.id, meta.anim, meta.color);
+            } else if (meta.targetSide === "both") {
+              if (casterMember) triggerSpellFlash(casterMember.id, meta.anim, meta.color);
+              if (targetMember && targetMember.id !== casterMember?.id) {
+                setTimeout(() => triggerSpellFlash(targetMember.id, meta.anim, meta.color), 80);
+              }
+            } else if (casterMember) {
+              // Fallback: target named but not in party (enemy or NPC) — flash caster instead.
+              triggerSpellFlash(casterMember.id, meta.anim, meta.color);
+            }
+          }, i * 260);
+        });
       }
 
       // Fast HP detection — apply HP change to this character immediately before chat-state returns.
@@ -5091,6 +5178,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   primeAbilitySounds();
                   preloadAbilityAudio();
                   preloadWildShapeAudio();
+                  preloadSpellAudio();
 
                   const isNewCampaign = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
                   if (isNewCampaign) {
@@ -5873,10 +5961,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? `rgba(${classRgb},0.16)` : "rgba(0,0,0,0.3)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
+                const isTurnEnding = turnEndCardId === char.id;
                 return (
                   <div key={char.id}
+                    className={isTurnEnding ? "card-turn-end" : undefined}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); setSidebarTab("sheet"); } }}
-                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
+                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: isTurnEnding ? undefined : cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span
@@ -5924,6 +6014,39 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               style={{ position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none", background: `radial-gradient(circle, ${abilityFlash.color}cc 0%, ${abilityFlash.color}55 45%, transparent 75%)`, animation: "abilityFlash 1.1s ease-out forwards", mixBlendMode: "screen" }}
                             />
                           )}
+                          {spellFlash && spellFlash.charId === char.id && (() => {
+                            const animMap: Record<string, string> = {
+                              heal:      "spellHealPulse 1.5s ease-out forwards",
+                              fire:      "spellFireRoar 1.5s ease-out forwards",
+                              cold:      "spellColdFreeze 1.5s ease-out forwards",
+                              lightning: "spellLightningCrackle 1.2s ease-out forwards",
+                              thunder:   "spellThunderPush 1.4s ease-out forwards",
+                              acid:      "spellPoisonSwirl 1.4s ease-out forwards",
+                              poison:    "spellPoisonSwirl 1.4s ease-out forwards",
+                              radiant:   "spellRadiantBeam 1.4s ease-out forwards",
+                              necrotic:  "spellNecroticDrain 1.5s ease-out forwards",
+                              force:     "spellForceBlast 1.3s ease-out forwards",
+                              psychic:   "spellPsychicWaver 1.4s ease-out forwards",
+                              physical:  "spellDamageStrike 1.3s ease-out forwards",
+                              buff:      "spellBuffAura 1.5s ease-out forwards",
+                              enchant:   "spellEnchantSpiral 1.5s ease-out forwards",
+                            };
+                            const animation = animMap[spellFlash.anim] ?? "abilityFlash 1.1s ease-out forwards";
+                            return (
+                              <div
+                                key={spellFlash.key}
+                                style={{
+                                  position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none",
+                                  background: spellFlash.anim === "heal"
+                                    ? `radial-gradient(circle, ${spellFlash.color}dd 0%, ${spellFlash.color}66 45%, transparent 80%)`
+                                    : `radial-gradient(circle, ${spellFlash.color}cc 0%, ${spellFlash.color}55 45%, transparent 75%)`,
+                                  animation,
+                                  mixBlendMode: "screen",
+                                  boxShadow: `0 0 22px ${spellFlash.color}66, 0 0 44px ${spellFlash.color}33`,
+                                }}
+                              />
+                            );
+                          })()}
                         </div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>

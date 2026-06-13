@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "gen:ability-sounds": "node scripts/generate-ability-sounds.mjs",
-    "gen:wildshape-sounds": "node scripts/generate-wildshape-sounds.mjs"
+    "gen:wildshape-sounds": "node scripts/generate-wildshape-sounds.mjs",
+    "gen:spell-sounds": "node scripts/generate-spell-sounds.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

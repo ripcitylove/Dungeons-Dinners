@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { playAbilitySound, primeAbilitySounds, KNOWN_ABILITY_VOICES } from "../../../lib/classAbilitySounds";
+import { playAbilitySound, primeAbilitySounds, KNOWN_ABILITY_VOICES, playSpellSound, SPELL_META, KNOWN_SPELL_KEYS } from "../../../lib/classAbilitySounds";
 
 // Each entry maps a voice key to a label + flavour color for the test buttons.
 const VOICE_META: Record<string, { label: string; emoji: string; color: string; cls: string }> = {
@@ -161,6 +161,64 @@ export default function SoundsTestPage() {
           </button>
         ))}
       </div>
+
+      <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "40px", marginBottom: "14px" }}>
+        Spell Effects
+      </h2>
+      <p style={{ fontSize: "0.78rem", color: "#64748b", marginBottom: "14px" }}>
+        Each spell triggers an ElevenLabs sound clip + a per-school colored card animation in the campaign. Grouped by category — heal (green), damage (red/element-tinted), buff (gold), enchant (pink/violet).
+      </p>
+      {(["heal", "damage", "buff", "enchant"] as const).map(group => {
+        const filter = (k: string) => {
+          const meta = SPELL_META[k];
+          if (!meta) return false;
+          if (group === "heal")   return meta.anim === "heal";
+          if (group === "buff")   return meta.anim === "buff";
+          if (group === "enchant") return meta.anim === "enchant";
+          // damage = everything else
+          return !["heal","buff","enchant"].includes(meta.anim);
+        };
+        const keys = KNOWN_SPELL_KEYS.filter(filter);
+        if (keys.length === 0) return null;
+        const groupLabel: Record<typeof group, string> = { heal: "Healing", damage: "Damage", buff: "Buffs", enchant: "Enchant & Utility" };
+        return (
+          <div key={group} style={{ marginBottom: "20px" }}>
+            <h3 style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" }}>{groupLabel[group]}</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+              {keys.map(key => {
+                const meta = SPELL_META[key]!;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => { primeAbilitySounds(); playSpellSound(key, volume); setLastFired(`spell · ${key}`); }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "10px 12px",
+                      borderRadius: "9px",
+                      background: "rgba(0,0,0,0.4)",
+                      border: `1px solid ${meta.color}55`,
+                      color: "white",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.12s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = meta.color; e.currentTarget.style.boxShadow = `0 4px 14px ${meta.color}33`; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = `${meta.color}55`; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
+                  >
+                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: meta.color, boxShadow: `0 0 8px ${meta.color}aa`, flexShrink: 0 }} />
+                    <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: meta.color, lineHeight: 1.1 }}>{meta.name}</span>
+                      <span style={{ fontSize: "0.66rem", color: "#64748b", letterSpacing: "0.04em", marginTop: "2px" }}>{meta.anim} · {meta.targetSide}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </main>
   );
 }
