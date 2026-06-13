@@ -108,7 +108,7 @@ function CharacterModal({
       <div
         className="glass-panel animate-fade-in"
         onClick={e => e.stopPropagation()}
-        style={{ width: "100%", maxWidth: "560px", padding: "32px", position: "relative" }}
+        style={{ width: "100%", maxWidth: "clamp(320px, 90vw, 720px)", maxHeight: "92vh", overflowY: "auto", padding: "clamp(20px, 3vw, 32px)", position: "relative" }}
       >
         <button
           onClick={onClose}
@@ -162,7 +162,7 @@ function CharacterModal({
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "clamp(14px, 2vw, 24px)" }}>
           {/* Ability Scores */}
           <div>
             <div style={{ fontSize: "1.28rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Ability Scores</div>
@@ -518,7 +518,7 @@ export default function Dashboard() {
       )}
 
       {/* Page wrapper */}
-      <div style={{ maxWidth: "1380px", margin: "0 auto", padding: "36px 48px 100px" }}>
+      <div style={{ maxWidth: "1380px", margin: "0 auto", padding: "clamp(20px, 3vw, 36px) clamp(16px, 3vw, 48px) clamp(60px, 6vw, 100px)" }}>
 
         {/* Nav */}
         <nav className="nav-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "52px" }}>
@@ -562,7 +562,7 @@ export default function Dashboard() {
         )}
 
         {/* Two-column layout */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 440px", gap: "48px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: "clamp(20px, 3vw, 48px)", alignItems: "start" }}>
 
           {/* ── Campaigns ── */}
           <section>
