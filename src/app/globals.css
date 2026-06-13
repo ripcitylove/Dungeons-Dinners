@@ -31,16 +31,16 @@
 
 html {
   scroll-behavior: smooth;
-  /* Console-class baseline — sized for reading from a couch on a 1080p/4K TV.
-     • Handheld / 1280-wide:  ~17-18 px
-     • 1080p TV / desktop:    ~26-28 px
-     • 1440p ultrawide:       ~33 px (clamped to 32)
-     • 4K TV (couch viewing): ~32 px (clamped)
-     Every rem-based element in the site scales automatically with this curve,
-     so chat font, party-card stats, headings, dashboard tiles, and forms all
-     get an immediate +35-40 % uplift on the most common console resolutions
-     without touching individual components. */
-  font-size: clamp(16px, 1.4vw, 32px);
+  /* Console-class baseline — sized for reading from a couch on a 1080p/4K TV
+     WITHOUT inflating the UI so much that headlines clobber the page.
+     Tuned after Xbox MS Edge feedback that 2.3rem heads at the old 27px root
+     were hitting ~62px on a 1080p TV and crowding everything.
+     • Handheld / 1280-wide:  ~15 px
+     • 1080p TV / desktop:    ~19 px  (was ~27 px before the trim)
+     • 1440p ultrawide:       ~21 px
+     • 4K TV (couch viewing): ~22 px (clamped)
+     Headlines and tiles still feel premium on TV but the layout breathes. */
+  font-size: clamp(15px, 1.0vw, 22px);
 }
 
 body {

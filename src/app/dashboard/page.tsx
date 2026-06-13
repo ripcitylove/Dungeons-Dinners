@@ -707,6 +707,7 @@ export default function Dashboard() {
                       color: counterColor,
                       letterSpacing: "0.04em",
                       textTransform: "none",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {characters.length} / {ROSTER_CAP}
