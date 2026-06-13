@@ -723,19 +723,27 @@ export default function CreateCampaignWizard() {
                       <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8", fontSize: "1rem", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
                         onMouseLeave={hideTooltip}>Race</label>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(140px, 18vw, 200px), 1fr))", gap: "clamp(10px, 1.2vw, 16px)" }}>
                         {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
                           <div key={race} onClick={() => setDraft(d => ({ ...d, race }))}
                             onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
                             onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
                             style={{
-                              padding: "20px 10px", borderRadius: "12px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                              border: `1px solid ${draft.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
-                              background: draft.race === race ? "rgba(139,92,246,0.2)" : hoveredRace === race ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.15)",
-                              transform: draft.race === race ? "translateY(-3px)" : hoveredRace === race ? "translateY(-1px)" : "none",
-                              boxShadow: draft.race === race ? "0 6px 22px rgba(139,92,246,0.35)" : "none",
+                              padding: "clamp(14px, 1.6vw, 22px) clamp(8px, 1vw, 14px) clamp(12px, 1.4vw, 18px)", borderRadius: "14px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                              border: `2px solid ${draft.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.55)" : "var(--border)"}`,
+                              background: draft.race === race ? "rgba(139,92,246,0.22)" : hoveredRace === race ? "rgba(139,92,246,0.1)" : "rgba(0,0,0,0.18)",
+                              transform: draft.race === race ? "translateY(-4px)" : hoveredRace === race ? "translateY(-2px)" : "none",
+                              boxShadow: draft.race === race ? "0 10px 30px rgba(139,92,246,0.45), 0 0 0 1px rgba(139,92,246,0.5) inset" : "none",
                             }}>
-                            <div style={{ fontSize: "2rem", marginBottom: "6px", lineHeight: 1 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
+                            <div style={{ position: "relative", width: "clamp(72px, 8vw, 96px)", height: "clamp(72px, 8vw, 96px)", margin: "0 auto clamp(8px, 1vw, 12px)", borderRadius: "50%", overflow: "hidden", background: "rgba(0,0,0,0.4)", border: `2px solid ${draft.race === race ? "rgba(196,181,253,0.7)" : "rgba(148,163,184,0.2)"}`, boxShadow: draft.race === race ? "0 0 22px rgba(139,92,246,0.55)" : "none" }}>
+                              <img
+                                src={`/races/${race.toLowerCase().replace('-', '_')}.png`}
+                                alt={`${race} emblem`}
+                                onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                              />
+                              <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "2.2rem", position: "absolute", inset: 0 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
+                            </div>
                             <div style={{ fontSize: "1.18rem", fontWeight: draft.race === race ? 700 : 400, color: draft.race === race ? "#c4b5fd" : "inherit" }}>{race}</div>
                           </div>
                         ))}
@@ -839,7 +847,7 @@ export default function CreateCampaignWizard() {
               {/* Class & Proficiencies */}
               {charStep === 2 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(120px, 14vw, 170px), 1fr))", gap: "clamp(10px, 1.2vw, 14px)" }}>
                     {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => {
                       const ct = CLASS_TIPS[cls];
                       const clsColor = CLASS_COLORS[cls] ?? "#8b5cf6";
@@ -857,7 +865,15 @@ export default function CreateCampaignWizard() {
                           transform: draft.class === cls ? "translateY(-3px)" : hoveredClass === cls ? "translateY(-1px)" : "none",
                           boxShadow: draft.class === cls ? `0 6px 22px ${clsColor}44` : "none",
                         }}>
-                        <div style={{ fontSize: "1.7rem", marginBottom: "5px", lineHeight: 1 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
+                        <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", marginBottom: "8px", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.35)", border: `1px solid ${draft.class === cls ? clsColor + "88" : "rgba(148,163,184,0.15)"}` }}>
+                          <img
+                            src={`/classes/${cls.toLowerCase()}.png`}
+                            alt={`${cls} portrait`}
+                            onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }}
+                          />
+                          <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "1.9rem", position: "absolute", inset: 0 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
+                        </div>
                         <div style={{ fontSize: "1.18rem", fontWeight: draft.class === cls ? 700 : 400, color: draft.class === cls ? clsColor : "inherit" }}>{cls}</div>
                         {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "1.2rem", color: "#8b5cf6", marginTop: "3px", letterSpacing: "0.05em", fontWeight: 700 }}>✦ SPELL</div>}
                       </div>

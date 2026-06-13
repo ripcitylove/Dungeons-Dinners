@@ -664,7 +664,7 @@ export default function CreateCharacter() {
                 <label style={{ display: 'block', marginBottom: '14px', color: '#cbd5e1', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Race', 'Your character\'s ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.', '#c4b5fd'), e)}
                   onMouseLeave={hideTooltip}>Race</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(150px, 18vw, 220px), 1fr))', gap: 'clamp(12px, 1.3vw, 18px)' }}>
                   {['Human', 'Elf', 'Dwarf', 'Halfling', 'Dragonborn', 'Tiefling', 'Gnome', 'Half-Elf', 'Half-Orc'].map(race => (
                     <div key={race}
                       onClick={() => setCharacter(c => ({ ...c, race }))}
@@ -710,7 +710,7 @@ export default function CreateCharacter() {
                 <label style={{ display: 'block', marginBottom: '14px', color: '#cbd5e1', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '0.02em', cursor: 'help' }}
                   onMouseEnter={e => showTooltip(tipBox('Alignment', 'Your character\'s moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character\'s motivations. Hover any alignment for its description.', '#a78bfa'), e)}
                   onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 400 }}>(optional — shapes how the DM reads your character)</span></label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(120px, 12vw, 170px), 1fr))', gap: 'clamp(10px, 1vw, 14px)' }}>
                   {ALIGNMENTS.map(a => (
                     <div key={a.key}
                       onClick={() => setCharacter(c => ({ ...c, alignment: c.alignment === a.key ? '' : a.key }))}
@@ -731,7 +731,7 @@ export default function CreateCharacter() {
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '10px', color: '#94a3b8', fontSize: '1rem' }}>Class</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(130px, 14vw, 180px), 1fr))', gap: 'clamp(10px, 1.2vw, 16px)' }}>
                   {['Fighter', 'Wizard', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Barbarian', 'Druid', 'Monk', 'Sorcerer'].map(cls => {
                     const ct = CLASS_TIPS[cls];
                     const clsColor = CLASS_COLORS[cls] ?? '#8b5cf6';
