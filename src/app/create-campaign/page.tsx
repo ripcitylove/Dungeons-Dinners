@@ -696,31 +696,37 @@ export default function CreateCampaignWizard() {
                   {/* Left: new character form */}
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 }}>
 
-                    {/* Name + Title */}
-                    <div style={{ display: "flex", gap: "10px" }}>
+                    {/* Name + Title — matched to create-character aesthetic */}
+                    <div style={{ display: "flex", gap: "14px" }}>
                       <div style={{ flex: 2 }}>
-                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", fontSize: "1rem" }}>Character Name</label>
+                        <label style={{ display: "block", marginBottom: "10px", color: "#cbd5e1", fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox("Character Name", "What your hero is called in the world. The DM and other players will use this name throughout your adventure.", "#c4b5fd"), e)}
+                          onMouseLeave={hideTooltip}>Character Name</label>
                         <input
                           autoFocus type="text" value={draft.name}
                           onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
                           placeholder="e.g. Elara Moonwhisper"
-                          style={{ width: "100%", padding: "14px 16px", borderRadius: "8px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.05rem" }}
+                          style={{ width: "100%", padding: "18px 20px", borderRadius: "10px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.25)", color: "white", fontSize: "1.2rem" }}
                         />
-                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "1.05rem", marginTop: "6px" }}>{charNameErr}</p>}
+                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.9rem", marginTop: "8px" }}>{charNameErr}</p>}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8", fontSize: "1rem" }}>Title <span style={{ fontSize: "1.05rem", color: "#475569" }}>(optional)</span></label>
+                        <label style={{ display: "block", marginBottom: "10px", color: "#cbd5e1", fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox("Title", "An optional honorific like \"the Brave\" or \"Shadowbane.\" The DM uses it alongside your name in narration — e.g. \"Aria the Brave steps forward…\"", "#c4b5fd"), e)}
+                          onMouseLeave={hideTooltip}>
+                          Title <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 400 }}>(optional)</span>
+                        </label>
                         <input type="text" value={draft.title} maxLength={40}
                           onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
                           placeholder="e.g. the Brave"
-                          style={{ width: "100%", padding: "14px 16px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.05rem" }}
+                          style={{ width: "100%", padding: "18px 20px", borderRadius: "10px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.25)", color: "white", fontSize: "1.2rem" }}
                         />
                       </div>
                     </div>
 
-                    {/* Race */}
+                    {/* Race — matched to create-character aesthetic */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8", fontSize: "1rem", cursor: "help" }}
+                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
                         onMouseLeave={hideTooltip}>Race</label>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(140px, 18vw, 200px), 1fr))", gap: "clamp(10px, 1.2vw, 16px)" }}>
@@ -750,47 +756,40 @@ export default function CreateCampaignWizard() {
                       </div>
                     </div>
 
-                    {/* Sex */}
+                    {/* Sex — matched to create-character aesthetic */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8", fontSize: "1rem", cursor: "help" }}
+                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Sex / Pronouns", "Sets the pronouns the DM uses when narrating your character's actions — he/him, she/her, or they/them.", "#c4b5fd"), e)}
                         onMouseLeave={hideTooltip}>Sex</label>
-                      <div style={{ display: "flex", gap: "12px" }}>
+                      <div style={{ display: "flex", gap: "clamp(10px, 1.2vw, 14px)" }}>
                         {(["male", "female", "non-binary"] as const).map(s => {
                           const pronounMap = { male: "he/him", female: "she/her", "non-binary": "they/them" };
                           return (
                           <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))}
                             onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, "#c4b5fd"), e)}
                             onMouseLeave={hideTooltip}
-                            style={{
-                              flex: 1, padding: "14px", borderRadius: "8px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize", fontSize: "1.2rem",
-                              border: `1px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`,
-                              background: draft.sex === s ? "rgba(139,92,246,0.2)" : "transparent",
-                            }}>{s}</div>
+                            style={{ flex: 1, padding: "clamp(14px, 1.6vw, 22px) clamp(10px, 1vw, 16px)", borderRadius: "12px", border: `2px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`, background: draft.sex === s ? "rgba(139,92,246,0.22)" : "rgba(0,0,0,0.18)", cursor: "pointer", textAlign: "center", transition: "all 0.2s", textTransform: "capitalize", boxShadow: draft.sex === s ? "0 6px 22px rgba(139,92,246,0.4)" : "none" }}>
+                              <div style={{ fontSize: "1.2rem", fontWeight: draft.sex === s ? 700 : 600, color: draft.sex === s ? "#c4b5fd" : "#e2e8f0" }}>{s}</div>
+                              <div style={{ fontSize: "0.8rem", color: draft.sex === s ? "rgba(196,181,253,0.8)" : "#64748b", marginTop: "6px", letterSpacing: "0.04em", textTransform: "none" }}>{pronounMap[s]}</div>
+                            </div>
                           );
                         })}
                       </div>
                     </div>
 
-                    {/* Alignment */}
+                    {/* Alignment — matched to create-character aesthetic */}
                     <div>
-                      <label style={{ display: "block", marginBottom: "6px", color: "#94a3b8", cursor: "help" }}
+                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
                         onMouseEnter={e => showTooltip(tipBox("Alignment", "Your character's moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character's motivations. Hover any alignment for its description.", "#a78bfa"), e)}
-                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "1rem", color: "#475569" }}>(optional)</span></label>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 400 }}>(optional — shapes how the DM reads your character)</span></label>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(120px, 12vw, 170px), 1fr))", gap: "clamp(10px, 1vw, 14px)" }}>
                         {ALIGNMENTS.map(a => (
                           <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))}
                             onMouseEnter={e => { setHoveredAlign(a.key); showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? "", ALIGNMENT_COLORS[a.key] ?? "#a78bfa"), e); }}
                             onMouseLeave={() => { setHoveredAlign(null); hideTooltip(); }}
-                            style={{
-                              padding: "8px 6px", borderRadius: "8px", cursor: "pointer", textAlign: "center", transition: "all 0.2s",
-                              border: `1px solid ${draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "var(--primary)") : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "66" : "var(--border)"}`,
-                              background: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "1a" : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "0d" : "transparent",
-                              transform: draft.alignment === a.key ? "translateY(-2px)" : "none",
-                              boxShadow: draft.alignment === a.key ? `0 4px 14px ${ALIGNMENT_COLORS[a.key] ?? "#8b5cf6"}33` : "none",
-                            }}>
-                            <div style={{ fontSize: "1.2rem", fontWeight: 800, letterSpacing: "0.06em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#64748b", textTransform: "uppercase" }}>{a.short}</div>
-                            <div style={{ fontSize: "1rem", color: draft.alignment === a.key ? "white" : "#94a3b8", lineHeight: 1.2, marginTop: "1px" }}>{a.key}</div>
+                            style={{ padding: "clamp(12px, 1.4vw, 18px) clamp(8px, 1vw, 12px)", borderRadius: "12px", cursor: "pointer", textAlign: "center", transition: "all 0.2s", border: `2px solid ${draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "var(--primary)") : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "77" : "var(--border)"}`, background: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "22" : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "14" : "rgba(0,0,0,0.18)", transform: draft.alignment === a.key ? "translateY(-3px)" : "none", boxShadow: draft.alignment === a.key ? `0 8px 24px ${ALIGNMENT_COLORS[a.key] ?? "#8b5cf6"}44` : "none" }}>
+                            <div style={{ fontSize: "1.2rem", fontWeight: 800, letterSpacing: "0.1em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#94a3b8", textTransform: "uppercase", marginBottom: "4px", lineHeight: 1 }}>{a.short}</div>
+                            <div style={{ fontSize: "0.95rem", color: draft.alignment === a.key ? "white" : "#cbd5e1", lineHeight: 1.25, fontWeight: draft.alignment === a.key ? 600 : 400 }}>{a.key}</div>
                           </div>
                         ))}
                       </div>
