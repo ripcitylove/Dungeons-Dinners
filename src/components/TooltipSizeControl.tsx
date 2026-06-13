@@ -62,14 +62,12 @@ export function TooltipSizeControl() {
       style={{
         position: "fixed",
         left: "16px",
-        // Campaign pages dock the music / ambiance player in the bottom-left
-        // corner. To avoid colliding with it, lift the tools menu above the
-        // player on campaign pages. Other surfaces (dashboard, character
-        // creation, landing) keep the standard bottom-left position.
-        bottom: isCampaign ? "92px" : "16px",
+        // Moved to upper-left — clears the bottom-left music / ambiance player
+        // and keeps the standard PC-game tools-corner convention.
+        top: "16px",
         zIndex: 9998,
         display: "flex",
-        flexDirection: "column-reverse",
+        flexDirection: "column",
         alignItems: "flex-start",
         gap: "8px",
         pointerEvents: "none",
@@ -103,15 +101,16 @@ export function TooltipSizeControl() {
         ⚙
       </button>
 
-      {/* Expanded menu — slim vertical stack of actions */}
+      {/* Expanded menu — slim vertical stack of actions, growing downward
+          from the upper-left trigger. */}
       <div
         style={{
           pointerEvents: open ? "auto" : "none",
           display: "flex",
-          flexDirection: "column-reverse",
+          flexDirection: "column",
           gap: "6px",
           opacity: open ? 1 : 0,
-          transform: open ? "translateY(0)" : "translateY(8px)",
+          transform: open ? "translateY(0)" : "translateY(-8px)",
           transition: "opacity 0.18s ease, transform 0.18s ease",
         }}
       >
