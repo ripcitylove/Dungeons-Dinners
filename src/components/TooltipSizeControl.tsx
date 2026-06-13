@@ -62,7 +62,11 @@ export function TooltipSizeControl() {
       style={{
         position: "fixed",
         left: "16px",
-        bottom: "16px",
+        // Campaign pages dock the music / ambiance player in the bottom-left
+        // corner. To avoid colliding with it, lift the tools menu above the
+        // player on campaign pages. Other surfaces (dashboard, character
+        // creation, landing) keep the standard bottom-left position.
+        bottom: isCampaign ? "92px" : "16px",
         zIndex: 9998,
         display: "flex",
         flexDirection: "column-reverse",
