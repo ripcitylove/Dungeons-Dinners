@@ -1599,7 +1599,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // the campaign has no prior gameplay history (see the "New campaign" branch
   // below). Resumes of an in-progress campaign never show the tutorial.
 
-  // Build turn order from campaign party — prefer DB-restored state on resume, fall back to alphabetical
+  // Build turn order from campaign party. Three modes:
+  //  1. RESTORE (first run): use DB-saved order + index from restoredTurnStateRef.
+  //  2. PATCH (subsequent runs with prior order present): preserve the
+  //     in-flight order, append new joiners, drop removed members, and keep
+  //     the index pointing at the SAME character. Critical for mid-session
+  //     joins — previously the effect fell through to alphabetical and reset
+  //     the index to 0, which on Tiegan's client could land the turn on
+  //     Pookie (or vice versa) the moment Pookie joined, and then the DM-
+  //     routing logic for the next message would compute against a freshly-
+  //     shuffled order, sometimes leaving the named player without a routable
+  //     index. Symptom: DM addresses Pookie, system stays on Tiegan.
+  //  3. COLD (no prior order, no restore): alphabetical, index 0.
   useEffect(() => {
     if (!campaignParty.length) return;
     const partyIds = new Set(campaignParty.map(c => c.id));
@@ -1615,6 +1626,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       finalIndex = Math.min(restored.index, validOrder.length - 1);
       // Track whose turn it is so Begin Adventure can sync the DM to that player
       resumeCurrentPlayerIdRef.current = validOrder[finalIndex] ?? null;
+    } else if (turnOrderRef.current.length > 0) {
+      // PATCH MODE — keep the in-flight order; only add joiners and remove
+      // departed members. The active character's slot must survive the patch
+      // so the DM-routing logic sees a stable index.
+      const currentTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+      const filteredOrder = turnOrderRef.current.filter(id => partyIds.has(id));
+      campaignParty.forEach(c => { if (!filteredOrder.includes(c.id)) filteredOrder.push(c.id); });
+      finalOrder = filteredOrder;
+      const preservedIdx = currentTurnCharId ? filteredOrder.indexOf(currentTurnCharId) : -1;
+      finalIndex = preservedIdx >= 0
+        ? preservedIdx
+        : Math.min(currentTurnIndexRef.current, Math.max(0, filteredOrder.length - 1));
     } else {
       finalOrder = [...campaignParty].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id);
       finalIndex = 0;
@@ -3945,7 +3968,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         });
 
         if (dmTurnChar) {
-          const dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+          let dmTurnIdx = turnOrderRef.current.indexOf(dmTurnChar.id);
+          // Self-heal: the DM addressed someone who is in the party but
+          // missing from the turn order. This happens during a join race
+          // where the campaignParty update beat the turn-order patch effect.
+          // Append them now (mirroring the turn_order_swap broadcast so peers
+          // see the same composition) and route to that new slot.
+          if (dmTurnIdx === -1 && dmTurnChar.id) {
+            const repaired = [...turnOrderRef.current, dmTurnChar.id];
+            turnOrderRef.current = repaired;
+            setTurnOrder(repaired);
+            dmTurnIdx = repaired.length - 1;
+            channelRef.current?.send({
+              type: "broadcast",
+              event: "turn_order_swap",
+              payload: { userId, newOrder: repaired, newIndex: dmTurnIdx },
+            });
+            console.warn(`[sendToAI] turn order missing ${dmTurnChar.name} — appended and routed`);
+          }
           if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
             setCurrentTurnIndex(dmTurnIdx);
             currentTurnIndexRef.current = dmTurnIdx;
