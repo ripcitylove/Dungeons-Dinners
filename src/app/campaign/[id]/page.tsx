@@ -1280,6 +1280,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // state. Cleared on first adopted response OR on any qualifying event OR
   // after a short timeout.
   const pendingStateRequestRef = useRef(false);
+  // True iff the next persist-to-DB effect run was triggered by a LOCAL
+  // change (handleSend's deferred advance, DM-routing branches, PATCH-mode
+  // turn-order rebuild, etc.) rather than by a received broadcast. Without
+  // this gate every client writes the campaigns row on every received
+  // turn_taken — last-writer-wins with no ordering, so a slow client can
+  // persist a stale value AFTER the fast one and corrupt the DB. With the
+  // gate, only the originating client writes; receivers update local state
+  // silently. The persist effect reads + clears this flag.
+  const shouldPersistTurnRef = useRef(false);
+  // Queue for turn_order_swap broadcasts whose order references a party
+  // member we haven't yet observed locally. Without this, a self-heal swap
+  // from a faster client (one whose campaignParty already includes the new
+  // joiner) is silently rejected on slower clients, and the subsequent
+  // turn_taken targets an index that doesn't exist in their order. Applied
+  // when the missing member finally arrives via the campaignParty effect.
+  const pendingTurnOrderSwapRef = useRef<{ newOrder: string[]; newIndex: number } | null>(null);
   const resumeNarrationRef        = useRef<string>("");
   // True once the resume-state reconciler has run this session — prevents the
   // recovery flow from re-firing on every state change (which would loop forever).
@@ -1505,9 +1521,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [currentTurnIndex, turnOrder, campaignParty]);
 
 
-  // Persist turn state to DB whenever it changes so campaigns resume at the right position
+  // Persist turn state to DB whenever it changes so campaigns resume at the right position.
+  // SINGLE-WRITER INVARIANT: only persist when the change originated locally
+  // (shouldPersistTurnRef set true at the local mutation site). Broadcast
+  // receivers update React state but leave the ref false, so they skip the
+  // write. This prevents the last-writer-wins race where a slow client
+  // overwrites a faster client's correct value with a stale one.
   useEffect(() => {
     if (!turnOrder.length || !params.id) return;
+    if (!shouldPersistTurnRef.current) return;
+    shouldPersistTurnRef.current = false;
     supabase.from("campaigns")
       .update({ turn_order: turnOrder, current_turn_index: currentTurnIndex })
       .eq("id", params.id)
@@ -1614,6 +1637,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   useEffect(() => {
     if (!campaignParty.length) return;
     const partyIds = new Set(campaignParty.map(c => c.id));
+    // Replay a queued turn_order_swap if its missing ids are now all present.
+    // The self-heal swap from a faster client could not be applied earlier
+    // because we hadn't yet seen the new member — now we have.
+    const queued = pendingTurnOrderSwapRef.current;
+    if (queued && queued.newOrder.every(id => partyIds.has(id))) {
+      pendingTurnOrderSwapRef.current = null;
+      turnOrderRef.current = queued.newOrder;
+      setTurnOrder(queued.newOrder);
+      setCurrentTurnIndex(queued.newIndex);
+      currentTurnIndexRef.current = queued.newIndex;
+      // Receiver-driven replay — do NOT mark persist; originator already did.
+      const activePartyIdx = campaignParty.findIndex(c => c.id === queued.newOrder[queued.newIndex]);
+      if (activePartyIdx >= 0) setActiveCharIdx(activePartyIdx);
+      return;
+    }
     const restored = restoredTurnStateRef.current;
     let finalOrder: string[];
     let finalIndex: number;
@@ -1626,6 +1664,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       finalIndex = Math.min(restored.index, validOrder.length - 1);
       // Track whose turn it is so Begin Adventure can sync the DM to that player
       resumeCurrentPlayerIdRef.current = validOrder[finalIndex] ?? null;
+      // RESTORE-vs-swap reconciliation: if a turn_order_swap arrived BEFORE
+      // this effect first ran, turnOrderRef may already hold a different
+      // (newer) order. Detect the divergence and re-fire round_state_request
+      // so peers can resync us — DB might be stale relative to in-flight
+      // realtime events.
+      const priorOrder = turnOrderRef.current;
+      const priorMatchesRestored =
+        priorOrder.length === finalOrder.length &&
+        priorOrder.every((id, i) => id === finalOrder[i]);
+      if (priorOrder.length > 0 && !priorMatchesRestored && userIdRef.current && channelRef.current) {
+        pendingStateRequestRef.current = true;
+        setTimeout(() => { pendingStateRequestRef.current = false; }, 2500);
+        channelRef.current.send({
+          type: "broadcast",
+          event: "round_state_request",
+          payload: { fromUserId: userIdRef.current },
+        });
+      }
     } else if (turnOrderRef.current.length > 0) {
       // PATCH MODE — keep the in-flight order; only add joiners and remove
       // departed members. The active character's slot must survive the patch
@@ -1646,6 +1702,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setTurnOrder(finalOrder);
     setCurrentTurnIndex(finalIndex);
     currentTurnIndexRef.current = finalIndex;
+    // Local mutation — persist it. (Receivers of turn_taken/turn_order_swap
+    // skip this flag and so don't write to DB; only the originating client
+    // does. Prevents last-writer-wins races on the campaigns row.)
+    shouldPersistTurnRef.current = true;
     // Sync the "Acting" highlight to the current turn player
     const activePartyIdx = campaignParty.findIndex(c => c.id === finalOrder[finalIndex]);
     if (activePartyIdx >= 0) setActiveCharIdx(activePartyIdx);
@@ -1933,6 +1993,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.senderId === userIdRef.current) return;
         // Skip empty broadcasts — these occur when the sender suppressed a degenerate response
         if (!(payload.content as string)?.trim()) return;
+        // A DM response implies a turn move just happened on the originator;
+        // any in-flight round_state_response we receive AFTER this is stale.
+        pendingStateRequestRef.current = false;
         setIsTyping(false); setStreamingContent("");
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: makeLogId("rt"), timestamp: new Date(), role: "dm", content: payload.content }]);
@@ -2043,10 +2106,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (!Array.isArray(newOrder) || newOrder.length === 0) return;
         if (typeof newIndex !== "number" || !Number.isInteger(newIndex)) return;
         if (newIndex < 0 || newIndex >= newOrder.length) return;
-        // Reject orders whose ids don't all exist in the local party — likely a
-        // packet from a session whose party composition has since changed.
+        // Foreign-id check. If the sender's party already includes someone
+        // we haven't observed yet (a join race — common with the self-heal
+        // turn_order_swap from sendToAI's DM-named branch), we cannot
+        // immediately apply the swap. Queue it instead and let the
+        // campaignParty effect replay it when the missing id finally arrives.
+        // Without this, the self-heal swap is silently dropped on slower
+        // clients and the subsequent turn_taken targets an out-of-range index
+        // that also gets dropped — net effect, peers stay on the old turn.
         const partyIds = new Set(campaignPartyRef.current.map(c => c.id));
-        if (partyIds.size > 0 && !newOrder.every(id => partyIds.has(id))) return;
+        if (partyIds.size > 0 && !newOrder.every(id => partyIds.has(id))) {
+          pendingTurnOrderSwapRef.current = { newOrder, newIndex };
+          return;
+        }
         pendingStateRequestRef.current = false;
         turnOrderRef.current = newOrder;
         setTurnOrder(newOrder);
@@ -2117,9 +2189,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           roundActionsRef.current = p.roundActions;
           setRoundActions(p.roundActions);
         }
-        // Adopt peer's turn index too, but only if it's in-range against our
-        // local order. The DB-restored order is authoritative for shape;
-        // peers can correct the cursor within it.
+        // Adopt peer's turnOrder too — without this we could end up agreeing
+        // on the same index value but having different orders, so the index
+        // resolves to a different character on each client. Validate against
+        // local party first; reject if a foreign id slipped in.
+        const responderOrder = Array.isArray(p.turnOrder) ? p.turnOrder : null;
+        const partyIds = new Set(campaignPartyRef.current.map(c => c.id));
+        const orderValid = responderOrder
+          && responderOrder.length > 0
+          && responderOrder.every(id => typeof id === "string" && partyIds.has(id));
+        if (orderValid && responderOrder) {
+          turnOrderRef.current = responderOrder;
+          setTurnOrder(responderOrder);
+        }
+        // Adopt peer's turn index — must be in-range against the (now
+        // possibly updated) turnOrderRef.
         if (typeof p.currentTurnIndex === "number"
             && Number.isInteger(p.currentTurnIndex)
             && p.currentTurnIndex >= 0
@@ -3926,6 +4010,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (rollerIdx >= 0 && rollerIdx !== currentTurnIndexRef.current) {
           setCurrentTurnIndex(rollerIdx);
           currentTurnIndexRef.current = rollerIdx;
+          shouldPersistTurnRef.current = true;
           const rollerPartyIdx = campaignPartyRef.current.findIndex(c => c.id === targetChar.id);
           if (rollerPartyIdx >= 0) setActiveCharIdx(rollerPartyIdx);
           // Single-broadcast invariant: only the FIRST DM-routing branch in
@@ -3979,6 +4064,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             turnOrderRef.current = repaired;
             setTurnOrder(repaired);
             dmTurnIdx = repaired.length - 1;
+            shouldPersistTurnRef.current = true;
             channelRef.current?.send({
               type: "broadcast",
               event: "turn_order_swap",
@@ -3989,6 +4075,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
             setCurrentTurnIndex(dmTurnIdx);
             currentTurnIndexRef.current = dmTurnIdx;
+            shouldPersistTurnRef.current = true;
             const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
             if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
             if (!turnBroadcastedThisCycleRef.current) {
@@ -4025,6 +4112,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 if (prevIdx !== currentTurnIndexRef.current) {
                   setCurrentTurnIndex(prevIdx);
                   currentTurnIndexRef.current = prevIdx;
+                  shouldPersistTurnRef.current = true;
                   if (!turnBroadcastedThisCycleRef.current) {
                     channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
                     turnBroadcastedThisCycleRef.current = true;
@@ -4069,6 +4157,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 if (targetIdx !== currentTurnIndexRef.current) {
                   setCurrentTurnIndex(targetIdx);
                   currentTurnIndexRef.current = targetIdx;
+                  shouldPersistTurnRef.current = true;
                   const partyIdx = campaignPartyRef.current.findIndex(c => c.id === matched.id);
                   if (partyIdx >= 0) setActiveCharIdx(partyIdx);
                   if (!turnBroadcastedThisCycleRef.current) {
@@ -4536,6 +4625,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setRoundActions([]);
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
+    shouldPersistTurnRef.current = true;
     // Open the reconciliation guard window: for the next 1.5s, the deferred
     // advance in handleSend (ours or any other client's, racing this reset)
     // must suppress its turn_taken broadcast — otherwise it would clobber the
@@ -4573,6 +4663,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     [newOrder[fromIdx], newOrder[toIdx]] = [newOrder[toIdx], newOrder[fromIdx]];
     turnOrderRef.current = newOrder;
     setTurnOrder(newOrder);
+    shouldPersistTurnRef.current = true;
     // currentTurnIndex stays at fromIdx — it now points to toChar after the swap
     setActiveCharIdx(toPartyIdx);
     setSuggestions([]);
@@ -4764,6 +4855,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!candidateAlreadyActed) {
         setCurrentTurnIndex(freshNextIdx);
         currentTurnIndexRef.current = freshNextIdx;
+        shouldPersistTurnRef.current = true;
         channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: freshNextIdx } });
         turnBroadcastedThisCycleRef.current = true;
         if (campaignPartyRef.current.length > 1) {
@@ -5515,6 +5607,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         if (dmTurnIdx >= 0 && dmTurnIdx !== currentTurnIndexRef.current) {
                           setCurrentTurnIndex(dmTurnIdx);
                           currentTurnIndexRef.current = dmTurnIdx;
+                          shouldPersistTurnRef.current = true;
                           const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
                           if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
                         }
