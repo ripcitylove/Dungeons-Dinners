@@ -1260,6 +1260,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const rollRequestedUserIdRef     = useRef<string | null>(null);
   const isGroupCheckRollRef        = useRef(false);
   const dmFollowUpBlockAdvanceRef  = useRef(false); // set by sendToAI when DM asks same-player follow-up
+  // Turn-sync hardening:
+  // - turnBroadcastedThisCycleRef: ensures at most ONE turn_taken broadcast per
+  //   handleSend cycle. The DM-routing branches inside sendToAI can each
+  //   independently decide to advance/rewind the turn; without this flag they
+  //   could each fire a broadcast and clients would apply them in network
+  //   order, not send order.
+  // - reconciliationGuardUntilRef: a short window after triggerReconciliation
+  //   fires its round_reset + turn_taken(0). Any deferred turn_taken from a
+  //   concurrent handleSend on another client (or our own re-entry) would
+  //   clobber the reset; this ref lets the deferred branch see we just
+  //   reconciled and bail.
+  const turnBroadcastedThisCycleRef = useRef(false);
+  const reconciliationGuardUntilRef = useRef(0);
   const resumeNarrationRef        = useRef<string>("");
   // True once the resume-state reconciler has run this session — prevents the
   // recovery flow from re-firing on every state change (which would loop forever).
@@ -1955,17 +1968,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "turn_taken" }, ({ payload }) => {
         if (payload.userId === userIdRef.current) return;
-        setCurrentTurnIndex(payload.newIndex);
-        currentTurnIndexRef.current = payload.newIndex;
+        const newIdx = payload.newIndex;
+        // Receiver-side validation: a stale, malformed, or out-of-order
+        // broadcast can carry an index that no longer fits the local
+        // turnOrder (e.g. an earlier turn_taken arriving after a turn_order_swap
+        // shrank the order). Setting an out-of-range index freezes the UI on
+        // an undefined character — drop the message instead.
+        if (typeof newIdx !== "number" || !Number.isInteger(newIdx)) return;
+        if (newIdx < 0 || newIdx >= turnOrderRef.current.length) return;
+        setCurrentTurnIndex(newIdx);
+        currentTurnIndexRef.current = newIdx;
         // Focus the party panel on the newly active character
         if (campaignPartyRef.current.length > 1) {
-          const turnCharId = turnOrderRef.current[payload.newIndex];
+          const turnCharId = turnOrderRef.current[newIdx];
           const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
           if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
         }
         // Generate suggestions if the turn just landed on this player
         const order = turnOrderRef.current;
-        const isNowMyTurn = order.length <= 1 || order[payload.newIndex] === characterRef.current?.id;
+        const isNowMyTurn = order.length <= 1 || order[newIdx] === characterRef.current?.id;
         if (isNowMyTurn && characterRef.current) {
           const lastDmMsg = [...messagesRef.current].reverse().find(m => m.role === "dm");
           if (lastDmMsg) {
@@ -1981,6 +2002,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (payload.userId === userIdRef.current) return;
         const newOrder = payload.newOrder as string[];
         const newIndex = payload.newIndex as number;
+        // Receiver-side validation: reject malformed orders or out-of-range
+        // indices. Same rationale as turn_taken — a stale swap could otherwise
+        // strand the local turn pointer on an undefined char id.
+        if (!Array.isArray(newOrder) || newOrder.length === 0) return;
+        if (typeof newIndex !== "number" || !Number.isInteger(newIndex)) return;
+        if (newIndex < 0 || newIndex >= newOrder.length) return;
+        // Reject orders whose ids don't all exist in the local party — likely a
+        // packet from a session whose party composition has since changed.
+        const partyIds = new Set(campaignPartyRef.current.map(c => c.id));
+        if (partyIds.size > 0 && !newOrder.every(id => partyIds.has(id))) return;
         turnOrderRef.current = newOrder;
         setTurnOrder(newOrder);
         setCurrentTurnIndex(newIndex);
@@ -2000,6 +2031,49 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "round_reset" }, () => {
         roundActionsRef.current = [];
         setRoundActions([]);
+      })
+      // Mid-round state sync — a joining/refreshing client asks peers for the
+      // current view of roundActions + currentTurnIndex. Without this, a tab
+      // refresh during an active round leaves the rejoiner with an empty
+      // roundActionsRef, and the very next turn-advance they compute lands on
+      // a player who already acted (since the rejoiner doesn't know).
+      .on("broadcast", { event: "round_state_request" }, ({ payload }) => {
+        const fromUserId = (payload as { fromUserId?: string }).fromUserId;
+        if (!fromUserId || fromUserId === userIdRef.current) return;
+        // Only respond if we have meaningful state to share — otherwise we'd
+        // race other peers' responses with an empty answer.
+        if (roundActionsRef.current.length === 0 && turnOrderRef.current.length <= 1) return;
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "round_state_response",
+          payload: {
+            toUserId:         fromUserId,
+            roundActions:     roundActionsRef.current,
+            currentTurnIndex: currentTurnIndexRef.current,
+            turnOrder:        turnOrderRef.current,
+          },
+        });
+      })
+      .on("broadcast", { event: "round_state_response" }, ({ payload }) => {
+        const p = payload as { toUserId?: string; roundActions?: RoundAction[]; currentTurnIndex?: number; turnOrder?: string[] };
+        if (p.toUserId !== userIdRef.current) return;
+        // Only accept the FIRST non-trivial response after a request — refuse
+        // to clobber local state we've already started accumulating.
+        if (roundActionsRef.current.length > 0) return;
+        if (Array.isArray(p.roundActions) && p.roundActions.length > 0) {
+          roundActionsRef.current = p.roundActions;
+          setRoundActions(p.roundActions);
+        }
+        // Adopt peer's turn index too, but only if it's in-range against our
+        // local order. The DB-restored order is authoritative for shape;
+        // peers can correct the cursor within it.
+        if (typeof p.currentTurnIndex === "number"
+            && Number.isInteger(p.currentTurnIndex)
+            && p.currentTurnIndex >= 0
+            && p.currentTurnIndex < turnOrderRef.current.length) {
+          setCurrentTurnIndex(p.currentTurnIndex);
+          currentTurnIndexRef.current = p.currentTurnIndex;
+        }
       })
       .on("broadcast", { event: "character_hp_update" }, ({ payload }) => {
         // Legacy event — still handled for sessions in-flight from old clients
@@ -2095,7 +2169,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           });
         }
       })
-      .subscribe();
+      .subscribe(status => {
+        // Once joined, ask peers for the current round state. This rebuilds
+        // roundActionsRef after a tab refresh or mid-session join — without
+        // it the rejoiner's next turn-advance would skip the already-acted
+        // players (since they don't know who acted) and produce desync.
+        if (status === "SUBSCRIBED" && userIdRef.current) {
+          channel.send({
+            type: "broadcast",
+            event: "round_state_request",
+            payload: { fromUserId: userIdRef.current },
+          });
+        }
+      });
 
     channelRef.current = channel;
     return () => {
@@ -3777,7 +3863,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           currentTurnIndexRef.current = rollerIdx;
           const rollerPartyIdx = campaignPartyRef.current.findIndex(c => c.id === targetChar.id);
           if (rollerPartyIdx >= 0) setActiveCharIdx(rollerPartyIdx);
-          channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: rollerIdx } });
+          // Single-broadcast invariant: only the FIRST DM-routing branch in
+          // this sendToAI cycle gets to broadcast turn_taken. Without this,
+          // a roll-rewind + dm-named-turn + bare-name-tail could each fire
+          // their own turn_taken and clients would apply them in network
+          // order, producing visible desync.
+          if (!turnBroadcastedThisCycleRef.current) {
+            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: rollerIdx } });
+            turnBroadcastedThisCycleRef.current = true;
+          }
         }
       }
       channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: targetUserId } });
@@ -3815,7 +3909,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             currentTurnIndexRef.current = dmTurnIdx;
             const dmPartyIdx = campaignPartyRef.current.findIndex(c => c.id === dmTurnChar.id);
             if (dmPartyIdx >= 0) setActiveCharIdx(dmPartyIdx);
-            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+            if (!turnBroadcastedThisCycleRef.current) {
+              channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: dmTurnIdx } });
+              turnBroadcastedThisCycleRef.current = true;
+            }
           } else if (dmTurnIdx >= 0) {
             // DM addressed the current player — it's a follow-up, block the deferred advance
             dmFollowUpBlockAdvanceRef.current = true;
@@ -3846,7 +3943,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 if (prevIdx !== currentTurnIndexRef.current) {
                   setCurrentTurnIndex(prevIdx);
                   currentTurnIndexRef.current = prevIdx;
-                  channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
+                  if (!turnBroadcastedThisCycleRef.current) {
+                    channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
+                    turnBroadcastedThisCycleRef.current = true;
+                  }
                   const partyIdx = campaignPartyRef.current.findIndex(c => c.id === prevChar.id);
                   if (partyIdx >= 0) setActiveCharIdx(partyIdx);
                 }
@@ -3889,7 +3989,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   currentTurnIndexRef.current = targetIdx;
                   const partyIdx = campaignPartyRef.current.findIndex(c => c.id === matched.id);
                   if (partyIdx >= 0) setActiveCharIdx(partyIdx);
-                  channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: targetIdx } });
+                  if (!turnBroadcastedThisCycleRef.current) {
+                    channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: targetIdx } });
+                    turnBroadcastedThisCycleRef.current = true;
+                  }
                 }
                 dmFollowUpBlockAdvanceRef.current = true;
                 console.warn(`[sendToAI] Bare-name truncation — routed turn to ${matched.name}`);
@@ -4351,6 +4454,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setRoundActions([]);
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
+    // Open the reconciliation guard window: for the next 1.5s, the deferred
+    // advance in handleSend (ours or any other client's, racing this reset)
+    // must suppress its turn_taken broadcast — otherwise it would clobber the
+    // round_reset + turn_taken(0) we just emitted. 1500ms is comfortably
+    // longer than the typical broadcast round-trip and shorter than a player
+    // can submit a new action.
+    reconciliationGuardUntilRef.current = Date.now() + 1500;
     channelRef.current?.send({ type: "broadcast", event: "round_reset",  payload: {} });
     channelRef.current?.send({ type: "broadcast", event: "turn_taken",   payload: { userId, newIndex: 0 } });
     if (campaignPartyRef.current.length > 1) setActiveCharIdx(0);
@@ -4432,6 +4542,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (wasGroupCheckRoll) { setIsGroupCheckRoll(false); isGroupCheckRollRef.current = false; }
     channelRef.current?.send({ type: "broadcast", event: "roll_request", payload: { userId: null } });
 
+    // Reset the per-cycle single-broadcast latch. Inside sendToAI, the
+    // rewind / detect-next / follow-up / bare-name branches each independently
+    // decide whether to advance the turn; each must claim the single broadcast
+    // for this cycle so receivers don't apply conflicting indices.
+    turnBroadcastedThisCycleRef.current = false;
+
     // Questions (ending with ?) are informational — they don't consume the player's turn action.
     const isQuestion = !isRollSubmit && text.endsWith('?');
 
@@ -4451,14 +4567,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // Capture acting character BEFORE the turn advances — applyStateChange uses this to gate changes
     prevActingCharIdRef.current = character?.id ?? null;
 
-    // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through
+    // Compute next player and advance turn BEFORE awaiting the DM so no bonus actions slip through.
     // Skip players who have already acted (e.g. via pass) so the turn doesn't cycle back to them.
+    //
+    // CRITICAL — read turnOrderRef/roundActionsRef INSIDE the closure (not the
+    // captured `order` snapshot). When this fn is invoked AFTER the DM await,
+    // a turn_order_swap or player_action broadcast may have arrived; the
+    // captured snapshot would route the turn against stale data. Refs give us
+    // the freshest possible view at call time.
     const findNextUnactedIdx = (fromIdx: number) => {
-      for (let i = 1; i < order.length; i++) {
-        const candidateIdx = (fromIdx + i) % order.length;
-        if (!roundActionsRef.current.some(a => a.characterId === order[candidateIdx])) return candidateIdx;
+      const o = turnOrderRef.current;
+      const acted = roundActionsRef.current;
+      if (o.length === 0) return 0;
+      for (let i = 1; i < o.length; i++) {
+        const candidateIdx = (fromIdx + i) % o.length;
+        if (!acted.some(a => a.characterId === o[candidateIdx])) return candidateIdx;
       }
-      return (fromIdx + 1) % order.length; // fallback: all acted (reconciliation will catch this)
+      return (fromIdx + 1) % o.length; // fallback: all acted (reconciliation will catch this)
     };
 
     let nextPlayerName: string | null = null;
@@ -4519,10 +4644,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // 2. The DM didn't request a roll from the current player (e.g. damage roll after a hit), AND
     // 3. The DM didn't ask the same player a follow-up question (e.g. "which element?")
     const rollPendingAfterDM = rollRequestedUserIdRef.current !== null;
+    // Reconciliation-guard window: if triggerReconciliation just fired (here
+    // or on another client), suppress the deferred advance entirely.
+    // Otherwise the index we'd broadcast would clobber the freshly-set
+    // turn_taken(0) from the reset, and roundActionsRef having just been
+    // cleared would let candidateAlreadyActed pass falsely.
+    const inReconciliationWindow = Date.now() < reconciliationGuardUntilRef.current;
+    // Single-broadcast invariant: if a DM-routing branch already broadcast
+    // turn_taken this cycle, don't emit a competing one from the deferred
+    // path. The DM-routing decision wins.
+    const alreadyBroadcastedThisCycle = turnBroadcastedThisCycleRef.current;
     if (pendingTurnAdvanceIdx !== null
         && currentTurnIndexRef.current === turnIdxBeforeDM
         && !rollPendingAfterDM
-        && !dmFollowUpBlockAdvanceRef.current) {
+        && !dmFollowUpBlockAdvanceRef.current
+        && !inReconciliationWindow
+        && !alreadyBroadcastedThisCycle) {
       // CRITICAL — turn-sync correctness:
       // pendingTurnAdvanceIdx was computed at submission time, BEFORE we awaited
       // the DM. During the DM's stream, player_action broadcasts from other
@@ -4531,7 +4668,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // which other clients then receive via turn_taken and silently accept,
       // producing visible turn desync ("the indicator landed on someone who
       // already went").
-      // Re-run findNextUnactedIdx with the freshest refs so the broadcast we
+      // Re-run findNextUnactedIdx (which now reads turnOrderRef / roundActionsRef
+      // INSIDE the closure, not the captured snapshot) so the broadcast we
       // emit reflects reality on every client. If every order slot has now
       // acted, suppress the broadcast entirely — round reconciliation will
       // fire and reset the round cleanly via round_reset + turn_taken(0).
@@ -4542,6 +4680,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCurrentTurnIndex(freshNextIdx);
         currentTurnIndexRef.current = freshNextIdx;
         channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: freshNextIdx } });
+        turnBroadcastedThisCycleRef.current = true;
         if (campaignPartyRef.current.length > 1) {
           const advPartyIdx = campaignPartyRef.current.findIndex(c => c.id === candidateCharId);
           if (advPartyIdx >= 0) setActiveCharIdx(advPartyIdx);
