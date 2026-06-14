@@ -44,7 +44,10 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "spell_slot_level":      number     // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast.
 }
 
-HP TAG PRIORITY: If the narrative contains [HP:FirstName:N] tags, use them for hp_delta — they are authoritative. [HP:Aria:-9] → target_name="Aria", hp_delta=-9. [HP:Thorin:+5] → target_name="Thorin", hp_delta=5.
+HP TAG PRIORITY (with damage-direction sanity check):
+- An [HP:FirstName:N] tag is normally authoritative. [HP:Aria:-9] → target_name="Aria", hp_delta=-9. [HP:Thorin:+5] → target_name="Thorin", hp_delta=5.
+- BUT the DM occasionally mis-tags damage the player DEALT to an enemy as if the player took it. Before trusting an HP tag, verify the narrative actually shows the named character LOSING (or for positive deltas, GAINING) HP. Apply the same DAMAGE DIRECTION rules below.
+- If the narrative clearly shows the named character as the ATTACKER (e.g. "Aria's blade bites — 9 slashing.") and there is no co-occurring "X takes / suffers / hits Aria" pattern, treat the tag as a model error: set hp_delta=0 and target_name=null. The tag is more useful as a hint than as an authority.
 
 THP TAG PRIORITY: If the narrative contains [THP:FirstName:+N] tags, use them for temp_hp_grant — they are authoritative. [THP:Mira:+7] → target_name="Mira", temp_hp_grant=7. Always treat these as exact integers (never round).
 

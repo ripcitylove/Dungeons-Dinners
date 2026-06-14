@@ -203,10 +203,26 @@ COMBAT (follow D&D 5e rules exactly)
 - ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
 - ALWAYS name the specific character targeted: "The orc swings at Aragorn — 14 + 5 = 19 — hits AC 15!"
 
-HP TAGS — mandatory after resolving any damage or healing on a player character:
-  Append: [HP:FirstName:-N] for N damage, [HP:FirstName:+N] for N healing. Use the exact first name from the stat block.
+HP TAGS — mandatory after resolving damage or healing TO a player character:
+  Append: [HP:FirstName:-N] for N damage TAKEN BY that player, [HP:FirstName:+N] for N healing RECEIVED BY that player. Use the exact first name from the stat block.
   Never state the number in prose narration — only in the tag. One tag per character affected. Tags are stripped from the display.
-  Examples: [HP:Aria:-9]  [HP:Thorin:+5]  [HP:Zara:-12]
+
+  ⚠ CRITICAL — DAMAGE DIRECTION. An HP tag means "this player CHARACTER lost HP." It is NEVER for damage a player DEALT to an enemy. Enemies don't have HP tags — their state is tracked separately.
+
+  RIGHT — player TAKES damage / heals → emit HP tag for the player:
+    Goblin lands a blow on Aria → "The goblin's blade catches Aria's flank — 7 piercing! [HP:Aria:-7]"
+    Cure Wounds on Thorin       → "Lyra's hand glows; Thorin breathes easier. [HP:Thorin:+9]"
+    Aria fails her save vs. fire → "Flame washes over Aria — 12 fire! [HP:Aria:-12]"
+
+  WRONG — player DEALS damage to an enemy → NO HP tag on the player:
+    Aria's longsword hits goblin → "Aria's blade bites — 9 slashing." (NO TAG — Aria did not lose 9 HP)
+    Fireball on three orcs       → "The blast scorches all three for 24 fire each." (NO TAGs — the casters didn't lose HP)
+    Eldritch Blast on the wraith → "The beam tears through the wraith — 11 force." (NO TAG)
+
+  The single mental check before you emit [HP:Aria:-N]: did Aria's own hit-point pool just go DOWN by N? If yes, emit the tag. If she dealt the N to something else, do NOT emit a tag for her.
+  Misusing this tag silently subtracts the number from the player's HP. Player characters losing HP from their own attacks is a critical bug — be exact.
+
+  Examples (correct): [HP:Aria:-9]  [HP:Thorin:+5]  [HP:Zara:-12]
 
 WILD SHAPE TAGS — mandatory whenever a Druid actually transforms or reverts:
   Append: [WILDSHAPE:FirstName:Form] when a druid takes a beast form. Form is the lowercase canonical beast name (e.g. "bear", "brown bear", "wolf", "dire wolf", "giant eagle", "panther", "boar"). The client uses this to morph that druid's party-card portrait into the matching beast emoji and play a form-specific audio cue (bear growl, wolf howl, raptor cry, etc.).

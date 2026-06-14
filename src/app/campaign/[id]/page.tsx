@@ -296,6 +296,61 @@ function parseHpTag(text: string, firstName: string): number {
   return total;
 }
 
+// Damage-direction validator. The DM is instructed to emit [HP:FirstName:-N]
+// ONLY when the named player CHARACTER actually loses N HP — never when the
+// player DEALS N damage to an enemy. The model occasionally violates this
+// rule and tags the attacker instead of the target, which would silently
+// drain the attacker's HP from their own successful hit. This validator
+// scans the narrative for clear attacker-verb usage on the player; when the
+// player is plainly the attacker AND there's no offsetting receiver pattern,
+// the tag is rejected.
+//
+// The check is intentionally narrow: only reject damage (negative deltas)
+// where the narrative shows player as attacker with no receiver pattern.
+// Healing (positive deltas) is left alone — applying healing to the wrong
+// player is annoying but not destructive.
+// Attack-verb tokens used to detect "the named character is the ATTACKER" in
+// narration. The -ing/-ed forms of these verbs that ALSO double as D&D damage-
+// type adjectives (slashing, piercing, crushing, bashing, fire) are deliberately
+// OMITTED — they appear in "N slashing", "N piercing", "fire damage" patterns
+// where they describe the damage type, not an action, and would false-positive
+// on legitimate "Aria takes 9 slashing" tags. The base verb forms (slash, slashes,
+// slashed, pierce, pierces, pierced) are retained so genuine attacker patterns
+// ("Aria slashes the orc") still match.
+const _ATTACK_VERBS_RE_SRC = "deal|deals|dealing|dealt|strike|strikes|striking|struck|hit|hits|hitting|attack|attacks|attacking|attacked|land|lands|landing|landed|cut|cuts|cutting|slash|slashes|slashed|bite|bites|biting|cast|casts|casting|fires|firing|fired|shoot|shoots|shooting|shot|swing|swings|swinging|swung|stab|stabs|stabbing|stabbed|pierce|pierces|pierced|smash|smashes|smashed|crush|crushes|crushed|connect|connects|connecting|connected|tear|tears|tearing|tore|rip|rips|ripping|ripped|bash|bashes|bashed|punch|punches|punching|punched|kick|kicks|kicking|kicked|loose|looses|loosing|loosed|hurl|hurls|hurling|hurled|throw|throws|throwing|threw|launch|launches|launching|launched|unleash|unleashes|unleashing|unleashed|blast|blasts|blasting|blasted";
+const _RECEIVER_VERBS_RE_SRC = "takes?|took|taking|suffers?|suffered|suffering|loses?|lost|losing|drops?|dropped|dropping|absorbs?|absorbed|absorbing|recoils?|recoiled|recoiling|reels?|reeled|reeling|crumples?|crumpled|stagger?s?|staggered|staggering|collapses?|collapsed|collapsing|heals?|healed|healing|regains?|regained|regaining|recovers?|recovered|recovering";
+const _ENEMY_ATTACK_VERBS_RE_SRC = "hits?|strikes?|catches|caught|cuts?|stabs?|attacks?|claws?|fangs?|bites?|smashes?|crushes?|grabs?|seizes?|wraps?|grapples?|lashes?|lashed|lashing|whips?|whipped|whipping|impales?|impaled|impaling|gores?|gored|goring|rakes?|raked|raking|slams?|slammed|slamming|connects?|connected|connecting";
+
+function damageTagShouldBeSuppressed(text: string, firstName: string, delta: number): boolean {
+  if (delta >= 0) return false; // only validate damage (negative), leave healing alone
+  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // Receiver pattern A: "Aria takes / suffers / loses / drops / recoils [N]"
+  // (verb close to a stated number — player is taking damage)
+  const receiverActive = new RegExp(
+    `\\b${n}\\b[^.!?\\n]{0,40}\\b(?:${_RECEIVER_VERBS_RE_SRC})\\b`,
+    "i",
+  );
+  // Receiver pattern B: "the [enemy verb] Aria" — enemy hitting the player
+  const receiverPassive = new RegExp(
+    `\\b(?:${_ENEMY_ATTACK_VERBS_RE_SRC})\\b[^.!?\\n]{0,40}\\b${n}\\b`,
+    "i",
+  );
+  if (receiverActive.test(text) || receiverPassive.test(text)) return false;
+
+  // Attacker pattern A: "Aria attacks / strikes / hits / casts / shoots..."
+  const attackerActive = new RegExp(
+    `\\b${n}\\b[^.!?\\n]{0,30}\\b(?:${_ATTACK_VERBS_RE_SRC})\\b`,
+    "i",
+  );
+  // Attacker pattern B: "Aria's blade bites / strikes / connects..."
+  const attackerPossessive = new RegExp(
+    `\\b${n}'?s\\s+\\w+\\s+(?:${_ATTACK_VERBS_RE_SRC})\\b`,
+    "i",
+  );
+  return attackerActive.test(text) || attackerPossessive.test(text);
+}
+
 /** Parses [THP:FirstName:+N] tags from DM text. Returns the highest temp-HP grant
  *  seen for that character (D&D 5e: temp HP doesn't stack — keep the larger value). */
 function parseThpTag(text: string, firstName: string): number {
@@ -2018,7 +2073,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (myChar) {
             const firstName = myChar.name.split(" ")[0];
             const hpDelta = parseHpTag(payload.content as string, firstName);
-            if (hpDelta !== 0) {
+            // Damage-direction guard: reject the tag when the narrative shows
+            // this player as the ATTACKER. Without this, an Aria-deals-9-to-the-
+            // goblin event with a mis-emitted [HP:Aria:-9] would silently
+            // subtract 9 from Aria's own pool.
+            if (hpDelta !== 0 && damageTagShouldBeSuppressed(payload.content as string, firstName, hpDelta)) {
+              console.warn(`[fast HP] Suppressed [HP:${firstName}:${hpDelta}] — narrative shows ${firstName} as attacker, not receiver`);
+              // Mark as consumed so the chat-state route's hp_delta is also skipped.
+              pendingHpDeltaRef.current = hpDelta;
+            } else if (hpDelta !== 0) {
               const ib = computeInventoryBonuses(myChar.inventory?.items ?? [], myChar.inventory?.weapons ?? []);
               const fastTempHp0 = myChar.class_resources?.temp_hp ?? 0;
               let fastTempHp = fastTempHp0;
@@ -4505,7 +4568,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (actingChar) {
           const firstName = actingChar.name.split(" ")[0];
           const hpDelta = parseHpTag(full, firstName);
-          if (hpDelta !== 0) {
+          // Damage-direction guard: if the DM emitted [HP:Aria:-N] but the
+          // narrative shows Aria as the ATTACKER, the tag is a model error.
+          // Suppressing here stops the acting player from losing HP to their
+          // own successful hit. Mark pendingHpDeltaRef so the slow path
+          // (chat-state) also skips a duplicate application.
+          if (hpDelta !== 0 && damageTagShouldBeSuppressed(full, firstName, hpDelta)) {
+            console.warn(`[fast HP] Suppressed [HP:${firstName}:${hpDelta}] — narrative shows ${firstName} as attacker, not receiver`);
+            pendingHpDeltaRef.current = hpDelta;
+          } else if (hpDelta !== 0) {
             const ib = computeInventoryBonuses(actingChar.inventory?.items ?? [], actingChar.inventory?.weapons ?? []);
             const fastTempHp0 = actingChar.class_resources?.temp_hp ?? 0;
             let fastTempHp = fastTempHp0;
