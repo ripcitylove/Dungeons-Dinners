@@ -4523,13 +4523,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         && currentTurnIndexRef.current === turnIdxBeforeDM
         && !rollPendingAfterDM
         && !dmFollowUpBlockAdvanceRef.current) {
-      setCurrentTurnIndex(pendingTurnAdvanceIdx);
-      currentTurnIndexRef.current = pendingTurnAdvanceIdx;
-      channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: pendingTurnAdvanceIdx } });
-      if (campaignPartyRef.current.length > 1) {
-        const advCharId = turnOrderRef.current[pendingTurnAdvanceIdx];
-        const advPartyIdx = campaignPartyRef.current.findIndex(c => c.id === advCharId);
-        if (advPartyIdx >= 0) setActiveCharIdx(advPartyIdx);
+      // CRITICAL — turn-sync correctness:
+      // pendingTurnAdvanceIdx was computed at submission time, BEFORE we awaited
+      // the DM. During the DM's stream, player_action broadcasts from other
+      // clients may have landed and updated roundActionsRef. If we trust the
+      // stale index here, we can advance to a player who has since acted —
+      // which other clients then receive via turn_taken and silently accept,
+      // producing visible turn desync ("the indicator landed on someone who
+      // already went").
+      // Re-run findNextUnactedIdx with the freshest refs so the broadcast we
+      // emit reflects reality on every client. If every order slot has now
+      // acted, suppress the broadcast entirely — round reconciliation will
+      // fire and reset the round cleanly via round_reset + turn_taken(0).
+      const freshNextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
+      const candidateCharId = turnOrderRef.current[freshNextIdx];
+      const candidateAlreadyActed = roundActionsRef.current.some(a => a.characterId === candidateCharId);
+      if (!candidateAlreadyActed) {
+        setCurrentTurnIndex(freshNextIdx);
+        currentTurnIndexRef.current = freshNextIdx;
+        channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: freshNextIdx } });
+        if (campaignPartyRef.current.length > 1) {
+          const advPartyIdx = campaignPartyRef.current.findIndex(c => c.id === candidateCharId);
+          if (advPartyIdx >= 0) setActiveCharIdx(advPartyIdx);
+        }
       }
     }
 
