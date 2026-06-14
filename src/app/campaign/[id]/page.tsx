@@ -1273,6 +1273,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   //   reconciled and bail.
   const turnBroadcastedThisCycleRef = useRef(false);
   const reconciliationGuardUntilRef = useRef(0);
+  // Gates round_state_response adoption. We only honor a response while a
+  // request is genuinely pending — once any other state-mutating event
+  // (turn_taken, player_action, round_reset, swap) has already advanced our
+  // view past the moment of request, a late response would clobber fresher
+  // state. Cleared on first adopted response OR on any qualifying event OR
+  // after a short timeout.
+  const pendingStateRequestRef = useRef(false);
   const resumeNarrationRef        = useRef<string>("");
   // True once the resume-state reconciler has run this session — prevents the
   // recovery flow from re-firing on every state change (which would loop forever).
@@ -1894,6 +1901,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const updated: RoundAction[] = [...roundActionsRef.current, { characterId: payload.characterId as string, name: (payload.characterName as string) ?? "Unknown", action: broadcastAction }];
           roundActionsRef.current = updated;
           setRoundActions(updated);
+          // A live action just changed our roundActions — any pending state
+          // request is now stale relative to what we just observed.
+          pendingStateRequestRef.current = false;
         }
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
@@ -1976,6 +1986,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // an undefined character — drop the message instead.
         if (typeof newIdx !== "number" || !Number.isInteger(newIdx)) return;
         if (newIdx < 0 || newIdx >= turnOrderRef.current.length) return;
+        // Our view is now fresher than any in-flight round_state_response.
+        pendingStateRequestRef.current = false;
         setCurrentTurnIndex(newIdx);
         currentTurnIndexRef.current = newIdx;
         // Focus the party panel on the newly active character
@@ -2012,6 +2024,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // packet from a session whose party composition has since changed.
         const partyIds = new Set(campaignPartyRef.current.map(c => c.id));
         if (partyIds.size > 0 && !newOrder.every(id => partyIds.has(id))) return;
+        pendingStateRequestRef.current = false;
         turnOrderRef.current = newOrder;
         setTurnOrder(newOrder);
         setCurrentTurnIndex(newIndex);
@@ -2031,6 +2044,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "round_reset" }, () => {
         roundActionsRef.current = [];
         setRoundActions([]);
+        pendingStateRequestRef.current = false;
+        // Mirror the reconciliation guard window on the receiver side.
+        // Without this, only the originating client knew a reset just happened
+        // — every other client's deferred-advance branch would happily compute
+        // findNextUnactedIdx against the freshly-emptied roundActionsRef and
+        // broadcast turn_taken(next), clobbering the turn_taken(0) the
+        // originator just sent. The guard must be set on every client that
+        // observes a reset, not just the one that triggered it.
+        reconciliationGuardUntilRef.current = Date.now() + 1500;
       })
       // Mid-round state sync — a joining/refreshing client asks peers for the
       // current view of roundActions + currentTurnIndex. Without this, a tab
@@ -2057,8 +2079,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "round_state_response" }, ({ payload }) => {
         const p = payload as { toUserId?: string; roundActions?: RoundAction[]; currentTurnIndex?: number; turnOrder?: string[] };
         if (p.toUserId !== userIdRef.current) return;
-        // Only accept the FIRST non-trivial response after a request — refuse
-        // to clobber local state we've already started accumulating.
+        // Only adopt while a request is still genuinely pending. If a
+        // turn_taken / player_action / round_reset / turn_order_swap landed
+        // since we asked, our local view is fresher than this response and
+        // adopting it would roll us BACKWARDS to the responder's snapshot.
+        if (!pendingStateRequestRef.current) return;
+        // Single-shot: clear the flag so a second peer's late response can't
+        // also overwrite us.
+        pendingStateRequestRef.current = false;
+        // Only accept if we still have no local round state. Defense in depth
+        // with the pendingStateRequestRef check above.
         if (roundActionsRef.current.length > 0) return;
         if (Array.isArray(p.roundActions) && p.roundActions.length > 0) {
           roundActionsRef.current = p.roundActions;
@@ -2175,6 +2205,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // it the rejoiner's next turn-advance would skip the already-acted
         // players (since they don't know who acted) and produce desync.
         if (status === "SUBSCRIBED" && userIdRef.current) {
+          pendingStateRequestRef.current = true;
+          // Auto-clear after 2.5s — any response arriving later than this is
+          // almost certainly stale relative to events we've meanwhile applied.
+          setTimeout(() => { pendingStateRequestRef.current = false; }, 2500);
           channel.send({
             type: "broadcast",
             event: "round_state_request",
@@ -3561,6 +3595,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Reset the single-broadcast latch HERE (not just at the top of handleSend)
+    // so it can't leak between sendToAI calls. triggerReconciliation and
+    // handleTurnSkip both invoke sendToAI directly — if the latch was already
+    // set true by a prior cycle, every DM-routing branch inside this new
+    // sendToAI would silently suppress its turn_taken broadcast, and peers
+    // would never see the routing decision.
+    turnBroadcastedThisCycleRef.current = false;
+
     // Reset narration queue unless we want to continue from a prior DM response (e.g. reconciliation after allActed)
     if (!opts?.preserveNarration) {
       // Stop any in-flight audio immediately so old narration never bleeds into new DM text.
@@ -4595,16 +4637,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // player — if the same player needs a follow-up roll, the rewind + rollRequested guard will keep
       // the turn on them; if the action is fully resolved, detectNextTurnPlayer advances to the next.
       const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
-      nextPlayerName = campaignPartyRef.current.find(c => c.id === order[nextIdx])?.name ?? null;
+      // Index turnOrderRef.current (not the captured `order` snapshot) — a
+      // turn_order_swap during pre-await setup could have grown the order and
+      // findNextUnactedIdx may return an index past `order.length-1`.
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === turnOrderRef.current[nextIdx])?.name ?? null;
       pendingTurnAdvanceIdx = nextIdx;
     } else if (isRollSubmit && wasGroupCheckRoll && order.length > 1) {
       // Group check roll — keep the same player's turn; DM resolves the check and returns to them
-      nextPlayerName = campaignPartyRef.current.find(c => c.id === order[currentTurnIndexRef.current])?.name ?? null;
+      nextPlayerName = campaignPartyRef.current.find(c => c.id === turnOrderRef.current[currentTurnIndexRef.current])?.name ?? null;
     } else if (!isRollSubmit && !isQuestion && order.length > 1) {
       const allActedNow = order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
       if (!allActedNow) {
         const nextIdx = findNextUnactedIdx(currentTurnIndexRef.current);
-        nextPlayerName = campaignPartyRef.current.find(c => c.id === order[nextIdx])?.name ?? null;
+        nextPlayerName = campaignPartyRef.current.find(c => c.id === turnOrderRef.current[nextIdx])?.name ?? null;
         // Store for deferred application — sendToAI's DM routing may override this
         pendingTurnAdvanceIdx = nextIdx;
       }
