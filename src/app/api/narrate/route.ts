@@ -36,9 +36,13 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   },
   bard: {
     voiceId:    "pFZP5JQG7iQjIQuC4Bku",
-    stability:  0.62,   // was 0.30 — too low, caused "talking in tongues"
+    // Lifted from 0.62 → 0.74 after continued reports of slurring / nonsense
+    // syllables on bard, the most popular default voice. 0.62 was still under
+    // the safe band; 0.74 keeps the playful prosody while eliminating the
+    // erratic-phoneme failure mode on short-to-medium clips.
+    stability:  0.74,
     similarity: 0.78,
-    style:      0.40,   // was 0.70 — over-expressive
+    style:      0.32,   // was 0.40 — small drop reduces expressive overshoot
   },
   oracle: {
     voiceId:    "Xb7hH8MSUJpSbSDYk0k2",
@@ -48,9 +52,11 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   },
   shade: {
     voiceId:    "SOYHLrjzK2X1ezoPC6cr",
-    stability:  0.65,
+    // Same rationale as bard — 0.65 was the second-lowest setting in the
+    // roster and shade's hard-edged delivery amplified any erratic phonemes.
+    stability:  0.72,
     similarity: 0.78,
-    style:      0.35,
+    style:      0.30,   // was 0.35
   },
   sage: {
     voiceId:    "pqHfZKP75CvOlQylNhV4",
@@ -159,10 +165,11 @@ async function synthesize(text: string, voice: string, fresh = false): Promise<R
 
   text = normalizeForTTS(text);
 
-  // Reject tiny fragments. Given < ~4 chars of context, ElevenLabs often
-  // produces a single moan, hum, or noise burst (the "speaking in tongues"
-  // effect). The client treats a 400 as "skip this slot" — no broken audio plays.
-  if (text.length < 4) return new Response("Text too short to narrate", { status: 400 });
+  // Reject short fragments. Given < ~16 chars of context (raised from 4
+  // after continued reports of slurring), ElevenLabs cannot reliably establish
+  // prosody and often produces a moan, hum, or "speaking in tongues" burst.
+  // The client treats a 400 as "skip this slot" — no broken audio plays.
+  if (text.length < 16) return new Response("Text too short to narrate", { status: 400 });
   // Reject text that's purely punctuation / non-alphanumeric after normalization.
   if (!/[A-Za-z]/.test(text)) return new Response("No speakable content", { status: 400 });
 
@@ -184,7 +191,17 @@ async function synthesize(text: string, voice: string, fresh = false): Promise<R
   // trusting a cached file — anything smaller is a previously-truncated upload.
   const minBytes = Math.max(4096, Math.floor(text.length * 300));
 
-  if (!fresh) {
+  // Cache-poisoning defense: don't trust the cache for short clips. If an
+  // earlier generation produced a garbled clip (rare but happens at low char
+  // counts where ElevenLabs has insufficient prosody context), the size
+  // check at the cache-read step cannot detect it, and the clip would
+  // replay forever. For text under 80 chars we always regenerate. The cost
+  // is a few extra TTS calls per session; the gain is that a one-time bad
+  // clip cannot persist.
+  const SHORT_TEXT_NOCACHE = 80;
+  const cacheable = text.length >= SHORT_TEXT_NOCACHE;
+
+  if (!fresh && cacheable) {
     const { data: listed } = await supabase.storage.from(BUCKET).list("narration", { search: hash.slice(0, 8) });
     const cached = listed?.find(f => f.name === `${hash}.mp3`);
     const cachedSize = (cached?.metadata as { size?: number } | undefined)?.size ?? 0;
@@ -249,6 +266,8 @@ async function synthesize(text: string, voice: string, fresh = false): Promise<R
       console.warn(`[api/narrate] Retry also truncated (got ${retryBuf.length} bytes) — giving up`);
       return new Response("TTS truncated", { status: 502 });
     }
+    // Always cache the retry result — even short clips that came through
+    // retry are now known-good (size + content-length sanity passed).
     const { error: upErr } = await supabase.storage
       .from(BUCKET)
       .upload(storageFile, retryBuf, { contentType: "audio/mpeg", upsert: true });
@@ -258,6 +277,14 @@ async function synthesize(text: string, voice: string, fresh = false): Promise<R
     }
     const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(storageFile);
     return Response.json({ audioUrl: `${publicUrl}?v=${Date.now()}` });
+  }
+
+  // For short clips (< SHORT_TEXT_NOCACHE), return the audio inline as a data
+  // URL instead of caching. Prevents any single bad clip from persisting in
+  // the bucket and re-serving on future identical text.
+  if (!cacheable) {
+    const dataUrl = `data:audio/mpeg;base64,${audioBuffer.toString("base64")}`;
+    return Response.json({ audioUrl: dataUrl });
   }
 
   const { error } = await supabase.storage

@@ -3307,7 +3307,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (!stopped) narBuf = remaining;
         }
       }
-      if (narrationEnabledRef.current && narBuf.trim().length > 8) {
+      // Same tail-guard rationale as the other final-flush — raise 8→24 so
+      // sub-prosody-window stubs don't get sent to TTS and come back garbled.
+      if (narrationEnabledRef.current && narBuf.trim().length > 24) {
         const { chunks: tail } = pullNarrationChunks(narBuf, true);
         for (const s of tail) {
           const cleaned = stripSystemLeaks(s);
@@ -3898,7 +3900,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       // Final flush — split anything remaining into sentence-sized chunks so we never
       // dump a multi-paragraph response as one giant TTS clip (which the watchdog kills).
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 8) {
+      // Tail guard raised from 8 → 24 chars: ElevenLabs at < ~16-24 chars of context
+      // routinely produces slurred or "speaking in tongues" output because there's not
+      // enough prosody window to settle on a voice. The text still appears in chat;
+      // we just skip narrating that one stub. Falling short on the LAST sentence's
+      // audio is preferable to playing a garbled clip the player has to mentally
+      // un-hear.
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 24) {
         const { chunks: tail } = pullNarrationChunks(narBuf, true);
         for (const s of tail) {
           const cleaned = stripSystemLeaks(s);
