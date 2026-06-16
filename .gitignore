@@ -19,6 +19,10 @@
 /blob-report/
 /playwright/.cache/
 
+# supabase cli scratch state
+/supabase/.temp/
+/supabase/.branches/
+
 # next.js
 /.next/
 /out/
