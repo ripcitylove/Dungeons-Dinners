@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { getSpellSlots } from "../../../lib/spellData";
 
 const anthropic = new Anthropic();
 
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
         inventory?: { weapons?: ({ name: string } | string)[] };
         level?: number;
         sex?: string;
+        spell_slots_used?: Record<string, number>;
       };
       party?: PartyMemberCtx[];
       enemies?: EnemyCtx[];
@@ -63,7 +65,16 @@ export async function POST(req: NextRequest) {
         : "";
       const hpPct = character.max_hp && character.max_hp > 0 ? Math.round(((character.hp ?? 0) / character.max_hp) * 100) : 100;
       const pronouns = pronounsFor(character.sex);
-      charLine = `Character: ${character.name} (${pronouns}), Level ${character.level ?? 1} ${character.race ?? ""} ${character.class ?? ""}. HP ${character.hp}/${character.max_hp} (${hpPct}%). ${weapons} ${cantrips} ${prepared}`.trim();
+      // Spell-slot economy: prepared (leveled) spells each need a slot; cantrips are free.
+      const maxSlots = character.class ? getSpellSlots(character.class, character.level ?? 1) : {};
+      const usedSlots = character.spell_slots_used ?? {};
+      let slotsLeft = 0;
+      for (const [lvl, n] of Object.entries(maxSlots)) slotsLeft += Math.max(0, (n as number) - (Number(usedSlots[lvl]) || 0));
+      const hasLeveledSpells = (character.spells_prepared?.length ?? 0) > 0;
+      const slotNote = hasLeveledSpells
+        ? ` Spell slots remaining: ${slotsLeft}${slotsLeft === 0 ? " (NO leveled spells castable — cantrips only)" : ""}.`
+        : "";
+      charLine = `Character: ${character.name} (${pronouns}), Level ${character.level ?? 1} ${character.race ?? ""} ${character.class ?? ""}. HP ${character.hp}/${character.max_hp} (${hpPct}%). ${weapons} ${cantrips} ${prepared}${slotNote}`.trim();
     }
 
     // ── Party context block ────────────────────────────────────────────────────
@@ -129,7 +140,9 @@ PRONOUN RULE — NON-NEGOTIABLE, APPLIES TO EVERY NAMED CHARACTER:
 - This rule applies to BOTH the acting character AND every other party member you mention. Suggestions like "Heal him" / "Pass her the potion" / "Ask them to flank" MUST match the listed pronouns.
 - If you cannot recall a member's pronouns mid-suggestion, refer to them by name only (no third-person pronoun) rather than guessing.
 
-CRITICAL SPELL RULE: Only suggest spells the character actually has. Non-spellcasters get zero spell suggestions.`,
+CRITICAL SPELL RULE: Only suggest spells the character actually has. Non-spellcasters get zero spell suggestions.
+
+CRITICAL SPELL-SLOT RULE: "Prepared spells" are LEVELED — each one costs a spell slot to cast. Cantrips are FREE and always castable. When the Character line shows "Spell slots remaining: 0", you MUST NOT suggest ANY prepared/leveled spell (e.g. Hellish Rebuke, Cure Wounds, Magic Missile, Healing Word) — suggest only cantrips, weapon attacks, movement, items, or skill uses. Never suggest a spell the character has no slot to cast.`,
       messages: [
         {
           role: "user",

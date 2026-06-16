@@ -207,6 +207,8 @@ HP TAGS — mandatory after resolving damage or healing TO a player character:
   Append: [HP:FirstName:-N] for N damage TAKEN BY that player, [HP:FirstName:+N] for N healing RECEIVED BY that player. Use the exact first name from the stat block.
   Never state the number in prose narration — only in the tag. One tag per character affected. Tags are stripped from the display.
 
+  ⚠ NEVER state a character's specific CURRENT or REMAINING HP number in prose (e.g. "you're at 2 HP", "you have 15 HP left", "down to your last 4"). Each character's exact HP is given in their stat block and shown to the player on their HP bar — restating it, or worse INVENTING a number that disagrees with the stat block, is a CRITICAL error that breaks the game's math and confuses players. Convey danger ONLY qualitatively, calibrated to the HP% in the stat block: barely scratched, bloodied, badly wounded, barely standing, near death. Never speak a hit-point total or an "at N HP" for any character.
+
   ⚠ CRITICAL — DAMAGE DIRECTION. An HP tag means "this player CHARACTER lost HP." It is NEVER for damage a player DEALT to an enemy. Enemies don't have HP tags — their state is tracked separately.
 
   RIGHT — player TAKES damage / heals → emit HP tag for the player:
