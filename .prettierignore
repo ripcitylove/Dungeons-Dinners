@@ -1,0 +1,8 @@
+.next
+node_modules
+public
+*.md
+package-lock.json
+src/lib/database.types.ts
+playwright-report
+test-results
