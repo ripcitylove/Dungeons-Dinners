@@ -414,7 +414,7 @@ MULTI-PLAYER TURNS & ROUND STRUCTURE
 - When a previous player's action resolves with a roll: one sentence asking only that player to roll a d20, then STOP. Zero words after the period. The ROLL RESTRICTION block names the permitted roller.
 - Rotate your closing call-to-action phrasing — never repeat the same one twice in a row. Examples: "[Name], what do you do?" / "How do you respond, [Name]?" / "The choice is yours, [Name]." / "What's your next move, [Name]?" / "Make your move, [Name]." / "You're up, [Name] — what now?"
 - TURN ORDER: The REMAINING THIS ROUND block (when present) shows which players still need to declare their next action. It does NOT restrict who may roll — a player may still be asked to roll their dice even if they already submitted their action this round (e.g. an attack roll resolves after the action is submitted). The ROLL RESTRICTION block is the final authority on who rolls. The CURRENT TURN block is the final authority on who acts next.
-- After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, then set the scene for the next round. Do NOT end with "[Name], what do you do?" — the game engine automatically sends that prompt to the next player. Writing it causes the player to be asked twice.
+- After all players have taken their turn you will receive a [ROUND RECONCILIATION] prompt. At that point: resolve all combat, have living enemies take their turns (attack appropriate party members with full dice), apply all ongoing effects and conditions, narrate the complete round outcome, set the scene for the next round, then end by addressing ONLY the next round's first player (named in your instructions) and asking what they do. Never address or re-prompt any other player — especially not one who just acted.
 - Scale encounters to match the full party size — refer to the ENCOUNTER SCALING block below the party list for guidance.
 - PLAYER AGENCY — NEVER invent or narrate an action for a player who has not yet taken their turn. Only describe consequences of actions players have already submitted as PLAYER messages in this conversation. If a player has not acted this turn, they have not acted — full stop. A player's name may NEVER be the subject of an action verb unless that player has just submitted a message describing that action, OR (during round reconciliation) appears in the [ROUND COMPLETE — THESE PLAYERS ACTED] list. When narrating scene transitions or environmental beats, use group nouns ("the party", "the others") instead of inventing individual names. Writing "Kael dives", "Aria charges", or any specific action for a player whose latest message did not state that action is a CRITICAL VIOLATION.
 
@@ -542,12 +542,12 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
   const enemyBlock = enemies?.length
     ? `\nACTIVE ENEMIES IN COMBAT\n${enemies.map(e => {
         const lootLine = [
-          e.loot.gold ? `${e.loot.gold}gp` : "",
-          ...(e.loot.weapons ?? []),
-          ...(e.loot.items   ?? []),
+          e.loot?.gold ? `${e.loot.gold}gp` : "",
+          ...(e.loot?.weapons ?? []),
+          ...(e.loot?.items   ?? []),
         ].filter(Boolean).join(", ");
-        return `${e.name} — ${e.enemy_type} | CR ${e.cr} | AC ${e.ac} | ATK +${e.attack_bonus} (${e.damage_dice}) | HP: ${e.condition.toUpperCase()} | XP: ${e.xp_value}
-  Abilities: ${e.abilities.join(", ") || "none"}
+        return `${e.name} — ${e.enemy_type} | CR ${e.cr} | AC ${e.ac} | ATK +${e.attack_bonus} (${e.damage_dice}) | HP: ${(e.condition ?? "healthy").toUpperCase()} | XP: ${e.xp_value}
+  Abilities: ${(e.abilities ?? []).join(", ") || "none"}
   Loot on defeat: ${lootLine || "none"}`;
       }).join("\n\n")}
 
@@ -585,7 +585,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const reconcileBlock = roundSummary?.length
-    ? `\n[ROUND COMPLETE — THESE PLAYERS ACTED]\nHere is exactly what each acting player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nABSOLUTE RULES FOR THIS RESPONSE:\n1. The list above is exhaustive. ONLY these names — ${roundSummary.map(a => a.name).join(", ")} — may be the subject of an action verb in your response. Any party member not on this list did NOT act this round and CANNOT be described as doing anything. Do not write "[other player] dives", "[other player] charges", "[other player] casts", or anything similar. If a non-acting party member exists, you may mention them only as a passive presence ("the party", "the others", "those still standing") — never as a subject performing a verb.\n2. Narrate each listed action's outcome vividly with specific results and exact damage. Have every living enemy attack a listed party member.\n3. Apply ongoing effects and conditions naturally.\n4. Close with the new scene setup using only group nouns ("the party reaches the door", "they cross the threshold") — never an individual name unless they are on the list above.\n5. Do NOT announce that you are resolving a round, numbering steps, or doing any meta-commentary.\n6. Do NOT end with "[Name], what do you do?" — the engine prompts the next player automatically.\n`
+    ? `\n[ROUND COMPLETE — THESE PLAYERS ACTED]\nHere is exactly what each acting player did:\n${roundSummary.map(a => `- ${a.name}: ${a.action}`).join("\n")}\n\nABSOLUTE RULES FOR THIS RESPONSE:\n1. The list above is exhaustive. ONLY these names — ${roundSummary.map(a => a.name).join(", ")} — may be the subject of an action verb in your response. Any party member not on this list did NOT act this round and CANNOT be described as doing anything. Do not write "[other player] dives", "[other player] charges", "[other player] casts", or anything similar. If a non-acting party member exists, you may mention them only as a passive presence ("the party", "the others", "those still standing") — never as a subject performing a verb.\n2. Narrate each listed action's outcome vividly with specific results and exact damage. Have every living enemy attack a listed party member.\n3. Apply ongoing effects and conditions naturally.\n4. Set the scene for the new round in 1–2 sentences using only group nouns ("the party reaches the door", "they cross the threshold") — never narrate an individual player taking an action.\n5. Do NOT announce that you are resolving a round, numbering steps, or doing any meta-commentary.\n6. ${currentTurnPlayerName ? `END by starting the new round: address EXACTLY ${currentTurnPlayerName} by name and ask what they do (e.g. "${currentTurnPlayerName}, what do you do?"). ${currentTurnPlayerName} is the ONLY player you may prompt — NEVER prompt, address, or hand the turn to any other player at the end, not even one who just acted. Do NOT call for any dice roll.` : `Do NOT end with a question and do NOT prompt any player by name.`}\n`
     : "";
 
   const pendingReconcileBlock = pendingReconciliation

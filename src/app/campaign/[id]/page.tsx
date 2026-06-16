@@ -2425,6 +2425,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Keep the latest narration pinned to the bottom whenever the messages VIEWPORT
+  // resizes. The Suggested Actions panel appearing, expanding, or collapsing
+  // shrinks/grows the chat area; without re-pinning, the end of the narration
+  // slips below the fold and looks "covered" by the suggestions. A ResizeObserver
+  // fires through the panel's height transition too, so the final resting state is
+  // always the bottom — the player can read the end of the narration in every
+  // state. Respects a deliberate scroll-up so we never yank them off older text.
+  useEffect(() => {
+    const el = msgContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (userInterruptedScrollRef.current) return;
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Single auto-scroll behavior — drift smoothly while content streams, snap when idle,
   // never override the user.
   useEffect(() => {
@@ -2758,14 +2776,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (change.xp_award > 0) {
       newXp += change.xp_award;
       parts.push(`+${change.xp_award} XP`);
-      const xpToNext = getXpToNextLevel(newLevel);
-      if (newXp >= xpToNext && newLevel < 10) {
+      // Loop (not a single if) so one large award can cross MULTIPLE thresholds
+      // at once and grant every level earned, accumulating HP for each.
+      let totalHpGain = 0;
+      while (newXp >= getXpToNextLevel(newLevel) && newLevel < 10) {
         newLevel++;
         const hitDie  = CLASS_HIT_DIE[char.class] ?? 8;
-        const hpGain  = Math.floor(hitDie / 2) + 1 + Math.floor((char.constitution - 10) / 2);
-        newMaxHp      = char.max_hp + hpGain;
+        totalHpGain  += Math.floor(hitDie / 2) + 1 + Math.floor((char.constitution - 10) / 2);
         leveledUp     = true;
-        parts.push(`⬆ LEVEL UP → ${newLevel}! +${hpGain} max HP`);
+      }
+      if (leveledUp) {
+        newMaxHp = char.max_hp + totalHpGain;
+        parts.push(`⬆ LEVEL UP → ${newLevel}! +${totalHpGain} max HP`);
       }
     }
 
@@ -4055,7 +4077,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const currentTurnChar   = currentTurnCharId
           ? campaignPartyRef.current.find(c => c.id === currentTurnCharId)
           : null;
-        targetChar = prevActingChar ?? currentTurnChar ?? characterRef.current;
+        // During reconciliation, prevPlayerName is the LAST actor of the finished
+        // round — routing an unnamed roll to them would re-engage the wrong player
+        // (the double-prompt bug via the roll path). Prefer the new round's current
+        // turn character instead.
+        targetChar = (opts?.roundSummary?.length ? null : prevActingChar) ?? currentTurnChar ?? characterRef.current;
       }
 
       // Only activate the dice UI when we know what die to roll — a named target without
@@ -4101,7 +4127,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // advance the turn to that player. detectNextTurnPlayer only matches explicit call-to-action
       // patterns so false positives are rare; if a named player acts again handleSend's
       // findNextUnactedIdx still routes the round correctly.
-      if (!validRollTarget && !opts?.allActed && turnOrderRef.current.length > 1) {
+      // Skip DM-text turn routing during reconciliation (roundSummary): the round
+      // was already reset to index 0 authoritatively, and the reconcile message's
+      // closing prompt must NOT be allowed to move the turn (e.g. back to the
+      // player who just acted) — that produced the double-prompt bug.
+      if (!validRollTarget && !opts?.allActed && !opts?.roundSummary?.length && turnOrderRef.current.length > 1) {
         const partyNames = campaignPartyRef.current.map(c => c.name);
         const dmTurnName = detectNextTurnPlayer(full, partyNames);
         const dmTurnChar = dmTurnName ? campaignPartyRef.current.find(c => c.name === dmTurnName) : null;
@@ -6010,7 +6040,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {/* Messages — the bottom padding scales up when the Suggested Actions panel is
             present so the last narration line is never visually flush with (or covered by)
             the suggestions. Reduced back to 8px when there's no suggestion panel below. */}
-        <div ref={msgContainerRef} style={{ flex: 1, overflowY: "auto", padding: `0 16px ${suggestions.length > 0 ? 64 : 8}px`, display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div ref={msgContainerRef} data-msg-scroll style={{ flex: 1, overflowY: "auto", padding: `0 16px ${suggestions.length > 0 ? 64 : 8}px`, display: "flex", flexDirection: "column", gap: "14px" }}>
           {(narRevealText && messages.length > 0 && messages[messages.length - 1].role === "dm"
             ? messages.slice(0, -1)
             : messages

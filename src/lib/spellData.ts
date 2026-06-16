@@ -265,10 +265,13 @@ export const SPELL_LIMITS: Record<string, SpellLimits> = {
 
 export const SPELLCASTING_CLASSES = new Set(Object.keys(SPELL_LIMITS));
 
-// D&D 5e XP thresholds per level
+// Official D&D 5e cumulative XP thresholds. XP_THRESHOLDS[n] = total XP required
+// to advance from level n to level n+1. Progression is capped at level 10 (spell
+// slots, hit dice, and class features are all balanced for levels 1–10), so the
+// table stops at the 10→11 boundary.
 export const XP_THRESHOLDS: Record<number, number> = {
-  1: 300, 2: 600, 3: 1800, 4: 3800, 5: 7500,
-  6: 9000, 7: 11000, 8: 14000, 9: 16000, 10: 21000,
+  1: 300, 2: 900, 3: 2700, 4: 6500, 5: 14000,
+  6: 23000, 7: 34000, 8: 48000, 9: 64000, 10: 85000,
 };
 
 export function getXpToNextLevel(level: number): number {

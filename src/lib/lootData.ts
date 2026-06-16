@@ -720,7 +720,12 @@ export function computeInventoryBonuses(items: string[], weapons: string[]): Ite
     statAdd: {}, statSet: {}, acAdd: 0, saveAdd: 0,
     attackAdd: 0, hpMaxAdd: 0, activeEffects: [],
   };
-  for (const name of [...items, ...weapons]) {
+  // Defensive: legacy/malformed character rows may carry a non-array inventory
+  // (e.g. inventory === []). Coerce so the spread can never throw and crash the
+  // entire campaign page ("items is not iterable").
+  const safeItems   = Array.isArray(items)   ? items   : [];
+  const safeWeapons = Array.isArray(weapons) ? weapons : [];
+  for (const name of [...safeItems, ...safeWeapons]) {
     const item = getItemByName(name);
     if (!item) continue;
     for (const e of item.effects) {

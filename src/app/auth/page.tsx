@@ -68,11 +68,11 @@ export default function AuthPage() {
         <span className="nav-brand-mark">⬡</span> Dungeons &amp; Dinner Legends
       </Link>
 
-      <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '720px', padding: '64px 60px' }}>
+      <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '560px', padding: '44px 44px' }}>
 
         {mode === 'login' ? (
           <>
-            <h1 style={{ fontSize: '2.9rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
+            <h1 style={{ fontSize: '2.3rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
               Enter the Tavern
             </h1>
             <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px' }}>
@@ -81,7 +81,7 @@ export default function AuthPage() {
 
             <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.48rem' }}>Email Address</label>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.05rem' }}>Email Address</label>
                 <input
                   type="email"
                   value={email}
@@ -93,11 +93,11 @@ export default function AuthPage() {
               </div>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '1.48rem' }}>Password</label>
+                  <label style={{ color: '#cbd5e1', fontSize: '1.05rem' }}>Password</label>
                   <button
                     type="button"
                     onClick={() => switchMode('forgot')}
-                    style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '1.35rem', cursor: 'pointer', padding: 0 }}
+                    style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.95rem', cursor: 'pointer', padding: 0 }}
                   >
                     Forgot password?
                   </button>
@@ -113,7 +113,7 @@ export default function AuthPage() {
               </div>
 
               {errorMsg && (
-                <div style={{ color: '#ef4444', fontSize: '1.35rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <div style={{ color: '#ef4444', fontSize: '0.95rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
                   {errorMsg}
                 </div>
               )}
@@ -125,21 +125,21 @@ export default function AuthPage() {
           </>
         ) : (
           <>
-            <h1 style={{ fontSize: '2.9rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
+            <h1 style={{ fontSize: '2.3rem', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
               Reset Password
             </h1>
-            <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px', fontSize: '1.48rem' }}>
+            <p style={{ color: 'var(--subtle)', textAlign: 'center', marginBottom: '32px', fontSize: '1.05rem' }}>
               Enter your email and we&apos;ll send you a reset link.
             </p>
 
             {sentMsg ? (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>📬</div>
-                <p style={{ color: '#86efac', fontSize: '1.48rem', lineHeight: 1.6, marginBottom: '24px' }}>{sentMsg}</p>
+                <p style={{ color: '#86efac', fontSize: '1.05rem', lineHeight: 1.6, marginBottom: '24px' }}>{sentMsg}</p>
                 <button
                   type="button"
                   onClick={() => switchMode('login')}
-                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '1.48rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '1.05rem', cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   Back to login
                 </button>
@@ -147,7 +147,7 @@ export default function AuthPage() {
             ) : (
               <form onSubmit={handleForgot} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.48rem' }}>Email Address</label>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1', fontSize: '1.05rem' }}>Email Address</label>
                   <input
                     type="email"
                     value={email}
@@ -159,7 +159,7 @@ export default function AuthPage() {
                 </div>
 
                 {errorMsg && (
-                  <div style={{ color: '#ef4444', fontSize: '1.35rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div style={{ color: '#ef4444', fontSize: '0.95rem', textAlign: 'center', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)' }}>
                     {errorMsg}
                   </div>
                 )}
@@ -171,7 +171,7 @@ export default function AuthPage() {
                 <button
                   type="button"
                   onClick={() => switchMode('login')}
-                  style={{ background: 'none', border: 'none', color: 'var(--subtle)', fontSize: '1.35rem', cursor: 'pointer', textAlign: 'center' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--subtle)', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'center' }}
                 >
                   ← Back to login
                 </button>
