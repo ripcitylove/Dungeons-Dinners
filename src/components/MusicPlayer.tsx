@@ -368,6 +368,9 @@ export function MusicPlayer() {
   const targetVolume    = useRef(0.10);
   const targetAmbianceV = useRef(0.35);
   const activePoolKey   = useRef<string>("tavern");
+  // Render-readable mirror of activePoolKey.current (kept in sync in fadeTo) so the
+  // active-pool highlight can be derived during render without reading the ref.
+  const [activePool, setActivePool] = useState<string>("tavern");
   const fadeTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
   const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);
   const musicQueue      = useRef<string[]>([]);
@@ -441,6 +444,7 @@ export function MusicPlayer() {
     const audio = audioRef.current;
 
     activePoolKey.current = targetPool;
+    setActivePool(targetPool);
     musicQueue.current    = [];
     musicErrors.current   = 0;
     setPoolLabel(POOL_LABELS[targetPool] ?? targetPool);
@@ -751,7 +755,7 @@ export function MusicPlayer() {
   }, []);
 
   // Normalize current active key for comparison (tavern aliases to social in POOL_META)
-  const activeMetaKey = activePoolKey.current === "tavern" ? "social" : activePoolKey.current;
+  const activeMetaKey = activePool === "tavern" ? "social" : activePool;
 
   if (isOnLanding || pathname === "/auth") return null;
 
