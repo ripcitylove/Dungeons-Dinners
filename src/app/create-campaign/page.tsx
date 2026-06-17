@@ -470,13 +470,15 @@ export default function CreateCampaignWizard() {
         .select().single();
       if (campErr || !campData) throw campErr ?? new Error("Campaign creation failed");
 
-      // Persist the ordered quest spine (first objective active, rest hidden) as a
-      // best-effort follow-up so a missing `objectives` column (migration not yet
-      // applied) never blocks campaign creation. Null-safe everywhere downstream.
+      // Persist the ordered quest spine (first objective active, rest hidden).
+      // AWAIT it so the first objective is committed BEFORE we navigate into the
+      // campaign — the party must have a goal in the tracker before the first turn.
+      // Error-tolerant: a missing `objectives` column (migration not yet applied)
+      // logs a warning but never blocks campaign creation. Null-safe downstream.
       const objectives = initObjectives(aiObjectives);
       if (objectives.length) {
-        supabase.from("campaigns").update({ objectives }).eq("id", campData.id)
-          .then(({ error }) => { if (error) console.warn("[campaign] objectives not saved (migration pending?):", error.message); });
+        const { error: objErr } = await supabase.from("campaigns").update({ objectives }).eq("id", campData.id);
+        if (objErr) console.warn("[campaign] objectives not saved (migration pending?):", objErr.message);
       }
 
       const newChars    = completedChars.filter(c => !c.rosterId);

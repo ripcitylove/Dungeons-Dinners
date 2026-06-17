@@ -560,8 +560,10 @@ function buildSystemPrompt(char: Character | null, party?: Character[], campaign
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
 
+  const openingObjective = openingScene ? (objectives ?? []).find(o => o.status === "active") : null;
   const openingBlock = openingScene
     ? `\nOPENING SCENE — THIS IS YOUR FIRST MESSAGE\nDo NOT repeat the campaign description verbatim. Instead: drop the party immediately into the living world. Lead with sensory detail — sound, smell, light, immediate tension or wonder. One specific detail should make the scene feel real and urgent. Then turn to the adventurers, acknowledge who is present, and ask what they would like to do.\n`
+      + `${openingObjective ? `ESTABLISH THE FIRST GOAL: this scene must give the party their starting objective — "${openingObjective.text}". Make that pull clear in the opening (a person who needs them, a place to reach, a thing to find) so they know what to work toward from turn one. Weave it in naturally; do not list it as a quest or mention an "objective tracker".\n` : ""}`
     : "";
 
   const enemyBlock = enemies?.length
