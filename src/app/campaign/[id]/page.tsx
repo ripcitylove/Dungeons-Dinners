@@ -24,6 +24,7 @@ import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRout
 import { stripTrailingTurnPrompt } from "../../../lib/turnPrompt";
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
+import { detectAmbianceMood } from "../../../lib/ambianceMood";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -2417,11 +2418,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
+        const ambianceMood = payload.ambianceMood as string | undefined;
         if (payload.imageUrl) {
           currentSceneRef.current = payload.sceneName as string;
           setCurrentSceneUrl(payload.imageUrl as string);
           (window as Window).__dndSetMusicScene?.(payload.sceneName as string, payload.sceneType as string | undefined, payload.modifiers as string[] | undefined);
-          if (payload.sceneType) (window as Window).__dndSetAmbianceScene?.(payload.sceneName as string, payload.sceneType as string, payload.modifiers as string[] | undefined);
+          if (payload.sceneType) (window as Window).__dndSetAmbianceScene?.(payload.sceneName as string, payload.sceneType as string, payload.modifiers as string[] | undefined, ambianceMood);
+        } else {
+          // No image change — still apply/lift the silence override for peers.
+          (window as Window).__dndSetAmbianceScene?.(currentSceneRef.current || (payload.sceneName as string), payload.sceneType as string | undefined, payload.modifiers as string[] | undefined, ambianceMood);
         }
         // Attach story moment illustration to the matching DM message
         if (payload.momentImageUrl) {
@@ -4836,21 +4841,28 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json())
           .then(({ sceneName, imageUrl, momentImageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; momentImageUrl?: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
             if (sceneRequestIdRef.current !== sceneReqId) return; // superseded by a newer request
+            // Narrative-driven ambiance: an unnatural scene-wide silence mutes the
+            // environmental ambiance so it never contradicts the prose (e.g. "the
+            // harbor goes completely silent" while harbor chatter plays).
+            const ambianceMood = detectAmbianceMood(full) ?? undefined;
             // Update background when server decided a change is warranted
             if (imageUrl) {
               currentSceneRef.current = sceneName;
               setCurrentSceneUrl(imageUrl);
               if (campaignLoadingRef.current) setLoadSceneDone(true);
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
-              if (sceneType) (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers);
+              if (sceneType) (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers, ambianceMood);
               if (campaignLoadingRef.current) setLoadAmbianceDone(true);
             } else {
+              // No image change — still re-resolve ambiance for the current scene so a
+              // silence override applies (and lifts again) even when the visual is unchanged.
+              (window as Window).__dndSetAmbianceScene?.(currentSceneRef.current || sceneName, sceneType, modifiers, ambianceMood);
               if (campaignLoadingRef.current) { setLoadSceneDone(true); setLoadAmbianceDone(true); }
             }
             // Broadcast scene update (background + moment) to all other clients
             channelRef.current?.send({
               type: "broadcast", event: "scene_change",
-              payload: { senderId: userId, sceneName, imageUrl, momentImageUrl: momentImageUrl ?? null, sceneType, modifiers, dmContent: full.slice(0, 120) },
+              payload: { senderId: userId, sceneName, imageUrl, momentImageUrl: momentImageUrl ?? null, sceneType, modifiers, ambianceMood, dmContent: full.slice(0, 120) },
             });
             // Attach story moment illustration to the DM message that triggered it
             if (momentImageUrl) {

@@ -184,6 +184,12 @@ const AMBIANCE_POOLS: Record<string, string[]> = {
     // here would just compete with the battle score. The MusicPlayer handles an empty
     // pool gracefully (no ambiance plays).
   ],
+  silent: [
+    // Intentionally empty — used when the narrative describes an UNNATURAL SILENCE
+    // (e.g. "the harbor goes completely silent. No waves. No gulls."). Environmental
+    // ambiance is faded out so the audio stops contradicting the scene; the score
+    // alone carries the eerie stillness.
+  ],
 };
 
 // Scene → ambiance pool (separate from music pool — street/graveyard need different atmosphere)
@@ -248,6 +254,7 @@ const MAX_SKIP = 6;
 // to keep the ambient texture audible under the soundtrack — never to mute it.
 const MUSIC_BALANCE_RATIOS: Record<string, number> = {
   combat:   1.0,  // no ambiance — music carries the scene
+  silent:   1.0,  // unnatural silence — ambiance muted, score carries the stillness
   dungeon:  0.85, // cave drips/echoes — quiet, music can play loud
   nature:   0.85, // forest/birds — quiet, music can play loud
   mystical: 0.80, // church/lost city — atmospheric, leave space for music
@@ -264,7 +271,7 @@ declare global {
     __dndMusicPlay?: () => void;
     __dndSetMusicScene?: (scene: string, sceneType?: string, modifiers?: string[]) => void;
     __dndSetAmbiance?: (url: string | null) => void;
-    __dndSetAmbianceScene?: (scene: string, sceneType?: string, mods?: string[]) => void;
+    __dndSetAmbianceScene?: (scene: string, sceneType?: string, mods?: string[], mood?: string) => void;
     __dndDuckAudio?: (duck: boolean) => void;
   }
 }
@@ -317,7 +324,10 @@ function resolvePool(scene: string, sceneType?: string, mods?: string[]): string
   return SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon";
 }
 
-function resolveAmbiancePool(scene: string, sceneType?: string, mods?: string[]): string {
+function resolveAmbiancePool(scene: string, sceneType?: string, mods?: string[], mood?: string): string {
+  // Narrative-driven override: an unnatural scene-wide silence mutes ambient
+  // sound regardless of location, so chatter/waves never contradict the prose.
+  if (mood === "silent") return "silent";
   if (scene.endsWith("_combat")) return "combat";
   if (mods && mods.length > 0) {
     const modSet = new Set(mods);
@@ -646,8 +656,8 @@ export function MusicPlayer() {
       });
     };
 
-    window.__dndSetAmbianceScene = (scene: string, sceneType?: string, mods?: string[]) => {
-      const poolKey = resolveAmbiancePool(scene, sceneType, mods);
+    window.__dndSetAmbianceScene = (scene: string, sceneType?: string, mods?: string[], mood?: string) => {
+      const poolKey = resolveAmbiancePool(scene, sceneType, mods, mood);
       ambianceErrors.current = 0;
       setMusicBalance(MUSIC_BALANCE_RATIOS[poolKey] ?? 1);
       playNextAmbiance(poolKey);
