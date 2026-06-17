@@ -351,6 +351,19 @@ function damageTagShouldBeSuppressed(text: string, firstName: string, delta: num
   return attackerActive.test(text) || attackerPossessive.test(text);
 }
 
+// Keep the Unconscious condition consistent with HP on the client-side fast HP
+// paths. Those paths apply an [HP:Name:±N] tag immediately and set
+// pendingHpDeltaRef, which makes the slow chat-state path skip the delta — so the
+// slow path's Unconscious add/clear (HP>0 ⇒ conscious, HP==0-from-damage ⇒ down)
+// never runs. This mirrors that same invariant. Returns the (possibly unchanged)
+// status array; reference-equal to the input when nothing changed.
+function reconcileUnconscious(statuses: string[], newHp: number, hpDelta: number): string[] {
+  const has = statuses.includes("Unconscious");
+  if (newHp > 0 && has) return statuses.filter(s => s !== "Unconscious");
+  if (newHp === 0 && hpDelta < 0 && !has) return [...statuses, "Unconscious"];
+  return statuses;
+}
+
 /** Parses [THP:FirstName:+N] tags from DM text. Returns the highest temp-HP grant
  *  seen for that character (D&D 5e: temp HP doesn't stack — keep the larger value). */
 function parseThpTag(text: string, firstName: string): number {
@@ -1967,20 +1980,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!isOwner) { router.push("/dashboard"); return; }
 
       if (party.length) {
-        // Clamp HP to effective max (base + item bonuses) — never raw max_hp alone
+        // Clamp HP to effective max (base + item bonuses) — never raw max_hp alone.
+        // Also clear a STALE Unconscious condition from anyone at HP > 0: older
+        // fast-HP paths bumped HP without clearing it, so a healed-above-0 player
+        // could persist as Unconscious. Enforces the HP>0 ⇒ conscious invariant on
+        // load and self-heals any already-corrupted rows.
         const normalizedParty = party.map(c => {
           const ib = computeInventoryBonuses(c.inventory?.items ?? [], c.inventory?.weapons ?? []);
           const effectiveMax = c.max_hp + ib.hpMaxAdd;
-          return c.hp > effectiveMax ? { ...c, hp: effectiveMax } : c;
+          const clampedHp = c.hp > effectiveMax ? effectiveMax : c.hp;
+          const statuses = c.status_effects ?? [];
+          const fixedStatuses = clampedHp > 0 && statuses.includes("Unconscious")
+            ? statuses.filter(s => s !== "Unconscious")
+            : statuses;
+          if (clampedHp === c.hp && fixedStatuses === statuses) return c;
+          return { ...c, hp: clampedHp, status_effects: fixedStatuses };
         });
-        if (normalizedParty.some((c, i) => c.hp !== party[i].hp)) {
-          normalizedParty.forEach(c => {
-            if (c.hp !== party.find(p => p.id === c.id)?.hp) {
-              if (usesCCTableRef.current) {
-                supabase.from("campaign_characters").update({ hp: c.hp }).eq("campaign_id", params.id).eq("character_id", c.id).then(() => {});
-              } else {
-                supabase.from("characters").update({ hp: c.hp }).eq("id", c.id).then(() => {});
-              }
+        if (normalizedParty.some((c, i) => c.hp !== party[i].hp || c.status_effects !== party[i].status_effects)) {
+          normalizedParty.forEach((c, i) => {
+            const orig = party[i];
+            const hpChanged = c.hp !== orig.hp;
+            const statusChanged = c.status_effects !== orig.status_effects;
+            if (!hpChanged && !statusChanged) return;
+            const patch = { ...(hpChanged && { hp: c.hp }), ...(statusChanged && { status_effects: c.status_effects }) };
+            if (usesCCTableRef.current) {
+              supabase.from("campaign_characters").update(patch).eq("campaign_id", params.id).eq("character_id", c.id).then(() => {});
+            } else {
+              supabase.from("characters").update(patch).eq("id", c.id).then(() => {});
             }
           });
         }
@@ -2168,14 +2194,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               }
               const newHp = Math.max(0, Math.min(myChar.max_hp + ib.hpMaxAdd, myChar.hp + fastDelta));
               const fastRes = fastTempHp !== fastTempHp0 ? { ...(myChar.class_resources ?? {}), temp_hp: fastTempHp } : (myChar.class_resources ?? {});
-              const fastChar = { ...myChar, hp: newHp, class_resources: fastRes };
+              const baseStatuses = myChar.status_effects ?? [];
+              const newStatuses  = reconcileUnconscious(baseStatuses, newHp, fastDelta);
+              const statusChanged = newStatuses !== baseStatuses;
+              const fastChar = { ...myChar, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) };
               setCharacter(fastChar);
-              setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c));
+              setCampaignParty(prev => prev.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) } : c));
               characterRef.current = fastChar;
-              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c);
+              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === myChar.id ? { ...c, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) } : c);
               pendingHpDeltaRef.current = hpDelta;
-              charWriteRef.current?.(myChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) });
-              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) } });
+              charWriteRef.current?.(myChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) });
+              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: myChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) } });
             }
           }
         }
@@ -2477,6 +2506,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // raced against each other and against the user's wheel, producing the "crazy
   // scrolling" feel during streaming + suggestion arrival.
   const userInterruptedScrollRef = useRef(false);
+
+  // Manual scroll buttons on the narration window. Scrolls ~80% of the visible
+  // height per click so the reader keeps a line of overlap for context. The
+  // existing onScroll handler picks up these (smooth) scrolls and toggles
+  // auto-scroll engagement just like a wheel/touch scroll would.
+  const scrollNarration = useCallback((dir: 1 | -1) => {
+    const el = msgContainerRef.current;
+    if (!el) return;
+    el.scrollBy({ top: dir * el.clientHeight * 0.8, behavior: "smooth" });
+  }, []);
 
   // Detect user scroll-up vs programmatic scrolls (mounted once)
   useEffect(() => {
@@ -4757,14 +4796,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             }
             const newHp = Math.max(0, Math.min(actingChar.max_hp + ib.hpMaxAdd, actingChar.hp + fastDelta));
             const fastRes = fastTempHp !== fastTempHp0 ? { ...(actingChar.class_resources ?? {}), temp_hp: fastTempHp } : (actingChar.class_resources ?? {});
-            const fastChar = { ...actingChar, hp: newHp, class_resources: fastRes };
+            const baseStatuses = actingChar.status_effects ?? [];
+            const newStatuses  = reconcileUnconscious(baseStatuses, newHp, fastDelta);
+            const statusChanged = newStatuses !== baseStatuses;
+            const fastChar = { ...actingChar, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) };
             setCharacter(fastChar);
-            setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c));
+            setCampaignParty(prev => prev.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) } : c));
             characterRef.current = fastChar;
-            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes } : c);
+            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === actingChar.id ? { ...c, hp: newHp, class_resources: fastRes, ...(statusChanged && { status_effects: newStatuses }) } : c);
             pendingHpDeltaRef.current = hpDelta;
-            charWriteRef.current?.(actingChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) });
-            channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }) } });
+            charWriteRef.current?.(actingChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) });
+            channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) } });
           }
         }
       }
@@ -6177,7 +6219,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* Messages — the bottom padding scales up when the Suggested Actions panel is
             present so the last narration line is never visually flush with (or covered by)
-            the suggestions. Reduced back to 8px when there's no suggestion panel below. */}
+            the suggestions. Reduced back to 8px when there's no suggestion panel below.
+            Wrapped in a relative container so the manual scroll buttons can float in the
+            bottom-right corner of the narration window without affecting the flex layout. */}
+        <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div ref={msgContainerRef} data-msg-scroll style={{ flex: 1, overflowY: "auto", padding: `0 16px ${suggestions.length > 0 ? 64 : 8}px`, display: "flex", flexDirection: "column", gap: "14px" }}>
           {(narRevealText && messages.length > 0 && messages[messages.length - 1].role === "dm"
             ? messages.slice(0, -1)
@@ -6275,6 +6320,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             </div>
           )}
           <div ref={messagesEndRef} />
+        </div>
+          {/* Manual scroll buttons — float over the bottom-right of the narration window */}
+          <div style={{ position: "absolute", right: "12px", bottom: "14px", display: "flex", flexDirection: "column", gap: "8px", zIndex: 6 }}>
+            {[{ dir: -1 as const, glyph: "▲", tip: ["Scroll Up", "Scroll the story window up to re-read earlier narration."] },
+              { dir: 1 as const,  glyph: "▼", tip: ["Scroll Down", "Scroll the story window down toward the latest narration."] }].map(b => (
+              <button
+                key={b.glyph}
+                onClick={() => scrollNarration(b.dir)}
+                onMouseDown={e => e.preventDefault()}
+                aria-label={b.tip[0]}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.35)"; e.currentTarget.style.color = "white"; showTooltip(tipBox(b.tip[0], b.tip[1]), e); }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(20,18,30,0.78)"; e.currentTarget.style.color = "#c4b5fd"; hideTooltip(); }}
+                style={{ width: "34px", height: "34px", borderRadius: "50%", background: "rgba(20,18,30,0.78)", border: "1px solid rgba(139,92,246,0.4)", color: "#c4b5fd", fontSize: "0.8rem", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", boxShadow: "0 2px 8px rgba(0,0,0,0.4)", transition: "background 0.15s ease, color 0.15s ease" }}
+              >{b.glyph}</button>
+            ))}
+          </div>
         </div>
 
         {/* Suggested actions — hidden while a dice roll is pending or active.
