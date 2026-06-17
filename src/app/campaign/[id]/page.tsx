@@ -6580,7 +6580,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div key={char.id}
                     className={isTurnEnding ? "card-turn-end" : undefined}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); setSidebarTab("sheet"); } }}
-                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: isTurnEnding ? undefined : cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : 0, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
+                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: isTurnEnding ? undefined : cardAnim, order: isDiceTarget ? -2 : (isCurrentTurn || isTurnEnding) ? -1 : 0, zIndex: isTurnEnding ? 3 : undefined, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span

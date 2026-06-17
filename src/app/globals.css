@@ -871,25 +871,36 @@ body.dice-modal-open .tooltip-size-toolbar {
    Plays when a character's turn ends. The card lifts, spins, and slides down
    like a playing card being dealt to the bottom of the deck, then settles. */
 @keyframes cardTurnEndShuffle {
+  /* Phase 1 (0–55%): SPIN in place — the card lifts and completes a full
+     rotation while pinned in the active slot (flex order is held during the
+     animation, see .card-turn-end usage). */
   0% {
     transform: translateY(0) rotate(0deg) scale(1);
     opacity: 1;
     filter: brightness(1);
   }
-  20% {
-    transform: translateY(-22px) rotate(-6deg) scale(1.02);
+  12% {
+    transform: translateY(-26px) rotate(0deg) scale(1.05);
+    opacity: 1;
+    filter: brightness(1.18);
+  }
+  40% {
+    transform: translateY(-26px) rotate(200deg) scale(0.96);
+    opacity: 0.7;
+    filter: brightness(0.85);
+  }
+  55% {
+    transform: translateY(-26px) rotate(360deg) scale(1.02);
     opacity: 1;
     filter: brightness(1.1);
   }
-  45% {
-    transform: translateY(-12px) rotate(180deg) scale(0.92);
-    opacity: 0.55;
-    filter: brightness(0.8);
-  }
-  70% {
-    transform: translateY(8px) rotate(355deg) scale(0.95);
-    opacity: 0.75;
-    filter: brightness(0.9);
+  /* Phase 2 (55–100%): SHUFFLE down — after the spin completes, the card
+     dips/settles downward, then the flex order releases and it drops into the
+     pile at the bottom. */
+  78% {
+    transform: translateY(10px) rotate(360deg) scale(0.95);
+    opacity: 0.8;
+    filter: brightness(0.92);
   }
   100% {
     transform: translateY(0) rotate(360deg) scale(1);
