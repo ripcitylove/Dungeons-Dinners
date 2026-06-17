@@ -25,7 +25,7 @@ import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turn
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
-import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId } from "../../../lib/objectives";
+import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
@@ -1018,20 +1018,37 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       return next;
     });
   }, []);
+  // Chime played whenever the tracker gains a NEW objective. Preloaded once and
+  // reused (reset to start) so rapid updates don't overlap or re-fetch.
+  const trackerChimeRef = useRef<HTMLAudioElement | null>(null);
+  const playTrackerChime = useCallback(() => {
+    try {
+      let el = trackerChimeRef.current;
+      if (!el) { el = new Audio("/sounds/tracker-chime.mp3"); el.volume = 0.55; trackerChimeRef.current = el; }
+      el.currentTime = 0;
+      void el.play().catch(() => { /* autoplay not yet unlocked — ignore */ });
+    } catch { /* ignore */ }
+  }, []);
+  // Stable ref so the mount-time broadcast subscription can play the chime too.
+  const playTrackerChimeRef = useRef(playTrackerChime);
+  useEffect(() => { playTrackerChimeRef.current = playTrackerChime; }, [playTrackerChime]);
+
   // Apply DM [OBJECTIVE-NEW:n]/[OBJECTIVE-DONE:n] tags from a narrative: update the
   // tracker, persist to the campaign (best-effort — null-safe if the column is
   // missing), and sync to the party. Pass broadcast=false on the receiver side.
   const applyObjectiveTagsFromNarrative = useCallback((narrative: string, broadcast = true) => {
     const tags = parseObjectiveTags(narrative);
     if (!tags.reveal.length && !tags.done.length) return;
-    const updated = applyObjectiveTags(objectivesRef.current, tags);
-    if (updated === objectivesRef.current) return; // no change
+    const prev = objectivesRef.current;
+    const updated = applyObjectiveTags(prev, tags);
+    if (updated === prev) return; // no change
     objectivesRef.current = updated;
     setObjectives(updated);
+    if (hasNewlyRevealed(prev, updated)) playTrackerChime(); // a new objective appeared
     supabase.from("campaigns").update({ objectives: updated }).eq("id", params.id)
       .then(({ error }) => { if (error) console.warn("[objectives] save failed (migration pending?):", error.message); });
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "objectives_sync", payload: { senderId: userId, objectives: updated } });
-  }, [params.id, userId]);
+  }, [params.id, userId, playTrackerChime]);
   const narVolumeRef = useRef<number>(1);
   const narMutedRef  = useRef<boolean>(false);
   const selectedVoiceRef = useRef<string>("bard");
@@ -2153,9 +2170,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // the new quest-spine state; mirror it so every player's tracker matches.
       .on("broadcast", { event: "objectives_sync" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
+        const prev = objectivesRef.current;
         const next = normalizeObjectives(payload.objectives);
         objectivesRef.current = next;
         setObjectives(next);
+        if (hasNewlyRevealed(prev, next)) playTrackerChimeRef.current?.();
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;

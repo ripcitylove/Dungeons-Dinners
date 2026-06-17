@@ -88,6 +88,18 @@ export function visibleObjectives(objectives: Objective[]): Objective[] {
   return objectives.filter(o => o.status !== "hidden");
 }
 
+/**
+ * True when `next` reveals an objective that was hidden (or absent) in `prev` —
+ * i.e. a NEW objective just appeared in the tracker. Used to play the tracker
+ * chime. Note: this fires for the next objective auto-revealed on completion too
+ * (that next objective is genuinely new to the party), but NOT for a plain
+ * completion that reveals nothing further.
+ */
+export function hasNewlyRevealed(prev: Objective[], next: Objective[]): boolean {
+  const prevStatus = new Map(prev.map(o => [o.id, o.status]));
+  return next.some(o => o.status !== "hidden" && (prevStatus.get(o.id) ?? "hidden") === "hidden");
+}
+
 /** Id of the current goal — the first revealed-but-not-done objective. Shimmers in the UI. */
 export function currentObjectiveId(objectives: Objective[]): string | null {
   return objectives.find(o => o.status === "active")?.id ?? null;

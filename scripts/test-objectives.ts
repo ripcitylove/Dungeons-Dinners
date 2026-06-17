@@ -1,7 +1,7 @@
 // Objectives ("quest spine") logic battery. Run: node scripts/test-objectives.ts
 import {
   initObjectives, normalizeObjectives, parseObjectiveTags, applyObjectiveTags,
-  visibleObjectives, currentObjectiveId,
+  visibleObjectives, currentObjectiveId, hasNewlyRevealed,
 } from "../src/lib/objectives.ts";
 
 let pass = 0;
@@ -67,6 +67,16 @@ const eqArr = (name: string, got: unknown[], want: unknown[]) => ok(name, JSON.s
   ok("normalize null -> []", normalizeObjectives(null).length === 0);
   const n = normalizeObjectives([{ id: "x", text: "Do thing", status: "done" }, { text: "", status: "active" }, { text: "Keep", status: "weird" }]);
   eqArr("normalize drops blank, coerces bad status", n.map(x => `${x.text}:${x.status}`), ["Do thing:done", "Keep:hidden"]);
+}
+
+// hasNewlyRevealed — drives the tracker chime
+{
+  const a = initObjectives(["A", "B", "C"]);
+  ok("reveal -> newly revealed true", hasNewlyRevealed(a, applyObjectiveTags(a, { reveal: [2], done: [] })));
+  ok("complete with auto-reveal next -> true", hasNewlyRevealed(a, applyObjectiveTags(a, { reveal: [], done: [1] })));
+  const b = applyObjectiveTags(a, { reveal: [], done: [2] }); // A,B active(->), C revealed... wait: done 2 reveals A,B,C
+  ok("completing the LAST objective -> false (nothing new revealed)", !hasNewlyRevealed(b, applyObjectiveTags(b, { reveal: [], done: [3] })));
+  ok("no change -> false", !hasNewlyRevealed(a, a));
 }
 
 console.log(`\nObjectives battery: ${pass} passed, ${fails.length} failed.`);
