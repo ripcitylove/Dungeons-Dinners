@@ -21,6 +21,7 @@ import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbi
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
+import { stripTrailingTurnPrompt } from "../../../lib/turnPrompt";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -2085,6 +2086,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           // request is now stale relative to what we just observed.
           pendingStateRequestRef.current = false;
         }
+      })
+      // End-of-round double-prompt fix: the originator stripped a trailing
+      // turn-prompt from the round-completing message. Apply the same edit to
+      // this peer's transcript + log so the duplicate prompt disappears here too.
+      .on("broadcast", { event: "dm_message_edit" }, ({ payload }) => {
+        if (payload.senderId === userIdRef.current) return;
+        const oldC = payload.oldContent as string, newC = payload.newContent as string;
+        if (!oldC || newC === undefined) return;
+        setMessages(prev => prev.map(m => (m.role === "dm" && m.content === oldC) ? { ...m, content: newC } : m));
+        setLogEntries(prev => prev.map(e => (e.role === "dm" && e.content === oldC) ? { ...e, content: newC } : e));
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -4849,6 +4860,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // ── Round reconciliation ──────────────────────────────────────────────────────
   const triggerReconciliation = async (msgs: Message[], summary: { name: string; action: string }[]) => {
+    // END-OF-ROUND DOUBLE-PROMPT FIX. The round-completing message (the last
+    // entry in `msgs`) must NOT prompt anyone — THIS reconciliation is the sole
+    // source of the next-turn prompt. Deterministically strip any trailing
+    // "…what do you do, X?" the model tacked on (covers both the model ignoring
+    // the bridge "never prompt" instruction AND the round-ending-on-a-roll path
+    // whose template always prompts). Without this the round leader is asked for
+    // an action twice in a row. Fix the live transcript, persisted history, and
+    // peers' transcripts so it's gone everywhere, not just locally.
+    if (msgs.length > 0 && msgs[msgs.length - 1].role === "dm") {
+      const original = msgs[msgs.length - 1].content;
+      const stripped = stripTrailingTurnPrompt(original);
+      if (stripped !== original) {
+        msgs = [...msgs.slice(0, -1), { ...msgs[msgs.length - 1], content: stripped }];
+        setMessages(prev => {
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].role === "dm" && prev[i].content === original) {
+              const next = [...prev]; next[i] = { ...next[i], content: stripped }; return next;
+            }
+          }
+          return prev;
+        });
+        setLogEntries(prev => prev.map(e => (e.role === "dm" && e.content === original) ? { ...e, content: stripped } : e));
+        supabase.from("campaign_messages").update({ content: stripped })
+          .eq("campaign_id", params.id).eq("role", "dm").eq("content", original)
+          .then(() => {});
+        channelRef.current?.send({ type: "broadcast", event: "dm_message_edit", payload: { senderId: userId, oldContent: original, newContent: stripped } });
+      }
+    }
     // Clear round actions and reset turn to first player before DM reconciles
     roundActionsRef.current = [];
     setRoundActions([]);
