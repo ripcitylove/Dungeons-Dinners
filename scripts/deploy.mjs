@@ -150,7 +150,9 @@ async function doDeploy() {
     console.log("Building (deploy gate)…");
     // Invoke `next build` via the node binary directly — avoids the Windows .cmd
     // shell quirk where spawnSync can't launch npm.cmd and reports a false failure.
-    const nodeBin = `${userProfile}\\tools\\${nodeDirName()}\\node.exe`;
+    // Use the node that's running this script (process.execPath) so the tool works
+    // on any machine, not just one with a portable node under %USERPROFILE%\tools.
+    const nodeBin = process.execPath;
     const r = spawnSync(nodeBin, ["node_modules/next/dist/bin/next", "build"], { encoding: "utf8" });
     if (r.status !== 0) {
       console.log("✗ BUILD FAILED — aborting deploy.");
