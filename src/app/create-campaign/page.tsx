@@ -9,6 +9,7 @@ import {
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
 } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
+import { initObjectives } from "../../lib/objectives";
 import {
   CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
 } from "../../lib/proficiencyData";
@@ -459,15 +460,24 @@ export default function CreateCampaignWizard() {
           characters: completedChars.map(c => ({ name: c.name, race: c.race, cls: c.class })),
         }),
       });
-      const { title: aiTitle, description: aiDescription } = genRes.ok
+      const { title: aiTitle, description: aiDescription, objectives: aiObjectives } = genRes.ok
         ? await genRes.json()
-        : { title: "Shadows of the Forgotten Realm", description: "A perilous adventure awaits." };
+        : { title: "Shadows of the Forgotten Realm", description: "A perilous adventure awaits.", objectives: [] };
 
       const { data: campData, error: campErr } = await supabase
         .from("campaigns")
         .insert([{ title: aiTitle, description: aiDescription, user_id: user.id }])
         .select().single();
       if (campErr || !campData) throw campErr ?? new Error("Campaign creation failed");
+
+      // Persist the ordered quest spine (first objective active, rest hidden) as a
+      // best-effort follow-up so a missing `objectives` column (migration not yet
+      // applied) never blocks campaign creation. Null-safe everywhere downstream.
+      const objectives = initObjectives(aiObjectives);
+      if (objectives.length) {
+        supabase.from("campaigns").update({ objectives }).eq("id", campData.id)
+          .then(({ error }) => { if (error) console.warn("[campaign] objectives not saved (migration pending?):", error.message); });
+      }
 
       const newChars    = completedChars.filter(c => !c.rosterId);
       const rosterPicks = completedChars.filter(c => !!c.rosterId);

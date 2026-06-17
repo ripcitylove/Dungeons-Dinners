@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { DM_LOOT_GUIDE } from "../../../lib/lootData";
 import { formatMessagesForDM } from "../../../lib/dmMessageFormat";
+import { objectivesForPrompt, currentObjectiveId, type Objective } from "../../../lib/objectives";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
@@ -554,7 +555,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null, objectives?: Objective[]): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -647,7 +648,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const resumeRecapBlock = resumeRecap && currentTurnPlayerName
-    ? `\n[CAMPAIGN RESUME — RECAP MODE]${departedNameBlock}\nYou are catching the party up on where they left off. Read the conversation history below carefully — every meaningful event, location, NPC, item, decision, and discovery is in there.\n\nPRODUCE A BRIEF, ATMOSPHERIC 2 PARAGRAPH RECAP that includes:\n  - Where the party is right now (current location, scene, who's with them)\n  - The key events that have led to this moment\n  - Important NPCs they have met and what was at stake\n  - The immediate situation or decision facing them\n\nPARTY CHANGE AUDIT — CRITICAL\nThe history below may reference characters who are no longer in the party. ONLY the characters listed in the "PARTY — CURRENTLY ONLINE" block are present right now. Anyone mentioned in past narration who is NOT in that block has departed since the last session. Do not address them, do not narrate them as present, and do not direct any prompt to them. If a recent prior DM message asked an absent character "what do you do?", that question is void — the new leader (${currentTurnPlayerName}) is the one in the scene now.\n\nIf the prior scene was framed around a now-departed character (e.g. described their distinctive features, used their name to address an NPC, asked what they would do), gracefully RE-FRAME the moment for ${currentTurnPlayerName}:\n  - Replace the departed character's physical descriptions and identifying details with ${currentTurnPlayerName}'s where the scene allows. Use the PARTY block for their race, class, sex, and appearance.\n  - If the absent character was the one being addressed by an NPC or focal point, treat that interaction as having now shifted to ${currentTurnPlayerName}. The NPCs see whoever is in front of them — that is ${currentTurnPlayerName}.\n  - You may briefly acknowledge the departure in a single in-world beat ("Tiegan has parted ways since the road forked at Hollowford") if it serves the story, but do not dwell on it.\n\nWrite in present tense, immersive D&D narration. Do NOT use meta phrases like "Welcome back," "Previously on," or "Last time." Open in-world, as if the camera is panning into the scene.\n\nBegin your response with the hidden tag [RECAP] on its own line — stripped from display, but used by the engine to detect resume recaps.\n\nEnd your response by addressing ${currentTurnPlayerName} BY NAME with a "what do you do?"-style prompt. Never address anyone other than ${currentTurnPlayerName} at the end.\n\nStay faithful to the established story. Do NOT invent NPCs, locations, plot beats, or events the history does not already establish. Do NOT call for any dice roll. Do NOT advance any combat — even if the prior scene was combat, the recap pauses the action.\n`
+    ? `\n[CAMPAIGN RESUME — RECAP MODE]${departedNameBlock}\nYou are catching the party up on where they left off. Read the conversation history below carefully — every meaningful event, location, NPC, item, decision, and discovery is in there.\n\nPRODUCE A BRIEF, ATMOSPHERIC 2 PARAGRAPH RECAP that includes:\n  - Where the party is right now (current location, scene, who's with them)\n  - The key events that have led to this moment\n  - Important NPCs they have met and what was at stake\n  - The immediate situation or decision facing them\n  - Their CURRENT OBJECTIVE and what needs to happen next to move the campaign forward — name the current goal from the CAMPAIGN OBJECTIVES block plainly ("Your aim now: ...") and orient the party toward it. Do NOT reveal objectives still marked hidden.\n\nPARTY CHANGE AUDIT — CRITICAL\nThe history below may reference characters who are no longer in the party. ONLY the characters listed in the "PARTY — CURRENTLY ONLINE" block are present right now. Anyone mentioned in past narration who is NOT in that block has departed since the last session. Do not address them, do not narrate them as present, and do not direct any prompt to them. If a recent prior DM message asked an absent character "what do you do?", that question is void — the new leader (${currentTurnPlayerName}) is the one in the scene now.\n\nIf the prior scene was framed around a now-departed character (e.g. described their distinctive features, used their name to address an NPC, asked what they would do), gracefully RE-FRAME the moment for ${currentTurnPlayerName}:\n  - Replace the departed character's physical descriptions and identifying details with ${currentTurnPlayerName}'s where the scene allows. Use the PARTY block for their race, class, sex, and appearance.\n  - If the absent character was the one being addressed by an NPC or focal point, treat that interaction as having now shifted to ${currentTurnPlayerName}. The NPCs see whoever is in front of them — that is ${currentTurnPlayerName}.\n  - You may briefly acknowledge the departure in a single in-world beat ("Tiegan has parted ways since the road forked at Hollowford") if it serves the story, but do not dwell on it.\n\nWrite in present tense, immersive D&D narration. Do NOT use meta phrases like "Welcome back," "Previously on," or "Last time." Open in-world, as if the camera is panning into the scene.\n\nBegin your response with the hidden tag [RECAP] on its own line — stripped from display, but used by the engine to detect resume recaps.\n\nEnd your response by addressing ${currentTurnPlayerName} BY NAME with a "what do you do?"-style prompt. Never address anyone other than ${currentTurnPlayerName} at the end.\n\nStay faithful to the established story. Do NOT invent NPCs, locations, plot beats, or events the history does not already establish. Do NOT call for any dice roll. Do NOT advance any combat — even if the prior scene was combat, the recap pauses the action.\n`
     : "";
 
   // Comprehensive D&D 5e ability-check classifier so the DM assigns the correct
@@ -669,6 +670,21 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
   const checkBlock = (checksRelevant && suggestedCheck)
     ? `\n[SUGGESTED CHECK] The player's latest action classifies as a ${suggestedCheck.skill} (${suggestedCheck.ability}) check. If their action calls for an ability check, use ${suggestedCheck.skill} — it is correct for what they described. Do NOT substitute a different skill or ability.\n`
+    : "";
+
+  // Campaign objectives ("quest spine"). The DM steers the story toward these in
+  // order and signals progress with deterministic tags the engine tracks.
+  const objList = objectives ?? [];
+  const curObjId = currentObjectiveId(objList);
+  const curObj = objList.find(o => o.id === curObjId) ?? null;
+  const objectivesBlock = objList.length
+    ? `\n[CAMPAIGN OBJECTIVES — the quest spine; drive the story toward these IN ORDER]\n${objectivesForPrompt(objList)}\n`
+      + `Status key: hidden = not yet discovered by the party (do NOT reveal its specifics in narration until you reveal it); active = known and in progress; done = completed.\n`
+      + `${curObj ? `CURRENT GOAL: "${curObj.text}". Keep the party oriented toward it; when your narration intends them to pursue it, make that intent clear.\n` : ""}`
+      + `PROGRESS TAGS (engine tags, stripped from display — players never see them; emit at most one or two per response, only when truly warranted):\n`
+      + `- When the party first discovers / is set onto the NEXT hidden objective, reveal it: emit [OBJECTIVE-NEW:n] (n = its number above). Reveal in order — never skip ahead.\n`
+      + `- When the party genuinely ACHIEVES an objective, complete it: emit [OBJECTIVE-DONE:n]. The engine auto-reveals the next one.\n`
+      + `- Only tag real story progress. Do NOT complete an objective that hasn't actually been accomplished, and do NOT reveal everything at once. Never mention the tags, numbers, or the word "objective tracker" in narration — weave goals in naturally.\n`
     : "";
 
   const isMulti = party && party.length > 1;
@@ -714,7 +730,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 ${partyBlock}
@@ -761,7 +777,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solPronouns = char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${solSexStr}${char.race} ${char.class} (Proficiency ${pb})
 Pronouns: ${solPronouns}
@@ -777,7 +793,7 @@ Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${p
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -799,6 +815,7 @@ export async function POST(req: NextRequest) {
       resumeRecap?: boolean;
       departedAddresseeName?: string;
       suggestedCheck?: { skill: string; ability: string } | null;
+      objectives?: Objective[];
     };
 
     // Attribute every player message. Sender-less player messages (campaign
@@ -827,7 +844,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives),
       messages:   claudeMessages,
       stream:     true,
     });

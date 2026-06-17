@@ -25,6 +25,7 @@ import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turn
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
+import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
@@ -1001,6 +1002,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       return next;
     });
   }, []);
+
+  // ── Campaign objectives (quest spine) — the Objectives Tracker ──────────────
+  const [objectives, setObjectives] = useState<Objective[]>([]);
+  const objectivesRef = useRef<Objective[]>([]);
+  useEffect(() => { objectivesRef.current = objectives; }, [objectives]);
+  const [objectivesCollapsed, setObjectivesCollapsed] = useState<boolean>(false);
+  useEffect(() => {
+    try { setObjectivesCollapsed(localStorage.getItem("dnd_objectives_collapsed") === "1"); } catch { /* ignore */ }
+  }, []);
+  const toggleObjectivesCollapsed = useCallback(() => {
+    setObjectivesCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("dnd_objectives_collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  // Apply DM [OBJECTIVE-NEW:n]/[OBJECTIVE-DONE:n] tags from a narrative: update the
+  // tracker, persist to the campaign (best-effort — null-safe if the column is
+  // missing), and sync to the party. Pass broadcast=false on the receiver side.
+  const applyObjectiveTagsFromNarrative = useCallback((narrative: string, broadcast = true) => {
+    const tags = parseObjectiveTags(narrative);
+    if (!tags.reveal.length && !tags.done.length) return;
+    const updated = applyObjectiveTags(objectivesRef.current, tags);
+    if (updated === objectivesRef.current) return; // no change
+    objectivesRef.current = updated;
+    setObjectives(updated);
+    supabase.from("campaigns").update({ objectives: updated }).eq("id", params.id)
+      .then(({ error }) => { if (error) console.warn("[objectives] save failed (migration pending?):", error.message); });
+    if (broadcast) channelRef.current?.send({ type: "broadcast", event: "objectives_sync", payload: { senderId: userId, objectives: updated } });
+  }, [params.id, userId]);
   const narVolumeRef = useRef<number>(1);
   const narMutedRef  = useRef<boolean>(false);
   const selectedVoiceRef = useRef<string>("bard");
@@ -1877,6 +1908,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setCampaignDescription(campRes.data.description);
         campaignDescriptionRef.current = campRes.data.description;
       }
+      // Objectives (quest spine) — null-safe if the column isn't applied yet.
+      const loadedObjectives = normalizeObjectives((campRes.data as { objectives?: unknown } | null)?.objectives);
+      setObjectives(loadedObjectives);
+      objectivesRef.current = loadedObjectives;
+
       const loadedLeaderCharId = (campRes.data as { party_leader_id?: string } | null)?.party_leader_id ?? null;
       setPartyLeaderId(loadedLeaderCharId);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
@@ -2112,6 +2148,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (!oldC || newC === undefined) return;
         setMessages(prev => prev.map(m => (m.role === "dm" && m.content === oldC) ? { ...m, content: newC } : m));
         setLogEntries(prev => prev.map(e => (e.role === "dm" && e.content === oldC) ? { ...e, content: newC } : e));
+      })
+      // Objectives tracker — the acting client parsed [OBJECTIVE-*] tags and pushed
+      // the new quest-spine state; mirror it so every player's tracker matches.
+      .on("broadcast", { event: "objectives_sync" }, ({ payload }) => {
+        if (payload.senderId === userIdRef.current) return;
+        const next = normalizeObjectives(payload.objectives);
+        objectivesRef.current = next;
+        setObjectives(next);
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -3871,6 +3915,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[WEAPON:[^\]]+\]/gi, "")
       .replace(/\[ITEM-?LOST:[^\]]+\]/gi, "")
       .replace(/\[XP:[^\]]+\]/gi, "")
+      .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -4086,6 +4131,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(prevActorName && nextPromptName && prevActorName !== nextPromptName && { prevActingPlayerName: prevActorName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
           ...(opts?.suggestedCheck && { suggestedCheck: opts.suggestedCheck }),
+          ...(objectivesRef.current.length && { objectives: objectivesRef.current }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
           ...(opts?.allActed && { pendingReconciliation: true }),
           ...(opts?.isRollResult && { isRollResult: true }),
@@ -4808,6 +4854,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Deterministic economy tags (primary) + chat-state extractor (fallback).
       if (!isOpeningScene) {
         applyDmStateFromNarrative(full);
+      }
+
+      // Objective progress — the DM's [OBJECTIVE-NEW:n]/[OBJECTIVE-DONE:n] tags
+      // reveal/complete milestones. Skip on a [NO-TURN] refusal (nothing happened).
+      if (!/\[NO-?TURN\]/i.test(full)) {
+        applyObjectiveTagsFromNarrative(full);
       }
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
@@ -6015,10 +6067,52 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         />
         {/* Scene loading indicator */}
         {sceneLoading && (
-          <div style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0,0,0,0.6)", borderRadius: "20px", padding: "5px 12px", fontSize: "0.7rem", color: "#8b5cf6", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0,0,0,0.6)", borderRadius: "20px", padding: "5px 12px", fontSize: "0.7rem", color: "#8b5cf6", display: "flex", alignItems: "center", gap: "6px", zIndex: 7 }}>
             <span style={{ animation: "blink 1s step-end infinite" }}>✦</span> Generating scene…
           </div>
         )}
+        {/* ── Objectives Tracker (quest spine) — top-right of the scene, transparent + collapsible ── */}
+        {(() => {
+          const visObjectives = visibleObjectives(objectives);
+          if (visObjectives.length === 0) return null;
+          const curObjId = currentObjectiveId(objectives);
+          const activeCount = visObjectives.filter(o => o.status !== "done").length;
+          return (
+            <div style={{ position: "absolute", top: sceneLoading ? "46px" : "12px", right: "12px", width: "min(290px, 46%)", zIndex: 6, background: "rgba(10,8,20,0.40)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)", border: "1px solid rgba(139,92,246,0.28)", borderRadius: "10px", padding: objectivesCollapsed ? "7px 11px" : "9px 11px 10px", boxShadow: "0 6px 22px rgba(0,0,0,0.45)", transition: "padding 0.18s ease" }}>
+              <button
+                onClick={toggleObjectivesCollapsed}
+                title={objectivesCollapsed ? "Show objectives" : "Hide objectives"}
+                onMouseEnter={e => showTooltip(tipBox("Objectives", "Your campaign's quest spine. The glowing entry is your current goal — the DM reveals new objectives as the party discovers them, and checks them off as you complete them."), e)}
+                onMouseLeave={hideTooltip}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: 0, margin: objectivesCollapsed ? "0" : "0 0 7px 0", cursor: "pointer" }}
+              >
+                <span style={{ fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: 700, color: "#a78bda", display: "flex", alignItems: "center", gap: "6px", textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
+                  <span aria-hidden="true">🎯</span> Objectives
+                  {objectivesCollapsed && <span style={{ marginLeft: "4px", color: "#8273ad", fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({activeCount} active)</span>}
+                </span>
+                <span style={{ fontSize: "0.72rem", lineHeight: 1, transform: objectivesCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block", color: "#7c6aa8" }}>▾</span>
+              </button>
+              {!objectivesCollapsed && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  {visObjectives.map(o => {
+                    const done = o.status === "done";
+                    const current = o.id === curObjId;
+                    return (
+                      <div key={o.id} className={current ? "objective-current" : undefined}
+                        style={{ display: "flex", alignItems: "flex-start", gap: "7px", fontSize: "0.75rem", lineHeight: 1.32, padding: "4px 7px", borderRadius: "7px",
+                          background: current ? "rgba(139,92,246,0.14)" : "transparent",
+                          border: `1px solid ${current ? "rgba(167,139,250,0.45)" : "transparent"}`,
+                          color: done ? "#7c8497" : current ? "#ede9fe" : "#cbd5e1" }}>
+                        <span style={{ flexShrink: 0, marginTop: "1px", fontSize: "0.72rem", color: done ? "#22c55e" : current ? "#c4b5fd" : "#64748b" }}>{done ? "✓" : current ? "◆" : "○"}</span>
+                        <span style={{ textDecoration: done ? "line-through" : "none", textShadow: "0 1px 3px rgba(0,0,0,0.85)", position: "relative", zIndex: 1 }}>{o.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "40px 24px 80px", background: "linear-gradient(transparent, rgba(0,0,0,0.92))", pointerEvents: "none" }}>
           <h2 style={{ fontSize: "1.8rem", fontWeight: "bold", textShadow: "0 2px 10px black", marginBottom: "6px", textTransform: "capitalize" }}>
             {currentSceneRef.current ? currentSceneRef.current.charAt(0).toUpperCase() + currentSceneRef.current.slice(1) : (campaignTitle || "")}
