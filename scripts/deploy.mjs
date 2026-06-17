@@ -18,8 +18,13 @@
  */
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
-const REPO = "C:\\Users\\iFrag\\projects\\Dungeons-Dinners";
+// Derive the repo root from this script's own location (scripts/deploy.mjs ->
+// repo root is one level up). Keeps the tool portable across machines/checkouts
+// instead of hardcoding a single clone's absolute path.
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OWNER_REPO = "ripcitylove/Dungeons-Dinners";
 const PROD_DOMAIN = "https://www.mythicmeal.io";
 const VERCEL_ALIAS = "https://dungeons-dinners.vercel.app";
