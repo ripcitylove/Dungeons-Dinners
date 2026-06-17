@@ -20,6 +20,7 @@ import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSne
 import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio, playSpellSound, preloadSpellAudio, SPELL_META } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
+import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -286,70 +287,9 @@ function getBonusTooltip(label: string): { title: string; body: string; accent: 
   return null;
 }
 
-/** Parses [HP:FirstName:N] tags from DM text for the named character. Returns HP delta (negative = damage, positive = healing). */
-function parseHpTag(text: string, firstName: string): number {
-  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`\\[HP:${n}:([+-]?\\d+)\\]`, "gi");
-  let total = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) total += parseInt(m[1], 10);
-  return total;
-}
-
-// Damage-direction validator. The DM is instructed to emit [HP:FirstName:-N]
-// ONLY when the named player CHARACTER actually loses N HP — never when the
-// player DEALS N damage to an enemy. The model occasionally violates this
-// rule and tags the attacker instead of the target, which would silently
-// drain the attacker's HP from their own successful hit. This validator
-// scans the narrative for clear attacker-verb usage on the player; when the
-// player is plainly the attacker AND there's no offsetting receiver pattern,
-// the tag is rejected.
-//
-// The check is intentionally narrow: only reject damage (negative deltas)
-// where the narrative shows player as attacker with no receiver pattern.
-// Healing (positive deltas) is left alone — applying healing to the wrong
-// player is annoying but not destructive.
-// Attack-verb tokens used to detect "the named character is the ATTACKER" in
-// narration. The -ing/-ed forms of these verbs that ALSO double as D&D damage-
-// type adjectives (slashing, piercing, crushing, bashing, fire) are deliberately
-// OMITTED — they appear in "N slashing", "N piercing", "fire damage" patterns
-// where they describe the damage type, not an action, and would false-positive
-// on legitimate "Aria takes 9 slashing" tags. The base verb forms (slash, slashes,
-// slashed, pierce, pierces, pierced) are retained so genuine attacker patterns
-// ("Aria slashes the orc") still match.
-const _ATTACK_VERBS_RE_SRC = "deal|deals|dealing|dealt|strike|strikes|striking|struck|hit|hits|hitting|attack|attacks|attacking|attacked|land|lands|landing|landed|cut|cuts|cutting|slash|slashes|slashed|bite|bites|biting|cast|casts|casting|fires|firing|fired|shoot|shoots|shooting|shot|swing|swings|swinging|swung|stab|stabs|stabbing|stabbed|pierce|pierces|pierced|smash|smashes|smashed|crush|crushes|crushed|connect|connects|connecting|connected|tear|tears|tearing|tore|rip|rips|ripping|ripped|bash|bashes|bashed|punch|punches|punching|punched|kick|kicks|kicking|kicked|loose|looses|loosing|loosed|hurl|hurls|hurling|hurled|throw|throws|throwing|threw|launch|launches|launching|launched|unleash|unleashes|unleashing|unleashed|blast|blasts|blasting|blasted";
-const _RECEIVER_VERBS_RE_SRC = "takes?|took|taking|suffers?|suffered|suffering|loses?|lost|losing|drops?|dropped|dropping|absorbs?|absorbed|absorbing|recoils?|recoiled|recoiling|reels?|reeled|reeling|crumples?|crumpled|stagger?s?|staggered|staggering|collapses?|collapsed|collapsing|heals?|healed|healing|regains?|regained|regaining|recovers?|recovered|recovering";
-const _ENEMY_ATTACK_VERBS_RE_SRC = "hits?|strikes?|catches|caught|cuts?|stabs?|attacks?|claws?|fangs?|bites?|smashes?|crushes?|grabs?|seizes?|wraps?|grapples?|lashes?|lashed|lashing|whips?|whipped|whipping|impales?|impaled|impaling|gores?|gored|goring|rakes?|raked|raking|slams?|slammed|slamming|connects?|connected|connecting";
-
-function damageTagShouldBeSuppressed(text: string, firstName: string, delta: number): boolean {
-  if (delta >= 0) return false; // only validate damage (negative), leave healing alone
-  const n = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-  // Receiver pattern A: "Aria takes / suffers / loses / drops / recoils [N]"
-  // (verb close to a stated number — player is taking damage)
-  const receiverActive = new RegExp(
-    `\\b${n}\\b[^.!?\\n]{0,40}\\b(?:${_RECEIVER_VERBS_RE_SRC})\\b`,
-    "i",
-  );
-  // Receiver pattern B: "the [enemy verb] Aria" — enemy hitting the player
-  const receiverPassive = new RegExp(
-    `\\b(?:${_ENEMY_ATTACK_VERBS_RE_SRC})\\b[^.!?\\n]{0,40}\\b${n}\\b`,
-    "i",
-  );
-  if (receiverActive.test(text) || receiverPassive.test(text)) return false;
-
-  // Attacker pattern A: "Aria attacks / strikes / hits / casts / shoots..."
-  const attackerActive = new RegExp(
-    `\\b${n}\\b[^.!?\\n]{0,30}\\b(?:${_ATTACK_VERBS_RE_SRC})\\b`,
-    "i",
-  );
-  // Attacker pattern B: "Aria's blade bites / strikes / connects..."
-  const attackerPossessive = new RegExp(
-    `\\b${n}'?s\\s+\\w+\\s+(?:${_ATTACK_VERBS_RE_SRC})\\b`,
-    "i",
-  );
-  return attackerActive.test(text) || attackerPossessive.test(text);
-}
+// parseHpTag + damageTagShouldBeSuppressed now live in ../../../lib/damageRouting
+// (imported above) so the combat damage-routing logic can be unit-tested in
+// isolation — see scripts/test-damage-routing.ts.
 
 // Keep the Unconscious condition consistent with HP on the client-side fast HP
 // paths. Those paths apply an [HP:Name:±N] tag immediately and set
