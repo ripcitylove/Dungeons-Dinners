@@ -51,23 +51,28 @@ export function sanitizeForTts(text: string): string {
     .replace(STRIP_INVISIBLE, "")
     .replace(STRIP_CONTROL, "")
     .replace(STRIP_NONTEXT, "");
-  // Normalize exotic quotes/dashes to plain forms the engine reads cleanly.
+  // Normalize exotic quotes/dashes to plain forms first.
   out = out.replace(CURLY_SINGLE, "'").replace(CURLY_DOUBLE, '"').replace(FANCY_DASH, "—");
+  // Remove DOUBLE-quote marks from speech entirely. They are never vocalized, and
+  // an isolated quote-wrapped line ("That was a demonstration.") is a known
+  // ElevenLabs trigger for yells / hisses / "speaking in tongues". Apostrophes (')
+  // are kept so contractions (he's, doesn't) survive. (Only the SPOKEN text is
+  // affected — the chat display still shows the quotes.)
+  out = out.replace(/"/g, "");
   // Collapse punctuation runs that confuse prosody, and tidy spacing.
   out = out
     .replace(/\.{3,}/g, "…")          // ... -> ellipsis
     .replace(/([!?])\1+/g, "$1")            // !!! -> !   ??? -> ?
     .replace(/,{2,}/g, ",")
     .replace(/—{2,}/g, "—")
-    .replace(/(["'])\s*\1/g, " ")           // empty quote pair "" / '' -> gone
-    .replace(/(["'])\1+/g, "$1")            // any leftover run -> single
+    .replace(/''+/g, "'")                   // any single-quote run -> one
     .replace(/\s*—\s*/g, " — ")  // even spacing around em dash
     .replace(/\s+([,.!?;:…])/g, "$1") // no space before punctuation
     .replace(/\s{2,}/g, " ")
     .trim();
-  // Drop leading clutter that isn't a letter/digit/opening quote/paren — a chunk
-  // that starts with stray punctuation is a common hiss trigger.
-  out = out.replace(/^[^\p{L}\p{N}"'(]+/u, "").trim();
+  // Drop leading clutter that isn't a letter/digit/opening apostrophe/paren — a
+  // chunk that starts with stray punctuation is a common hiss trigger.
+  out = out.replace(/^[^\p{L}\p{N}'(]+/u, "").trim();
   return out;
 }
 

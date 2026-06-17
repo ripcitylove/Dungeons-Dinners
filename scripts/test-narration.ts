@@ -18,10 +18,17 @@ eq("roll math screenshot", collapseRollMath("12 + 2 [Perception] = 14 — clear 
 eq("roll math no labels",  collapseRollMath("14 + 5 = 19 — hits AC 15!"), "19 — hits AC 15!");
 eq("gold untouched",       collapseRollMath("You find 47 gold pieces."), "You find 47 gold pieces.");
 
-// ── The reported bug: *"emphasized dialogue"* must lose the asterisks ──
+// ── The reported bugs: *"…"* / **"…"** dialogue must lose BOTH the asterisks AND
+//    the quote marks (quote-wrapped short lines trigger ElevenLabs yells/hiss). ──
 eq("asterisk-wrapped dialogue",
   sanitizeForTts('*"He doesn\'t know what he\'s sitting on,"* Draeventhos adds. *"Or perhaps he does."*'),
-  '"He doesn\'t know what he\'s sitting on," Draeventhos adds. "Or perhaps he does."');
+  "He doesn't know what he's sitting on, Draeventhos adds. Or perhaps he does.");
+eq("double-asterisk quoted line (yell bug)",
+  sanitizeForTts('**"That was a demonstration."**'),
+  "That was a demonstration.");
+eq("double-asterisk quoted line 2",
+  sanitizeForTts('**"I can hear you, you know."**'),
+  "I can hear you, you know.");
 eq("bold + italic markdown removed",
   sanitizeForTts("The **harbor** goes _completely_ silent."),
   "The harbor goes completely silent.");
@@ -34,14 +41,14 @@ eq("emoji stripped", sanitizeForTts("You found a sword ⚔️!"), "You found a s
 eq("engine tag stripped", sanitizeForTts("The blade bites deep. [HP:Goblin:-9] The goblin reels."), "The blade bites deep. The goblin reels.");
 eq("repeated bang collapsed", sanitizeForTts("Look out!!!"), "Look out!");
 eq("ellipsis normalized", sanitizeForTts("Wait...... something moves."), "Wait… something moves.");
-eq("curly quotes normalized", sanitizeForTts("“Hello,” she said."), '"Hello," she said.');
+eq("curly quotes removed for speech", sanitizeForTts("“Hello,” she said."), "Hello, she said.");
 eq("backticks/pipes/carets removed", sanitizeForTts("The rune reads `vex` | ^old^ magic."), "The rune reads vex old magic.");
 eq("leading stray punctuation trimmed", sanitizeForTts("— and then the door creaks open."), "and then the door creaks open.");
 eq("empty quote pair gone", sanitizeForTts('She nods. "" The silence holds.'), "She nods. The silence holds.");
 
-// ── Real speech preserved ──
+// ── Real speech preserved (quotes dropped, words + apostrophes intact) ──
 eq("plain narration unchanged", sanitizeForTts("The harbor noise fills the silence Draeventhos leaves behind."), "The harbor noise fills the silence Draeventhos leaves behind.");
-eq("dialogue quotes kept", sanitizeForTts('"Are you going to open the door, or shall we do this forever?"'), '"Are you going to open the door, or shall we do this forever?"');
+eq("dialogue words kept, quotes dropped", sanitizeForTts('"Are you going to open the door, or shall we do this forever?"'), "Are you going to open the door, or shall we do this forever?");
 eq("apostrophes kept", sanitizeForTts("He doesn't know what he's sitting on."), "He doesn't know what he's sitting on.");
 
 // ── hasSpeakableContent gates out hiss-only chunks ──
