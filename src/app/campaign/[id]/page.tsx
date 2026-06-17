@@ -21,7 +21,7 @@ import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbi
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
-import { stripTrailingTurnPrompt } from "../../../lib/turnPrompt";
+import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turnPrompt";
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -3950,7 +3950,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; suggestedCheck?: { skill: string; ability: string } | null; _retryCount?: number }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; suggestedCheck?: { skill: string; ability: string } | null; suppressTurnPromptNarration?: boolean; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -4123,6 +4123,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             // Stop streaming narration at a roll request — post-roll text may be truncated
             // from the display, so we must not narrate it
             if (/\broll\s+a\s+d\d+\b/i.test(s)) { narBuf = ""; narDone = true; break; }
+            // On a round-completing response, the trailing "what do you do, X?" is
+            // stripped from the DISPLAYED text by reconciliation — so don't narrate it
+            // either, or the voice asks for an action the screen never shows.
+            if (opts?.suppressTurnPromptNarration && isTurnPromptSentence(s)) continue;
             const cleaned = stripSystemLeaks(s);
             if (cleaned) enqueueNarration(cleaned);
           }
@@ -4161,6 +4165,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 24) {
         const { chunks: tail } = pullNarrationChunks(narBuf, true);
         for (const s of tail) {
+          if (opts?.suppressTurnPromptNarration && isTurnPromptSentence(s)) continue;
           const cleaned = stripSystemLeaks(s);
           if (cleaned) enqueueNarration(cleaned);
         }
@@ -5101,6 +5106,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       && roundActionsRef.current.length >= campaignPartyRef.current.length
       && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
+    // This response will complete the round → reconciliation fires next and strips
+    // any trailing "what do you do, X?" from THIS message's displayed text. Tell
+    // sendToAI to skip NARRATING that prompt too, so the voice doesn't ask for an
+    // action the screen never shows. Covers both the bridge (allActedForDM) and a
+    // round-ending roll submission (whose response also gets stripped).
+    const rollCompletesRound = isRollSubmit && order.length > 1
+      && roundActionsRef.current.length >= campaignPartyRef.current.length
+      && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
+    const suppressTurnPromptNarration = allActedForDM || rollCompletesRound;
+
     // Capture current turn index before the DM responds so we can detect whether
     // (The previous "round-complete short circuit" that fired reconciliation
     // directly without a bridge has been removed. It bypassed sendToAI, which
@@ -5125,6 +5140,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       nextPlayerName,
       prevPlayerName: character?.name ?? null,
       allActed:       allActedForDM,
+      ...(suppressTurnPromptNarration && { suppressTurnPromptNarration }),
       ...(suggestedCheck && { suggestedCheck }),
       ...(isRollSubmit && { isRollResult: true }),
       ...(wasGroupCheckRoll && { isGroupCheckResult: true }),

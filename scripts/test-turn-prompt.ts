@@ -4,7 +4,7 @@
 // while ordinary narration is preserved untouched. This is the deterministic
 // stand-in for "playing through many rounds": it covers the message shapes that
 // produce the bug regardless of which player/closer the model picks.
-import { stripTrailingTurnPrompt } from "../src/lib/turnPrompt.ts";
+import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../src/lib/turnPrompt.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -45,6 +45,16 @@ eq("multi-paragraph body preserved", stripTrailingTurnPrompt("Paragraph one of t
 eq("trailing whitespace tolerated", stripTrailingTurnPrompt("The vault seals shut. You're up, Kael.   \n"), "The vault seals shut.");
 // A message that is ONLY a prompt would strip to empty → keep original (never blank the message).
 unchanged("prompt-only message kept", "What do you do, Aria?");
+
+// isTurnPromptSentence — used to skip NARRATING a prompt that's stripped from text
+const isPrompt = (name: string, s: string) => { if (isTurnPromptSentence(s)) pass++; else fails.push(`  ✗ expected turn-prompt: ${name} — ${JSON.stringify(s)}`); };
+const notPrompt = (name: string, s: string) => { if (!isTurnPromptSentence(s)) pass++; else fails.push(`  ✗ expected NOT a turn-prompt: ${name} — ${JSON.stringify(s)}`); };
+isPrompt("name-first prompt", "Barnabus, what do you do?");
+isPrompt("name-last prompt", "What do you do, Aria?");
+isPrompt("varied closer", "You're up, Kael.");
+notPrompt("plain narration sentence", "The monument knocks back seven times, then falls still.");
+notPrompt("narrative with 'your move' mid-clause", "The enemy general anticipates your move and repositions his line.");
+notPrompt("dialogue, not a prompt", "\"Are you going to open the door, or shall we do this forever?\"");
 
 console.log(`\nRound-end prompt de-dup battery: ${pass} checks passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }

@@ -21,6 +21,19 @@ const TURN_CLOSER =
   /\b(?:what do you do|what will you do|what would you do|what do you want to do|what'?s your next move|what'?s your move|how do you respond|how will you respond|how do you proceed|the choice is yours|make your move|you'?re up|what now|what'?s it going to be|what'?s it to be|your move now)\b/i;
 
 /**
+ * True when a single narration chunk IS a turn-prompt (e.g. "Barnabus, what do
+ * you do?" / "What's your next move, Aria?"). Used to skip narrating (TTS) a
+ * prompt that will be stripped from a round-completing message's displayed text —
+ * otherwise the voice speaks a prompt the screen no longer shows. Length-guarded
+ * so a long narrative sentence that merely contains a closer phrase isn't caught.
+ */
+export function isTurnPromptSentence(sentence: string): boolean {
+  if (!sentence) return false;
+  const s = sentence.trim();
+  return s.length <= 90 && TURN_CLOSER.test(s);
+}
+
+/**
  * If the final sentence/line of `text` is a turn prompt, return `text` with that
  * sentence removed (trailing whitespace trimmed). Otherwise return `text`
  * unchanged. Never returns an empty string — if stripping would remove
