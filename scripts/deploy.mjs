@@ -143,8 +143,16 @@ async function doDeploy() {
   if (DRY) { console.log("[dry-run] would: build → push dev:main → tag live/<ts> → verify."); return; }
   if (!SKIP_BUILD) {
     console.log("Building (deploy gate)…");
-    const r = spawnSync(`${userProfile}\\tools\\${nodeDirName()}\\npm.cmd`, ["run", "build"], { encoding: "utf8" });
-    if (r.status !== 0) { console.log("✗ BUILD FAILED — aborting deploy.\n" + (r.stdout || "").slice(-1500)); process.exit(1); }
+    // Invoke `next build` via the node binary directly — avoids the Windows .cmd
+    // shell quirk where spawnSync can't launch npm.cmd and reports a false failure.
+    const nodeBin = `${userProfile}\\tools\\${nodeDirName()}\\node.exe`;
+    const r = spawnSync(nodeBin, ["node_modules/next/dist/bin/next", "build"], { encoding: "utf8" });
+    if (r.status !== 0) {
+      console.log("✗ BUILD FAILED — aborting deploy.");
+      if (r.error) console.log("  spawn error: " + r.error.message);
+      console.log(((r.stdout || "") + (r.stderr || "")).slice(-1500));
+      process.exit(1);
+    }
     console.log("  ✓ build passed");
   }
   git("push origin dev"); git("push origin dev:main");
