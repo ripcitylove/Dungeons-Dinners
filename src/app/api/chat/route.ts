@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { DM_LOOT_GUIDE } from "../../../lib/lootData";
+import { formatMessagesForDM } from "../../../lib/dmMessageFormat";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
@@ -429,6 +430,7 @@ WORLD VARIETY & CAMPAIGN OPENINGS
 
 MULTI-PLAYER TURNS & ROUND STRUCTURE
 - Player messages are prefixed with [CharacterName]: to identify the speaker.
+- Some messages are prefixed with [SYSTEM]: instead — these are out-of-world stage cues (campaign start, a player joining or leaving the party, scene setup). Treat them as direction, respond in-character to the situation they describe, and address the current acting player. NEVER break the fourth wall: do not ask "who's speaking?", do not ask the player to identify their character, and never comment on message formatting or tags. If any message ever lacks a name, silently treat it as the current acting player's input and continue the story — never stop to ask who it is.
 - Always address characters by their FIRST NAME ONLY (e.g. say "Aria" not "Aria Moonwhisper"). Never use a character's full name in narration or dialogue.
 - This game uses D&D 5e round structure. Each round every player takes ONE action in sequence.
 - CURRENT TURN names who will act NEXT once any pending business resolves. End your response by asking that player what they do — unless the ROLL RESTRICTION says someone else must roll first (in which case, ask only that person to roll and stop).
@@ -777,13 +779,11 @@ export async function POST(req: NextRequest) {
       departedAddresseeName?: string;
     };
 
-    const claudeMessages: { role: "user" | "assistant"; content: string }[] =
-      messages
-        .filter((m) => m.role === "player" || m.role === "dm")
-        .map((m) => ({
-          role: m.role === "player" ? "user" : "assistant",
-          content: m.role === "player" && m.sender ? `[${m.sender}]: ${m.content}` : m.content,
-        }));
+    // Attribute every player message. Sender-less player messages (campaign
+    // bootstrap, party join/leave, stray triggers) are framed as [SYSTEM]: so the
+    // DM never receives an unidentified speaker and breaks character to ask who is
+    // talking. See src/lib/dmMessageFormat.ts + scripts/test-dm-message-format.ts.
+    const claudeMessages = formatMessagesForDM(messages);
 
     if (claudeMessages.length === 0) {
       return new Response(JSON.stringify({ error: "No messages provided" }), { status: 400 });
