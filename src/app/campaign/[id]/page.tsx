@@ -25,7 +25,7 @@ import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turn
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
-import { collapseRollMath } from "../../../lib/narration";
+import { sanitizeForTts, hasSpeakableContent } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -840,25 +840,11 @@ function hexToRgb(hex: string): string {
 //   • Anything else outside text, punctuation, digits, marks, whitespace
 // Applied at every queue entry point so resume, streaming, and cached-replay
 // paths all reach the network with the same clean text.
-const _STRIP_EMOJI    = new RegExp("[\\u{1F000}-\\u{1FFFF}\\u{2600}-\\u{27BF}]", "gu");
-const _STRIP_INVISIBLE = new RegExp("[\\u200B-\\u200F\\u2028-\\u202F\\u2060-\\u206F\\uFEFF]", "g");
-const _STRIP_CONTROL  = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F]", "g");
-const _STRIP_NONTEXT  = new RegExp("[^\\p{L}\\p{N}\\p{P}\\p{Zs}\\p{M}\\n\\r\\t]", "gu");
-function stripTtsArtifacts(text: string): string {
-  return collapseRollMath(text)
-    // Collapse roll math to just the total — the narrator speaks the result, not
-    // the arithmetic ("12 + 2 [Perception] = 14 — clear enough." → "14 — clear
-    // enough."). Done before bracket removal so the [label] is consumed with the
-    // formula. The DISPLAYED chat text is unaffected — only TTS is.
-    .replace(/\[[^\]]*\]/g, "")
-    .replace(/\*+/g, "")
-    .replace(_STRIP_EMOJI, "")
-    .replace(_STRIP_INVISIBLE, "")
-    .replace(_STRIP_CONTROL, "")
-    .replace(_STRIP_NONTEXT, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
+// All TTS text scrubbing now lives in ../../../lib/narration (sanitizeForTts) so
+// it's comprehensive and unit-tested. Kept as a local alias for call-site
+// readability — it strips markdown/tags/emoji, collapses roll math + punctuation
+// runs, and trims hiss-triggering clutter from the SPOKEN text only.
+const stripTtsArtifacts = sanitizeForTts;
 
 // Pull as many TTS-ready chunks as possible from a streaming narration buffer.
 // Returns the chunks plus the leftover buffer.
@@ -3451,11 +3437,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Internal fetch — shared by initial enqueue and truncation retries
   const fetchClipForSlot = useCallback(async (slot: number, text: string, fresh: boolean) => {
     const myGen = narGenerationRef.current;
+    // Final, bulletproof TTS guard — every path that reaches the narrate API goes
+    // through here (streaming enqueue, retry/regen, resume). Re-sanitize and skip
+    // anything with no speakable content so markdown/symbols/punctuation-only
+    // fragments can never reach ElevenLabs and produce a hiss/garble.
+    const speech = sanitizeForTts(text);
+    if (!hasSpeakableContent(speech)) {
+      narSlotsRef.current[slot] = "SKIP";
+      if (narGenerationRef.current === myGen) playNextInQueue();
+      return;
+    }
     try {
       const res = await fetch("/api/narrate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ text, voice: selectedVoiceRef.current ?? "chronicler", ...(fresh && { fresh: true }) }),
+        body:    JSON.stringify({ text: speech, voice: selectedVoiceRef.current ?? "chronicler", ...(fresh && { fresh: true }) }),
       });
       if (narGenerationRef.current !== myGen) return;
       if (!res.ok) {
@@ -3487,7 +3483,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     //   • pullNarrationChunks splits text > ~280 chars so a single mega-clip never
     //     blows past the 45s watchdog.
     const scrubbed = stripTtsArtifacts(text);
-    if (!scrubbed) return;
+    if (!hasSpeakableContent(scrubbed)) return; // nothing worth speaking → no hiss-prone clip
     const { chunks } = pullNarrationChunks(scrubbed, true);
     const toEnqueue = chunks.length > 0 ? chunks : (scrubbed.trim() ? [scrubbed] : []);
     if (toEnqueue.length === 0) return;

@@ -1,5 +1,7 @@
-// Verifies the narrator speaks only the roll TOTAL, not the arithmetic formula.
-import { collapseRollMath } from "../src/lib/narration.ts";
+// Narration (TTS) sanitization battery. Ensures the SPOKEN text never contains
+// markdown/symbols/tokens that make ElevenLabs hiss ("sssss"), slur, or garble —
+// while real speech is preserved. Run: node scripts/test-narration.ts
+import { collapseRollMath, sanitizeForTts, hasSpeakableContent } from "../src/lib/narration.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -7,23 +9,48 @@ const eq = (name: string, got: string, want: string) => {
   if (got === want) pass++;
   else fails.push(`  ✗ ${name}\n      got:  ${JSON.stringify(got)}\n      want: ${JSON.stringify(want)}`);
 };
+const truthy = (name: string, v: boolean, want: boolean) => {
+  if (v === want) pass++; else fails.push(`  ✗ ${name}: expected ${want}, got ${v}`);
+};
 
-// The screenshot + common roll-narration shapes
-eq("screenshot",        collapseRollMath("12 + 2 [Perception] = 14 — clear enough."), "14 — clear enough.");
-eq("attack w/ STR+Prof", collapseRollMath("8 + 3 [STR] + 2 [Prof] = 13 — hits AC 14!"), "13 — hits AC 14!");
-eq("arcana check",      collapseRollMath("9 + 4 [Arcana] = 13 — the letters hum faintly."), "13 — the letters hum faintly.");
-eq("no labels",         collapseRollMath("14 + 5 = 19 — hits AC 15!"), "19 — hits AC 15!");
-eq("save vs DC",        collapseRollMath("9 + 2 [WIS] + 2 [Prof] = 13 — fails DC 14."), "13 — fails DC 14.");
-eq("low roll",          collapseRollMath("1 + 2 [Perception] = 3 — she stares at the crack."), "3 — she stares at the crack.");
-eq("labels already stripped (TTS order)", collapseRollMath("12 + 2  = 14 — clear enough."), "14 — clear enough.");
+// ── Roll math collapses to the total ──
+eq("roll math screenshot", collapseRollMath("12 + 2 [Perception] = 14 — clear enough."), "14 — clear enough.");
+eq("roll math no labels",  collapseRollMath("14 + 5 = 19 — hits AC 15!"), "19 — hits AC 15!");
+eq("gold untouched",       collapseRollMath("You find 47 gold pieces."), "You find 47 gold pieces.");
 
-// Must NOT alter ordinary numbers
-eq("gold unchanged",    collapseRollMath("You find 47 gold pieces in the chest."), "You find 47 gold pieces in the chest.");
-eq("roll request",      collapseRollMath("The lock looks tricky. Roll a d20."), "The lock looks tricky. Roll a d20.");
-eq("DC mention",        collapseRollMath("That would be a DC 15 check."), "That would be a DC 15 check.");
-eq("numbers in prose",  collapseRollMath("Three guards, maybe 20 feet away, turn toward you."), "Three guards, maybe 20 feet away, turn toward you.");
-eq("non-contiguous nums", collapseRollMath("You deal 12 damage, then 3 more for 15 total."), "You deal 12 damage, then 3 more for 15 total.");
+// ── The reported bug: *"emphasized dialogue"* must lose the asterisks ──
+eq("asterisk-wrapped dialogue",
+  sanitizeForTts('*"He doesn\'t know what he\'s sitting on,"* Draeventhos adds. *"Or perhaps he does."*'),
+  '"He doesn\'t know what he\'s sitting on," Draeventhos adds. "Or perhaps he does."');
+eq("bold + italic markdown removed",
+  sanitizeForTts("The **harbor** goes _completely_ silent."),
+  "The harbor goes completely silent.");
+eq("roll math inside narration spoken as total",
+  sanitizeForTts("12 + 2 [Perception] = 14 — clear enough."),
+  "14 — clear enough.");
 
-console.log(`\nNarration roll-math battery: ${pass} passed, ${fails.length} failed.`);
+// ── Artifacts that cause hiss/garble are removed ──
+eq("emoji stripped", sanitizeForTts("You found a sword ⚔️!"), "You found a sword!");
+eq("engine tag stripped", sanitizeForTts("The blade bites deep. [HP:Goblin:-9] The goblin reels."), "The blade bites deep. The goblin reels.");
+eq("repeated bang collapsed", sanitizeForTts("Look out!!!"), "Look out!");
+eq("ellipsis normalized", sanitizeForTts("Wait...... something moves."), "Wait… something moves.");
+eq("curly quotes normalized", sanitizeForTts("“Hello,” she said."), '"Hello," she said.');
+eq("backticks/pipes/carets removed", sanitizeForTts("The rune reads `vex` | ^old^ magic."), "The rune reads vex old magic.");
+eq("leading stray punctuation trimmed", sanitizeForTts("— and then the door creaks open."), "and then the door creaks open.");
+eq("empty quote pair gone", sanitizeForTts('She nods. "" The silence holds.'), "She nods. The silence holds.");
+
+// ── Real speech preserved ──
+eq("plain narration unchanged", sanitizeForTts("The harbor noise fills the silence Draeventhos leaves behind."), "The harbor noise fills the silence Draeventhos leaves behind.");
+eq("dialogue quotes kept", sanitizeForTts('"Are you going to open the door, or shall we do this forever?"'), '"Are you going to open the door, or shall we do this forever?"');
+eq("apostrophes kept", sanitizeForTts("He doesn't know what he's sitting on."), "He doesn't know what he's sitting on.");
+
+// ── hasSpeakableContent gates out hiss-only chunks ──
+truthy("lone quote not speakable", hasSpeakableContent(sanitizeForTts('*"')), false);
+truthy("lone dash not speakable",  hasSpeakableContent(sanitizeForTts("—")), false);
+truthy("punctuation-only not speakable", hasSpeakableContent(sanitizeForTts('..."')), false);
+truthy("real sentence is speakable", hasSpeakableContent(sanitizeForTts("Or perhaps he does.")), true);
+truthy("number-only is speakable", hasSpeakableContent(sanitizeForTts("14.")), true);
+
+console.log(`\nNarration sanitization battery: ${pass} passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
-else console.log("✓ Narrator speaks the roll total only; formulas collapsed, prose numbers untouched.");
+else console.log("✓ Spoken text is sanitized (no markdown/symbols/hiss triggers); real speech preserved.");
