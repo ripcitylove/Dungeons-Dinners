@@ -10,7 +10,6 @@ const KM         = "https://archive.org/download/Incompetech/mp3-royaltyfree/";
 const DARK_AMB   = "https://archive.org/download/darkambient_201908/";
 const BATTLE_IA  = "https://archive.org/download/battle-ia-item/";
 const JAMENDO    = "https://archive.org/download/jamendo-190464/";
-const SI         = "https://soundimage.org/wp-content/uploads/";
 
 const TAVERN_TRACKS: string[] = [
   "/Tavern_Theme.mp3",
@@ -316,11 +315,6 @@ function resolvePool(scene: string, sceneType?: string, mods?: string[]): string
     .filter(k => scene.startsWith(k + "_") || scene === k)
     .sort((a, b) => b.length - a.length)[0];
   return SCENE_TO_POOL[baseKey ?? ""] ?? "dungeon";
-}
-
-// Pure function — mirrors __dndSetMusicScene logic without side effects (used for "recommended" display)
-function computePool(scene: string, sceneType?: string, mods?: string[]): string {
-  return resolvePool(scene, sceneType, mods);
 }
 
 function resolveAmbiancePool(scene: string, sceneType?: string, mods?: string[]): string {
