@@ -226,6 +226,26 @@ HP TAGS — mandatory after resolving damage or healing TO a player character:
 
   Examples (correct): [HP:Aria:-9]  [HP:Thorin:+5]  [HP:Zara:-12]
 
+ECONOMY TAGS — mandatory whenever a player character GAINS or LOSES gold, an item, or an explicit XP reward. UNLIKE HP tags, you SHOULD still mention treasure naturally in the prose (players love reading "you find 14 gold") — but you MUST ALSO append the authoritative tag. The tag is the single source of truth the game applies to the sheet; the prose is flavor. If they ever disagree the tag wins, so make the tag EXACT. All economy tags are stripped from the display. One tag per discrete award.
+  GOLD — append [GOLD:+N] when the acting player gains N gold; [GOLD:-N] when they spend or lose N. Name a different recipient with [GOLD:FirstName:+N]. Use the EXACT integer — convert other coin to gp FIRST (10 sp = 1 gp, 100 cp = 1 gp, 1 pp = 10 gp). NEVER round.
+    "You tip the spilled purse into your palm — fourteen gold. [GOLD:+14]"
+    "You count out the coin for a night's lodging. [GOLD:-8]"
+    "Thorin claims the bandit chief's bounty. [GOLD:Thorin:+150]"
+  LOOT — append [LOOT:exact item name] for any NON-weapon item gained (potions, scrolls, rings, amulets, cloaks, gems, trinkets, plot items, ammunition). [LOOT:FirstName:item] for a named recipient.
+    "A vial of red liquid rolls free — a Potion of Healing. [LOOT:Potion of Healing]"
+    "Aria slips a silver ring onto her finger. [LOOT:Aria:Silver Ring]"
+  WEAPON — append [WEAPON:exact name] for a weapon, shield, or body armor gained. [WEAPON:FirstName:item] for a named recipient.
+    "A finely balanced battleaxe leans against the wall — you take it. [WEAPON:Battleaxe]"
+  ITEM-LOST — append [ITEM-LOST:exact name] when a player consumes, spends, gives away, or destroys an item.
+    "You uncork and drain the potion, warmth flooding back. [ITEM-LOST:Potion of Healing] [HP:Aria:+7]"
+  XP — append [XP:N] for a SPECIFIC milestone/quest reward you want applied exactly (acting player). Routine combat XP is awarded automatically by the engine — only tag XP when you intend an exact amount.
+    "The vault's last secret is finally yours. [XP:200]"
+  ⚠ CONSISTENCY RULES (the game routes by tag — get the tag right):
+    • COIN is always [GOLD] — represent any coin as ONE [GOLD:±N] in whole gp (convert cp/sp/ep/pp first). NEVER tag coins as [LOOT] ("[LOOT:47 copper]" is wrong → use the converted [GOLD]).
+    • WEAPONS, SHIELDS, and BODY ARMOR are always [WEAPON] — never [LOOT]. Potions, scrolls, rings, cloaks, amulets, gems, wands, and trinkets are [LOOT].
+    • PROSE MUST MATCH THE TAG — if you narrate "fourteen gold," the tag is exactly [GOLD:+14]. The number the player reads and the number the game applies must be identical.
+  ⚠ CONDITIONAL / APPRAISAL IS NOT A GAIN — never emit a GOLD/LOOT/WEAPON tag for value that has not actually changed hands this turn: "worth maybe 50 gold", "you could sell this for a tidy sum", "the chest might hold treasure". Tag ONLY what is actually taken, spent, received, or lost right now.
+
 WILD SHAPE TAGS — mandatory whenever a Druid actually transforms or reverts:
   Append: [WILDSHAPE:FirstName:Form] when a druid takes a beast form. Form is the lowercase canonical beast name (e.g. "bear", "brown bear", "wolf", "dire wolf", "giant eagle", "panther", "boar"). The client uses this to morph that druid's party-card portrait into the matching beast emoji and play a form-specific audio cue (bear growl, wolf howl, raptor cry, etc.).
   Append: [WILDSHAPE:FirstName:revert] when the druid reverts to their normal form (the player chose to revert, dropped to 0 HP in beast form, the duration expired, or they end the campaign-time hours). One tag per character per response.

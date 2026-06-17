@@ -90,6 +90,33 @@ HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
     treasury:         pick from 287-731 gp
   Use the same target_name rule as items.
 - Use the exact item name the DM stated (preserve the recognizable phrase; ignore decorative trailing words like "carefully").
+- GOLD LOSS (spending / theft / gifts) — gold_delta is NEGATIVE when a character pays, gives away, is robbed of, or otherwise parts with money:
+    "You pay 12 gold for a night at the inn." → gold_delta=-12
+    "You hand the beggar 5 gold." → gold_delta=-5
+    "The cutpurse melts into the crowd with 20 of your coins." → gold_delta=-20
+    "You buy the healer's kit for 25 gp." → gold_delta=-25, items_gained=["Healer's Kit"]
+    "It costs you 8 gold to bribe the guard." → gold_delta=-8
+- CONDITIONAL / FUTURE / APPRAISAL is NOT acquisition — do NOT award gold or items for value that has not actually changed hands this turn. Only count what the character physically takes/receives/spends NOW:
+    "That ruby would fetch maybe 50 gold at market." → gold_delta=0
+    "You could sell this blade for a tidy sum." → gold_delta=0
+    "The chest looks like it might hold treasure." → no items_gained (nothing taken yet)
+    "The merchant offers 40 gold for the pelt — do you accept?" → gold_delta=0 (offer not yet accepted)
+- WORKED EXAMPLES — gold (extract the integer even when the verb is IMPLICIT or the number sits mid-sentence; a container that "yields/holds/contains N" coins that the player is looting counts as acquisition):
+    "His coin purse yields 14 gold pieces." → gold_delta=14
+    "You're 62 gold richer." → gold_delta=62
+    "A glint of gold — 25 pieces — disappears into your pack." → gold_delta=25
+    "The merchant counts out your reward: 150 gold." → gold_delta=150
+    "Among the rubble: 240 copper and 30 silver all told." → gold_delta=5   (240cp=2gp + 30sp=3gp)
+    "You pocket the 18 gold difference from the haggle." → gold_delta=18
+    "The strongbox pops open — coins spill across the floor." → gold_delta = vague "pile/hoard" estimate (47-138), target the looting player
+- WORKED EXAMPLES — loot (route by TYPE; preserve the DM's item name):
+    "A Battleaxe, still sharp, leans against the wall — you take it." → weapons_gained=["Battleaxe"]
+    "You take the dead guard's Chain Mail." → weapons_gained=["Chain Mail"]   (body armor / shields go with weapons)
+    "You find a Cloak of Elvenkind folded at the bottom of the trunk." → items_gained=["Cloak of Elvenkind"]   (wearable accessory — NOT a weapon)
+    "You slide a Ring of Protection onto your finger." → items_gained=["Ring of Protection"]
+    "You tuck the bundle of three torches into your pack." → items_gained=["Torch","Torch","Torch"]
+    "You snap the wand in two — its last charge spent." → items_lost=["Wand"]
+- Use the exact item name the DM stated.
 
 XP RULES (infer generously — players must always feel progression):
 - ALWAYS award XP when any of the following are described — you do NOT need the DM to say "you earn X XP":

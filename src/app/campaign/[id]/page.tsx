@@ -362,6 +362,81 @@ function parseThpTag(text: string, firstName: string): number {
   return maxGrant;
 }
 
+/** Parses authoritative ECONOMY tags the DM emits inline (deterministic source
+ *  of truth — no LLM extraction):
+ *    [GOLD:+N] / [GOLD:-N] / [GOLD:FirstName:±N]   → gold_delta
+ *    [LOOT:item] / [LOOT:FirstName:item]           → items_gained
+ *    [WEAPON:item] / [WEAPON:FirstName:item]       → weapons_gained (weapons/armor/shields)
+ *    [ITEM-LOST:item] / [ITEM-LOST:FirstName:item] → items_lost
+ *    [XP:N]                                        → xp_award (explicit milestone XP)
+ *  Returns the parsed values plus per-category flags so the chat-state extractor
+ *  (now a fallback) can have its tagged categories overridden — the tag wins. */
+type EconomyTags = {
+  target_name: string | null;
+  gold_delta: number;
+  items_gained: string[];
+  items_lost: string[];
+  weapons_gained: string[];
+  xp_award: number;
+  goldTagged: boolean;
+  lootTagged: boolean;
+  xpTagged: boolean;
+  any: boolean;
+};
+// Weapons / armor / shields routed into weapons_gained (so they're equippable),
+// even when the DM mistakenly tags them [LOOT:..] or invents a name not in the
+// static catalog. Matched as whole words, case-insensitive.
+const WEAPON_ARMOR_RE = /\b(?:sword|longsword|shortsword|greatsword|broadsword|blade|dagger|dirk|rapier|scimitar|sabre|saber|falchion|katana|cutlass|axe|battleaxe|greataxe|handaxe|hatchet|mace|hammer|warhammer|maul|club|cudgel|flail|morningstar|spear|javelin|lance|pike|halberd|glaive|trident|quarterstaff|bow|longbow|shortbow|crossbow|sling|dart|whip|warpick|scythe|shield|buckler|armou?r|mail|chainmail|plate|breastplate|cuirass|brigandine|splint)\b/i;
+// A loot string that is purely an amount of coin → convert to gp (game economy
+// tracks gold only). Anchored to the whole string so "3 Gold Rings" or "Silver
+// Ring" are NOT mistaken for currency.
+const CURRENCY_LOOT_RE = /^\s*([\d,]+)\s*(copper|silver|gold|platinum|electrum|cp|sp|gp|pp|ep)(?:\s+(?:coins?|pieces?|bits?))?\s*$/i;
+function currencyToGp(amount: number, denom: string): number {
+  switch (denom.toLowerCase()) {
+    case "copper": case "cp":    return Math.floor(amount / 100);
+    case "silver": case "sp":    return Math.floor(amount / 10);
+    case "electrum": case "ep":  return Math.floor(amount / 2);
+    case "gold": case "gp":      return amount;
+    case "platinum": case "pp":  return amount * 10;
+    default:                     return 0;
+  }
+}
+function parseEconomyTags(text: string): EconomyTags {
+  const r: EconomyTags = {
+    target_name: null, gold_delta: 0, items_gained: [], items_lost: [], weapons_gained: [],
+    xp_award: 0, goldTagged: false, lootTagged: false, xpTagged: false, any: false,
+  };
+  // Optional "FirstName:" prefix = a SINGLE capitalised token followed by a colon.
+  // Restricting to one token (no spaces) stops a multi-word or colon-containing
+  // item name ([LOOT:Potion of Healing], [LOOT:Scroll of Fireball]) from being
+  // mis-read as a recipient, while still catching [GOLD:Thorin:+14].
+  const NAME = `(?:([A-Za-z][A-Za-z'\\-]*):)?`;
+  let m: RegExpExecArray | null;
+  const goldRe = new RegExp(`\\[GOLD:${NAME}([+-]?\\d+)\\]`, "gi");
+  while ((m = goldRe.exec(text)) !== null) { r.gold_delta += parseInt(m[2], 10); if (m[1]) r.target_name = m[1].trim(); r.goldTagged = true; }
+  const rawLoot: string[] = [];
+  const lootRe = new RegExp(`\\[LOOT:${NAME}([^\\]]+)\\]`, "gi");
+  while ((m = lootRe.exec(text)) !== null) { rawLoot.push(m[2].trim()); if (m[1]) r.target_name = m[1].trim(); r.lootTagged = true; }
+  const wpnRe = new RegExp(`\\[WEAPON:${NAME}([^\\]]+)\\]`, "gi");
+  while ((m = wpnRe.exec(text)) !== null) { r.weapons_gained.push(m[2].trim()); if (m[1]) r.target_name = m[1].trim(); r.lootTagged = true; }
+  const lostRe = new RegExp(`\\[ITEM-?LOST:${NAME}([^\\]]+)\\]`, "gi");
+  while ((m = lostRe.exec(text)) !== null) { r.items_lost.push(m[2].trim()); if (m[1]) r.target_name = m[1].trim(); r.lootTagged = true; }
+  const xpRe = /\[XP:\+?(\d+)\]/gi;
+  while ((m = xpRe.exec(text)) !== null) { r.xp_award += parseInt(m[1], 10); r.xpTagged = true; }
+
+  // Normalise loot deterministically: coin → gold, weapons/armor → weapons_gained,
+  // everything else stays a general item. Resolves DM tag-selection slips.
+  for (const it of rawLoot) {
+    const coin = it.match(CURRENCY_LOOT_RE);
+    if (coin) { r.gold_delta += currencyToGp(parseInt(coin[1].replace(/,/g, ""), 10), coin[2]); r.goldTagged = true; continue; }
+    if (WEAPON_ARMOR_RE.test(it)) { r.weapons_gained.push(it); continue; }
+    r.items_gained.push(it);
+  }
+
+  r.any = r.goldTagged || r.lootTagged || r.xpTagged;
+  return r;
+}
+
 /** Parses [WILDSHAPE:FirstName:Form] tags. Returns "revert" if the form is the
  *  literal string "revert" / "revert" / "human" (the druid is reverting), the
  *  beast name otherwise (e.g. "bear", "brown bear", "giant eagle"), or null if
@@ -2105,8 +2180,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           }
         }
         // roll_request broadcast syncs the turn — no need to re-derive userId here
-        fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: payload.content }) })
-          .then(r => r.json()).then((change: StateChange) => applyStateChange(change, payload.content as string)).catch(() => {});
+        // Deterministic economy tags (primary) + chat-state extractor (fallback).
+        applyDmStateFromNarrative(payload.content as string);
         // Focus the party panel on the character whose turn the DM just announced
         if (campaignPartyRef.current.length > 1) {
           const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
@@ -2926,6 +3001,65 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [charWrite, charNameMatches]);
 
+  // ── DM → sheet state pipeline ─────────────────────────────────────────────────
+  // PRIMARY: authoritative economy tags the DM emits inline ([GOLD:..]/[LOOT:..]/
+  //   [WEAPON:..]/[ITEM-LOST:..]/[XP:..]) are parsed DETERMINISTICALLY — no LLM, no
+  //   guessing — so a number the DM wrote can never be mis-read or missed.
+  // FALLBACK: the /api/chat-state extractor still runs for HP / temp-HP / spell
+  //   slots / status effects (not yet migrated to tags) AND for any economy the DM
+  //   left untagged (older saves, or the model forgetting a tag). Where a tag fired,
+  //   its value overrides the extractor's guess for that category — the tag wins.
+  // RESILIENCE: if the extractor call fails outright, tagged economy still applies,
+  //   so an extractor outage no longer silently drops a player's gold/loot.
+  const applyDmStateFromNarrative = useCallback((narrative: string) => {
+    const econ = parseEconomyTags(narrative);
+    const econOnlyChange = (): StateChange => ({
+      target_name: econ.target_name,
+      hp_delta: 0, temp_hp_grant: 0,
+      gold_delta:     econ.goldTagged ? econ.gold_delta     : 0,
+      items_gained:   econ.lootTagged ? econ.items_gained   : [],
+      items_lost:     econ.lootTagged ? econ.items_lost     : [],
+      weapons_gained: econ.lootTagged ? econ.weapons_gained : [],
+      xp_award:       econ.xpTagged   ? econ.xp_award        : 0,
+      status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0, spell_slot_level: 0,
+    });
+    fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative }) })
+      .then(r => r.json())
+      .then((change: StateChange) => {
+        if (!econ.any) { applyStateChange(change, narrative); return; }
+        // Deterministic tags are authoritative — strip the tagged categories out of
+        // the extractor's result so they can't double-apply or fight the tag.
+        const extractorPart: StateChange = {
+          ...change,
+          ...(econ.goldTagged ? { gold_delta: 0 } : {}),
+          ...(econ.lootTagged ? { items_gained: [], items_lost: [], weapons_gained: [] } : {}),
+          ...(econ.xpTagged   ? { xp_award: 0 } : {}),
+        };
+        const econTarget = econ.target_name, extractorTarget = change.target_name;
+        const sameOrAbsentTarget = !econTarget || !extractorTarget || charNameMatches(econTarget, extractorTarget);
+        if (sameOrAbsentTarget) {
+          // Common case — single recipient: one merged change (tag values win).
+          applyStateChange({
+            ...extractorPart,
+            target_name:    econTarget ?? extractorTarget,
+            gold_delta:     econ.goldTagged ? econ.gold_delta     : extractorPart.gold_delta,
+            items_gained:   econ.lootTagged ? econ.items_gained   : extractorPart.items_gained,
+            items_lost:     econ.lootTagged ? econ.items_lost     : extractorPart.items_lost,
+            weapons_gained: econ.lootTagged ? econ.weapons_gained : extractorPart.weapons_gained,
+            xp_award:       econ.xpTagged   ? econ.xp_award        : extractorPart.xp_award,
+          }, narrative);
+        } else {
+          // Rare — DM tagged economy for a DIFFERENT recipient than the extractor's
+          // HP/status target. Apply as two changes so neither is dropped by the
+          // single-target model. Extractor part FIRST (clears pendingHpDeltaRef);
+          // econ part second (no HP, different char → no clobber).
+          applyStateChange(extractorPart, narrative);
+          applyStateChange(econOnlyChange(), narrative);
+        }
+      })
+      .catch(() => { if (econ.any) applyStateChange(econOnlyChange(), narrative); });
+  }, [applyStateChange, charNameMatches]);
+
   // ── Resume-loot reconciliation ────────────────────────────────────────────────
   // On resume, the DM's most recent message is loaded from the DB but its state
   // changes (items, gold, weapons, status effects) are NOT re-extracted — the
@@ -3705,6 +3839,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[MARK:[^\]]+\]/gi, "")
       .replace(/\[ABILITY:[^\]]+\]/gi, "")
       .replace(/\[SPELL:[^\]]+\]/gi, "")
+      .replace(/\[GOLD:[^\]]+\]/gi, "")
+      .replace(/\[LOOT:[^\]]+\]/gi, "")
+      .replace(/\[WEAPON:[^\]]+\]/gi, "")
+      .replace(/\[ITEM-?LOST:[^\]]+\]/gi, "")
+      .replace(/\[XP:[^\]]+\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -4631,11 +4770,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
 
       // State changes (HP, gold, items, XP) — skip on opening scene (no player action yet)
+      // Deterministic economy tags (primary) + chat-state extractor (fallback).
       if (!isOpeningScene) {
-        fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full }) })
-          .then(r => r.json())
-          .then((change: StateChange) => applyStateChange(change, full))
-          .catch((err) => console.error("[chat-state] error", err));
+        applyDmStateFromNarrative(full);
       }
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
