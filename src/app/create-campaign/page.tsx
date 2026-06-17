@@ -220,11 +220,12 @@ export default function CreateCampaignWizard() {
 
   const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 
-  const isSpellcaster     = SPELLCASTING_CLASSES.has(draft.class);
-  const totalCharSteps    = isSpellcaster ? 6 : 5;
   const spellCounts       = getSpellCounts(draft.class, scores);
   const availableCantrips = CANTRIPS[draft.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[draft.class] ?? [];
+  // Half-casters (Paladin/Ranger) have no L1 spells — skip the spell step at creation.
+  const isSpellcaster     = spellCounts.cantrips > 0 || spellCounts.spells > 0;
+  const totalCharSteps    = isSpellcaster ? 6 : 5;
 
   // Characters already picked from roster (to prevent double-picking)
   const alreadyPickedIds = new Set(completedChars.filter(c => c.rosterId).map(c => c.rosterId!));
@@ -419,7 +420,7 @@ export default function CreateCampaignWizard() {
         setSelectedSpells(prevDraft.spells);
         setStatMethod("roll"); // restored characters always show roll tab
         setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
-        setCharStep(SPELLCASTING_CLASSES.has(prevDraft.class) ? 6 : 5);
+        { const pc = getSpellCounts(prevDraft.class, prevDraft.scores); setCharStep(pc.cantrips > 0 || pc.spells > 0 ? 6 : 5); }
       }
       return;
     }
@@ -439,7 +440,7 @@ export default function CreateCampaignWizard() {
         setSelectedSpells(lastDraft.spells);
         setStatMethod("roll");
         setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
-        setCharStep(SPELLCASTING_CLASSES.has(lastDraft.class) ? 6 : 5);
+        { const lc = getSpellCounts(lastDraft.class, lastDraft.scores); setCharStep(lc.cantrips > 0 || lc.spells > 0 ? 6 : 5); }
       }
     }
   };

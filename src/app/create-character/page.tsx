@@ -223,12 +223,14 @@ export default function CreateCharacter() {
 
   const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 
-  const isSpellcaster = SPELLCASTING_CLASSES.has(character.class);
-  const totalSteps    = isSpellcaster ? 6 : 5;
-
   const spellCounts       = getSpellCounts(character.class, effectiveScores());
   const availableCantrips = CANTRIPS[character.class] ?? [];
   const availableSpells   = LEVEL1_SPELLS[character.class] ?? [];
+  // A class only picks spells at creation (level 1) if it actually gets L1 cantrips
+  // or spells. Paladins & Rangers are half-casters with no spellcasting until level
+  // 2, so they have nothing to choose and skip the spell step entirely.
+  const isSpellcaster = spellCounts.cantrips > 0 || spellCounts.spells > 0;
+  const totalSteps    = isSpellcaster ? 6 : 5;
 
   // Derived stat data
   function effectiveScores(): AbilityScores {

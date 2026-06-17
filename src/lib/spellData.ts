@@ -87,8 +87,6 @@ export const LEVEL1_SPELLS: Partial<Record<string, SpellEntry[]>> = {
     { name: "Animal Friendship",        school: "Enchantment",  desc: "Charm a beast that understands you for 24h" },
     { name: "Bane",                     school: "Enchantment",  desc: "3 creatures: -1d4 to attacks & saves (CON save)" },
     { name: "Charm Person",             school: "Enchantment",  desc: "Charm a humanoid as a friendly acquaintance" },
-    { name: "Color Spray",              school: "Illusion",     desc: "Blind creatures within a cone based on HP" },
-    { name: "Command",                  school: "Enchantment",  desc: "One-word command a creature obeys (WIS save)" },
     { name: "Comprehend Languages",     school: "Divination",   desc: "Understand any spoken or written language for 1h" },
     { name: "Cure Wounds",              school: "Evocation",    desc: "Restore 1d8 + modifier HP on touch" },
     { name: "Detect Magic",             school: "Divination",   desc: "Sense magic auras within 30ft for 10 min" },
@@ -245,6 +243,309 @@ export const LEVEL1_SPELLS: Partial<Record<string, SpellEntry[]>> = {
   ],
 };
 
+// ── Higher-level spell lists (game caps at character level 10) ──────────────────
+// Full casters (Bard/Cleric/Druid/Sorcerer/Wizard) reach 5th-level slots; half
+// casters (Paladin/Ranger) reach 3rd; Warlock pact slots reach 5th. Curated,
+// iconic selections per class per level — enough for play without exhaustion.
+
+export const LEVEL2_SPELLS: Partial<Record<string, SpellEntry[]>> = {
+  Bard: [
+    { name: "Invisibility",        school: "Illusion",     desc: "A creature you touch turns invisible for 1h (ends on attack/cast)" },
+    { name: "Suggestion",          school: "Enchantment",  desc: "Suggest a reasonable course of action (WIS save)" },
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Heat Metal",          school: "Transmutation",desc: "2d8 fire to a holder of a metal object each turn" },
+    { name: "Shatter",             school: "Evocation",    desc: "3d8 thunder in a 10ft sphere (CON save halves)" },
+    { name: "Lesser Restoration",  school: "Abjuration",   desc: "End one disease or the blinded/deafened/paralyzed/poisoned condition" },
+    { name: "Enhance Ability",     school: "Transmutation",desc: "Advantage on checks with one ability for 1h" },
+    { name: "Calm Emotions",       school: "Enchantment",  desc: "Suppress fear/charm or make hostiles indifferent (CHA save)" },
+    { name: "Detect Thoughts",     school: "Divination",   desc: "Read surface thoughts of creatures within 30ft" },
+    { name: "Knock",               school: "Transmutation",desc: "Unlock a locked or stuck object" },
+    { name: "See Invisibility",    school: "Divination",   desc: "See invisible creatures and into the Ethereal for 1h" },
+    { name: "Blindness/Deafness",  school: "Necromancy",   desc: "Blind or deafen a creature for 1 min (CON save)" },
+  ],
+  Cleric: [
+    { name: "Aid",                 school: "Abjuration",   desc: "Raise max & current HP by 5 for 3 allies (8h)" },
+    { name: "Spiritual Weapon",    school: "Evocation",    desc: "Bonus action: spectral weapon strikes for 1d8 + mod force" },
+    { name: "Lesser Restoration",  school: "Abjuration",   desc: "End a disease or a debilitating condition" },
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Prayer of Healing",   school: "Evocation",    desc: "Heal up to 6 creatures 2d8 + mod (not in combat)" },
+    { name: "Silence",             school: "Illusion",     desc: "No sound in a 20ft sphere; blocks verbal spells" },
+    { name: "Zone of Truth",       school: "Enchantment",  desc: "Creatures in a 15ft sphere can't lie (CHA save)" },
+    { name: "Warding Bond",        school: "Abjuration",   desc: "Ally gains +1 AC & saves, resistance, shares your damage" },
+    { name: "Blindness/Deafness",  school: "Necromancy",   desc: "Blind or deafen a creature for 1 min (CON save)" },
+    { name: "Augury",              school: "Divination",   desc: "Learn weal/woe of a plan within the next 30 min" },
+  ],
+  Druid: [
+    { name: "Moonbeam",            school: "Evocation",    desc: "2d10 radiant beam you move each turn (CON save halves)" },
+    { name: "Flaming Sphere",      school: "Conjuration",  desc: "Rolling 5ft fire sphere; 2d6 fire (DEX save halves)" },
+    { name: "Spike Growth",        school: "Transmutation",desc: "20ft of difficult terrain; 2d4 piercing per 5ft moved" },
+    { name: "Pass without Trace",  school: "Abjuration",   desc: "+10 to Stealth for your whole group; no tracks" },
+    { name: "Barkskin",            school: "Transmutation",desc: "Target's AC can't be less than 16 for 1h" },
+    { name: "Heat Metal",          school: "Transmutation",desc: "2d8 fire to a holder of a metal object each turn" },
+    { name: "Lesser Restoration",  school: "Abjuration",   desc: "End a disease or a debilitating condition" },
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Enhance Ability",     school: "Transmutation",desc: "Advantage on checks with one ability for 1h" },
+    { name: "Gust of Wind",        school: "Evocation",    desc: "60ft line of strong wind; push creatures 15ft" },
+  ],
+  Sorcerer: [
+    { name: "Scorching Ray",       school: "Evocation",    desc: "Three rays, each 2d6 fire on a ranged spell attack" },
+    { name: "Misty Step",          school: "Conjuration",  desc: "Bonus action: teleport 30ft to a seen space" },
+    { name: "Mirror Image",        school: "Illusion",     desc: "Three illusory duplicates that misdirect attacks" },
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Invisibility",        school: "Illusion",     desc: "A creature you touch turns invisible for 1h" },
+    { name: "Blur",                school: "Illusion",     desc: "Attackers have disadvantage against you for 1 min" },
+    { name: "Shatter",             school: "Evocation",    desc: "3d8 thunder in a 10ft sphere (CON save halves)" },
+    { name: "Darkness",            school: "Evocation",    desc: "15ft sphere of magical darkness for 10 min" },
+    { name: "Suggestion",          school: "Enchantment",  desc: "Suggest a reasonable course of action (WIS save)" },
+    { name: "Enlarge/Reduce",      school: "Transmutation",desc: "Grow or shrink a creature/object one size" },
+  ],
+  Wizard: [
+    { name: "Misty Step",          school: "Conjuration",  desc: "Bonus action: teleport 30ft to a seen space" },
+    { name: "Scorching Ray",       school: "Evocation",    desc: "Three rays, each 2d6 fire on a ranged spell attack" },
+    { name: "Mirror Image",        school: "Illusion",     desc: "Three illusory duplicates that misdirect attacks" },
+    { name: "Web",                 school: "Conjuration",  desc: "20ft cube of webs; restrains creatures (DEX save)" },
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Invisibility",        school: "Illusion",     desc: "A creature you touch turns invisible for 1h" },
+    { name: "Suggestion",          school: "Enchantment",  desc: "Suggest a reasonable course of action (WIS save)" },
+    { name: "Blur",                school: "Illusion",     desc: "Attackers have disadvantage against you for 1 min" },
+    { name: "Levitate",            school: "Transmutation",desc: "Raise a creature/object up to 20ft, vertical only" },
+    { name: "Detect Thoughts",     school: "Divination",   desc: "Read surface thoughts of creatures within 30ft" },
+    { name: "Knock",               school: "Transmutation",desc: "Unlock a locked or stuck object" },
+  ],
+  Paladin: [
+    { name: "Aid",                 school: "Abjuration",   desc: "Raise max & current HP by 5 for 3 allies (8h)" },
+    { name: "Lesser Restoration",  school: "Abjuration",   desc: "End a disease or a debilitating condition" },
+    { name: "Branding Smite",      school: "Evocation",    desc: "Next hit deals +2d6 radiant; target glows, no invisibility" },
+    { name: "Magic Weapon",        school: "Transmutation",desc: "A nonmagical weapon becomes +1 for 1h" },
+    { name: "Find Steed",          school: "Conjuration",  desc: "Summon a loyal spirit steed bonded to you" },
+    { name: "Zone of Truth",       school: "Enchantment",  desc: "Creatures in a 15ft sphere can't lie (CHA save)" },
+    { name: "Protection from Poison", school: "Abjuration",desc: "End one poison; advantage on saves vs poison, resistance" },
+  ],
+  Ranger: [
+    { name: "Pass without Trace",  school: "Abjuration",   desc: "+10 to Stealth for your whole group; no tracks" },
+    { name: "Spike Growth",        school: "Transmutation",desc: "20ft of difficult terrain; 2d4 piercing per 5ft moved" },
+    { name: "Lesser Restoration",  school: "Abjuration",   desc: "End a disease or a debilitating condition" },
+    { name: "Silence",             school: "Illusion",     desc: "No sound in a 20ft sphere; blocks verbal spells" },
+    { name: "Cordon of Arrows",    school: "Transmutation",desc: "Four arrows guard an area; 1d6 to passers (DEX save)" },
+    { name: "Darkvision",          school: "Transmutation",desc: "Grant 60ft darkvision for 8h" },
+    { name: "Beast Sense",         school: "Divination",   desc: "See and hear through a beast you touch" },
+  ],
+  Warlock: [
+    { name: "Hold Person",         school: "Enchantment",  desc: "Paralyze a humanoid (WIS save each turn)" },
+    { name: "Misty Step",          school: "Conjuration",  desc: "Bonus action: teleport 30ft to a seen space" },
+    { name: "Invisibility",        school: "Illusion",     desc: "A creature you touch turns invisible for 1h" },
+    { name: "Mirror Image",        school: "Illusion",     desc: "Three illusory duplicates that misdirect attacks" },
+    { name: "Darkness",            school: "Evocation",    desc: "15ft sphere of magical darkness (see with Devil's Sight)" },
+    { name: "Suggestion",          school: "Enchantment",  desc: "Suggest a reasonable course of action (WIS save)" },
+    { name: "Shatter",             school: "Evocation",    desc: "3d8 thunder in a 10ft sphere (CON save halves)" },
+    { name: "Cloud of Daggers",    school: "Conjuration",  desc: "4d4 slashing in a 5ft cube each turn" },
+    { name: "Crown of Madness",    school: "Enchantment",  desc: "Force a charmed creature to attack your choice (WIS save)" },
+    { name: "Spider Climb",        school: "Transmutation",desc: "Climb walls and ceilings with a climb speed for 1h" },
+  ],
+};
+
+export const LEVEL3_SPELLS: Partial<Record<string, SpellEntry[]>> = {
+  Bard: [
+    { name: "Hypnotic Pattern",    school: "Illusion",     desc: "Charm & incapacitate creatures in a 30ft cube (WIS save)" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Fear",                school: "Illusion",     desc: "Creatures in a 30ft cone drop items and flee (WIS save)" },
+    { name: "Major Image",         school: "Illusion",     desc: "Create a 20ft sound/sight/smell illusion you control" },
+    { name: "Sending",             school: "Evocation",    desc: "Send a 25-word message to a known creature anywhere" },
+    { name: "Tongues",             school: "Divination",   desc: "Understand and be understood in any language for 1h" },
+    { name: "Leomund's Tiny Hut",  school: "Evocation",    desc: "10ft dome shelters up to 9 creatures for 8h" },
+    { name: "Bestow Curse",        school: "Necromancy",   desc: "Curse a creature: disadvantage, extra damage, or more" },
+    { name: "Clairvoyance",        school: "Divination",   desc: "See or hear a distant location for 10 min" },
+    { name: "Speak with Dead",     school: "Necromancy",   desc: "Ask a corpse up to five questions" },
+  ],
+  Cleric: [
+    { name: "Spirit Guardians",    school: "Conjuration",  desc: "15ft aura: 3d8 radiant/necrotic & half speed (WIS save)" },
+    { name: "Mass Healing Word",   school: "Evocation",    desc: "Bonus action: heal up to 6 creatures 1d4 + mod" },
+    { name: "Revivify",            school: "Necromancy",   desc: "Return a creature dead ≤1 min to life with 1 HP" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Beacon of Hope",      school: "Abjuration",   desc: "Allies gain advantage on WIS saves & death saves, max heals" },
+    { name: "Remove Curse",        school: "Abjuration",   desc: "End all curses on a creature or object" },
+    { name: "Protection from Energy", school: "Abjuration",desc: "Resistance to one damage type (acid/cold/fire/etc.)" },
+    { name: "Sending",             school: "Evocation",    desc: "Send a 25-word message to a known creature anywhere" },
+    { name: "Daylight",            school: "Evocation",    desc: "60ft sphere of bright sunlight; dispels darkness" },
+  ],
+  Druid: [
+    { name: "Call Lightning",      school: "Conjuration",  desc: "Summon a storm; 3d10 lightning bolt each turn" },
+    { name: "Conjure Animals",     school: "Conjuration",  desc: "Summon fey spirits in beast form to fight for you" },
+    { name: "Sleet Storm",         school: "Conjuration",  desc: "20ft icy area: prone, dropped concentration, blocked sight" },
+    { name: "Plant Growth",        school: "Transmutation",desc: "Overgrow an area into difficult terrain (or enrich crops)" },
+    { name: "Wind Wall",           school: "Evocation",    desc: "Wall of wind deflects arrows; 3d8 to those passing" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Protection from Energy", school: "Abjuration",desc: "Resistance to one damage type for 1h" },
+    { name: "Water Breathing",     school: "Transmutation",desc: "Up to 10 creatures breathe underwater for 24h" },
+    { name: "Daylight",            school: "Evocation",    desc: "60ft sphere of bright sunlight; dispels darkness" },
+  ],
+  Sorcerer: [
+    { name: "Fireball",            school: "Evocation",    desc: "8d6 fire in a 20ft sphere (DEX save halves)" },
+    { name: "Lightning Bolt",      school: "Evocation",    desc: "8d6 lightning in a 100ft line (DEX save halves)" },
+    { name: "Counterspell",        school: "Abjuration",   desc: "Reaction: interrupt a creature casting a spell" },
+    { name: "Haste",               school: "Transmutation",desc: "Target gains +2 AC, double speed, an extra action" },
+    { name: "Fly",                 school: "Transmutation",desc: "Grant a 60ft flying speed for 10 min" },
+    { name: "Slow",                school: "Transmutation",desc: "Halve speed & actions of up to 6 creatures (WIS save)" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Hypnotic Pattern",    school: "Illusion",     desc: "Charm & incapacitate creatures in a 30ft cube (WIS save)" },
+    { name: "Fear",                school: "Illusion",     desc: "Creatures in a 30ft cone drop items and flee (WIS save)" },
+  ],
+  Wizard: [
+    { name: "Fireball",            school: "Evocation",    desc: "8d6 fire in a 20ft sphere (DEX save halves)" },
+    { name: "Counterspell",        school: "Abjuration",   desc: "Reaction: interrupt a creature casting a spell" },
+    { name: "Lightning Bolt",      school: "Evocation",    desc: "8d6 lightning in a 100ft line (DEX save halves)" },
+    { name: "Fly",                 school: "Transmutation",desc: "Grant a 60ft flying speed for 10 min" },
+    { name: "Haste",               school: "Transmutation",desc: "Target gains +2 AC, double speed, an extra action" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Hypnotic Pattern",    school: "Illusion",     desc: "Charm & incapacitate creatures in a 30ft cube (WIS save)" },
+    { name: "Slow",                school: "Transmutation",desc: "Halve speed & actions of up to 6 creatures (WIS save)" },
+    { name: "Animate Dead",        school: "Necromancy",   desc: "Raise a skeleton or zombie under your command" },
+    { name: "Vampiric Touch",      school: "Necromancy",   desc: "3d6 necrotic; heal half the damage dealt" },
+  ],
+  Paladin: [
+    { name: "Crusader's Mantle",   school: "Evocation",    desc: "Allies in 30ft deal +1d4 radiant on weapon hits" },
+    { name: "Aura of Vitality",    school: "Evocation",    desc: "Bonus action: heal 2d6 to a creature in 30ft each turn" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Revivify",            school: "Necromancy",   desc: "Return a creature dead ≤1 min to life with 1 HP" },
+    { name: "Blinding Smite",      school: "Evocation",    desc: "Next hit deals +3d8 radiant and blinds the target" },
+    { name: "Elemental Weapon",    school: "Transmutation",desc: "Weapon becomes +1 and deals +1d4 elemental damage" },
+    { name: "Magic Circle",        school: "Abjuration",   desc: "Ward against (or trap) a chosen creature type" },
+  ],
+  Ranger: [
+    { name: "Conjure Animals",     school: "Conjuration",  desc: "Summon fey spirits in beast form to fight for you" },
+    { name: "Lightning Arrow",     school: "Transmutation",desc: "An arrow becomes a 4d8 lightning bolt; 2d8 nearby" },
+    { name: "Conjure Barrage",     school: "Conjuration",  desc: "60ft cone of weapons; 3d8 to all (DEX save halves)" },
+    { name: "Plant Growth",        school: "Transmutation",desc: "Overgrow an area into difficult terrain" },
+    { name: "Wind Wall",           school: "Evocation",    desc: "Wall of wind deflects arrows; 3d8 to those passing" },
+    { name: "Protection from Energy", school: "Abjuration",desc: "Resistance to one damage type for 1h" },
+    { name: "Water Breathing",     school: "Transmutation",desc: "Up to 10 creatures breathe underwater for 24h" },
+  ],
+  Warlock: [
+    { name: "Counterspell",        school: "Abjuration",   desc: "Reaction: interrupt a creature casting a spell" },
+    { name: "Dispel Magic",        school: "Abjuration",   desc: "End spells on a target (auto for ≤3rd level)" },
+    { name: "Fly",                 school: "Transmutation",desc: "Grant a 60ft flying speed for 10 min" },
+    { name: "Fear",                school: "Illusion",     desc: "Creatures in a 30ft cone drop items and flee (WIS save)" },
+    { name: "Hypnotic Pattern",    school: "Illusion",     desc: "Charm & incapacitate creatures in a 30ft cube (WIS save)" },
+    { name: "Hunger of Hadar",     school: "Conjuration",  desc: "20ft void: 2d6 cold then 2d6 acid; blinds & traps" },
+    { name: "Vampiric Touch",      school: "Necromancy",   desc: "3d6 necrotic; heal half the damage dealt" },
+    { name: "Gaseous Form",        school: "Transmutation",desc: "Turn a willing creature into a misty cloud for 1h" },
+    { name: "Summon Lesser Demons", school: "Conjuration", desc: "Summon hostile demons that attack the nearest creatures" },
+  ],
+};
+
+export const LEVEL4_SPELLS: Partial<Record<string, SpellEntry[]>> = {
+  Bard: [
+    { name: "Dimension Door",      school: "Conjuration",  desc: "Teleport yourself (and one ally) up to 500ft" },
+    { name: "Polymorph",           school: "Transmutation",desc: "Turn a creature into a beast (WIS save)" },
+    { name: "Greater Invisibility",school: "Illusion",     desc: "A creature is invisible for 1 min — even while attacking" },
+    { name: "Confusion",           school: "Enchantment",  desc: "Creatures in a 10ft sphere act randomly (WIS save)" },
+    { name: "Freedom of Movement", school: "Abjuration",   desc: "Ignore difficult terrain, restraints, and grapples for 1h" },
+    { name: "Compulsion",          school: "Enchantment",  desc: "Force creatures to move a chosen direction (WIS save)" },
+    { name: "Locate Creature",     school: "Divination",   desc: "Sense the direction to a known creature within 1000ft" },
+  ],
+  Cleric: [
+    { name: "Banishment",          school: "Abjuration",   desc: "Banish a creature to another plane (CHA save)" },
+    { name: "Death Ward",          school: "Abjuration",   desc: "First time target hits 0 HP, drop to 1 instead" },
+    { name: "Guardian of Faith",   school: "Conjuration",  desc: "Spectral guardian deals 20 radiant to foes within 10ft" },
+    { name: "Freedom of Movement", school: "Abjuration",   desc: "Ignore difficult terrain, restraints, and grapples for 1h" },
+    { name: "Divination",          school: "Divination",   desc: "A truthful answer about a goal within 7 days" },
+    { name: "Control Water",       school: "Transmutation",desc: "Raise, part, redirect, or whirl a body of water" },
+  ],
+  Druid: [
+    { name: "Polymorph",           school: "Transmutation",desc: "Turn a creature into a beast (WIS save)" },
+    { name: "Ice Storm",           school: "Evocation",    desc: "2d8 bludgeon + 4d6 cold in a 20ft cylinder" },
+    { name: "Stoneskin",           school: "Abjuration",   desc: "Resistance to nonmagical bludgeon/pierce/slash for 1h" },
+    { name: "Wall of Fire",        school: "Evocation",    desc: "60ft wall; 5d8 fire to those on the hot side" },
+    { name: "Conjure Woodland Beings", school: "Conjuration", desc: "Summon fey creatures to aid you" },
+    { name: "Freedom of Movement", school: "Abjuration",   desc: "Ignore difficult terrain, restraints, and grapples for 1h" },
+    { name: "Dominate Beast",      school: "Enchantment",  desc: "Command a beast you can see (WIS save)" },
+  ],
+  Sorcerer: [
+    { name: "Greater Invisibility",school: "Illusion",     desc: "A creature is invisible for 1 min — even while attacking" },
+    { name: "Dimension Door",      school: "Conjuration",  desc: "Teleport yourself (and one ally) up to 500ft" },
+    { name: "Polymorph",           school: "Transmutation",desc: "Turn a creature into a beast (WIS save)" },
+    { name: "Banishment",          school: "Abjuration",   desc: "Banish a creature to another plane (CHA save)" },
+    { name: "Ice Storm",           school: "Evocation",    desc: "2d8 bludgeon + 4d6 cold in a 20ft cylinder" },
+    { name: "Wall of Fire",        school: "Evocation",    desc: "60ft wall; 5d8 fire to those on the hot side" },
+    { name: "Stoneskin",           school: "Abjuration",   desc: "Resistance to nonmagical physical damage for 1h" },
+    { name: "Blight",              school: "Necromancy",   desc: "8d8 necrotic to one creature (CON save halves)" },
+  ],
+  Wizard: [
+    { name: "Polymorph",           school: "Transmutation",desc: "Turn a creature into a beast (WIS save)" },
+    { name: "Greater Invisibility",school: "Illusion",     desc: "A creature is invisible for 1 min — even while attacking" },
+    { name: "Dimension Door",      school: "Conjuration",  desc: "Teleport yourself (and one ally) up to 500ft" },
+    { name: "Banishment",          school: "Abjuration",   desc: "Banish a creature to another plane (CHA save)" },
+    { name: "Ice Storm",           school: "Evocation",    desc: "2d8 bludgeon + 4d6 cold in a 20ft cylinder" },
+    { name: "Wall of Fire",        school: "Evocation",    desc: "60ft wall; 5d8 fire to those on the hot side" },
+    { name: "Evard's Black Tentacles", school: "Conjuration", desc: "20ft of grasping tentacles; restrain & 3d6/turn" },
+    { name: "Stoneskin",           school: "Abjuration",   desc: "Resistance to nonmagical physical damage for 1h" },
+    { name: "Phantasmal Killer",   school: "Illusion",     desc: "A nightmare deals 4d10 psychic over time (WIS save)" },
+  ],
+  Warlock: [
+    { name: "Banishment",          school: "Abjuration",   desc: "Banish a creature to another plane (CHA save)" },
+    { name: "Dimension Door",      school: "Conjuration",  desc: "Teleport yourself (and one ally) up to 500ft" },
+    { name: "Charm Monster",       school: "Enchantment",  desc: "Charm a creature of any type as a friend (WIS save)" },
+    { name: "Hallucinatory Terrain", school: "Illusion",   desc: "Disguise terrain over a large area for 24h" },
+    { name: "Summon Greater Demon",school: "Conjuration",  desc: "Summon a demon to serve while you concentrate" },
+  ],
+};
+
+export const LEVEL5_SPELLS: Partial<Record<string, SpellEntry[]>> = {
+  Bard: [
+    { name: "Mass Cure Wounds",    school: "Evocation",    desc: "Heal up to 6 creatures 3d8 + mod within 30ft" },
+    { name: "Greater Restoration", school: "Abjuration",   desc: "End exhaustion, charm, petrification, or a curse" },
+    { name: "Hold Monster",        school: "Enchantment",  desc: "Paralyze any creature (WIS save each turn)" },
+    { name: "Dominate Person",     school: "Enchantment",  desc: "Control a humanoid you can see (WIS save)" },
+    { name: "Animate Objects",     school: "Transmutation",desc: "Up to 10 objects spring to life and fight for you" },
+    { name: "Seeming",             school: "Illusion",     desc: "Change the appearance of many creatures for 8h" },
+    { name: "Mislead",             school: "Illusion",     desc: "Turn invisible and project an illusory double" },
+  ],
+  Cleric: [
+    { name: "Mass Cure Wounds",    school: "Evocation",    desc: "Heal up to 6 creatures 3d8 + mod within 30ft" },
+    { name: "Raise Dead",          school: "Necromancy",   desc: "Return a creature dead ≤10 days to life" },
+    { name: "Greater Restoration", school: "Abjuration",   desc: "End exhaustion, charm, petrification, or a curse" },
+    { name: "Flame Strike",        school: "Evocation",    desc: "4d6 fire + 4d6 radiant in a 10ft column (DEX save)" },
+    { name: "Dispel Evil and Good",school: "Abjuration",   desc: "Protect against and banish fiends, undead, fey, etc." },
+    { name: "Geas",                school: "Enchantment",  desc: "Command a creature; 5d10 psychic if it disobeys" },
+    { name: "Insect Plague",       school: "Conjuration",  desc: "20ft swarm: 4d10 piercing, difficult terrain (CON save)" },
+  ],
+  Druid: [
+    { name: "Mass Cure Wounds",    school: "Evocation",    desc: "Heal up to 6 creatures 3d8 + mod within 30ft" },
+    { name: "Greater Restoration", school: "Abjuration",   desc: "End exhaustion, charm, petrification, or a curse" },
+    { name: "Conjure Elemental",   school: "Conjuration",  desc: "Summon an elemental to fight at your command" },
+    { name: "Wall of Stone",       school: "Evocation",    desc: "Conjure a wall of stone to block or bridge" },
+    { name: "Tree Stride",         school: "Conjuration",  desc: "Step between trees, traveling up to 500ft each turn" },
+    { name: "Insect Plague",       school: "Conjuration",  desc: "20ft swarm: 4d10 piercing, difficult terrain (CON save)" },
+    { name: "Commune with Nature", school: "Divination",   desc: "Learn facts about the land within 3 miles" },
+  ],
+  Sorcerer: [
+    { name: "Cone of Cold",        school: "Evocation",    desc: "8d8 cold in a 60ft cone (CON save halves)" },
+    { name: "Hold Monster",        school: "Enchantment",  desc: "Paralyze any creature (WIS save each turn)" },
+    { name: "Dominate Person",     school: "Enchantment",  desc: "Control a humanoid you can see (WIS save)" },
+    { name: "Telekinesis",         school: "Transmutation",desc: "Move or restrain creatures and objects by thought" },
+    { name: "Wall of Stone",       school: "Evocation",    desc: "Conjure a wall of stone to block or bridge" },
+    { name: "Cloudkill",           school: "Conjuration",  desc: "20ft moving poison cloud; 5d8 (CON save halves)" },
+    { name: "Animate Objects",     school: "Transmutation",desc: "Up to 10 objects spring to life and fight for you" },
+  ],
+  Wizard: [
+    { name: "Cone of Cold",        school: "Evocation",    desc: "8d8 cold in a 60ft cone (CON save halves)" },
+    { name: "Wall of Force",       school: "Evocation",    desc: "An invisible, near-indestructible wall for 10 min" },
+    { name: "Hold Monster",        school: "Enchantment",  desc: "Paralyze any creature (WIS save each turn)" },
+    { name: "Dominate Person",     school: "Enchantment",  desc: "Control a humanoid you can see (WIS save)" },
+    { name: "Telekinesis",         school: "Transmutation",desc: "Move or restrain creatures and objects by thought" },
+    { name: "Cloudkill",           school: "Conjuration",  desc: "20ft moving poison cloud; 5d8 (CON save halves)" },
+    { name: "Animate Objects",     school: "Transmutation",desc: "Up to 10 objects spring to life and fight for you" },
+    { name: "Scrying",             school: "Divination",   desc: "Spy on a creature you know via an invisible sensor" },
+  ],
+  Warlock: [
+    { name: "Hold Monster",        school: "Enchantment",  desc: "Paralyze any creature (WIS save each turn)" },
+    { name: "Dominate Person",     school: "Enchantment",  desc: "Control a humanoid you can see (WIS save)" },
+    { name: "Synaptic Static",     school: "Enchantment",  desc: "8d6 psychic in a 20ft sphere; muddles minds (INT save)" },
+    { name: "Scrying",             school: "Divination",   desc: "Spy on a creature you know via an invisible sensor" },
+    { name: "Far Step",            school: "Conjuration",  desc: "Bonus action: teleport 60ft each turn for 1 min" },
+  ],
+};
+
 // How many cantrips/spells each class gets at level 1
 export type SpellLimits = {
   cantrips: number;
@@ -256,8 +557,11 @@ export const SPELL_LIMITS: Record<string, SpellLimits> = {
   Bard:     { cantrips: 2, spells: 4 },
   Cleric:   { cantrips: 3, spells: 2, spellFormula: "WIS" },
   Druid:    { cantrips: 2, spells: 2, spellFormula: "WIS" },
-  Paladin:  { cantrips: 0, spells: 2, spellFormula: "CHA" },
-  Ranger:   { cantrips: 0, spells: 2 },
+  // Half-casters: NO spellcasting at level 1 — they gain spells (and slots) at
+  // level 2. So 0 cantrips / 0 spells at creation. (At higher levels their spells
+  // are available via the in-game spellbook once they have slots.)
+  Paladin:  { cantrips: 0, spells: 0 },
+  Ranger:   { cantrips: 0, spells: 0 },
   Sorcerer: { cantrips: 4, spells: 2 },
   Warlock:  { cantrips: 2, spells: 2 },
   Wizard:   { cantrips: 3, spells: 2, spellFormula: "INT" },
@@ -395,6 +699,35 @@ export const SPELL_LEVEL_MAP: Record<string, number> = {
 /** Returns the minimum slot level for a spell name, or 0 if it's a cantrip / unknown. */
 export function getSpellLevel(spellName: string): number {
   return SPELL_LEVEL_MAP[spellName] ?? 0;
+}
+
+// ── Combined spell lookups across all spell levels ──────────────────────────────
+export const SPELL_LISTS_BY_LEVEL: Record<number, Partial<Record<string, SpellEntry[]>>> = {
+  1: LEVEL1_SPELLS, 2: LEVEL2_SPELLS, 3: LEVEL3_SPELLS, 4: LEVEL4_SPELLS, 5: LEVEL5_SPELLS,
+};
+
+// Auto-register every higher-level spell into SPELL_LEVEL_MAP so a typed cast
+// ("I cast Fireball") consumes the correct slot even when not listed manually.
+// Hand-tuned entries always win (never downgrade an existing level).
+for (const [lvl, lists] of Object.entries(SPELL_LISTS_BY_LEVEL)) {
+  for (const cls of Object.keys(lists)) {
+    for (const sp of lists[cls] ?? []) {
+      if (SPELL_LEVEL_MAP[sp.name] === undefined) SPELL_LEVEL_MAP[sp.name] = Number(lvl);
+    }
+  }
+}
+
+/** Spells a class can cast at a given spell level (1–5). */
+export function getClassSpellsAtLevel(cls: string, spellLevel: number): SpellEntry[] {
+  return SPELL_LISTS_BY_LEVEL[spellLevel]?.[cls] ?? [];
+}
+
+/** Find a spell's entry (school/description) across cantrips and all spell levels. */
+export function getSpellEntry(cls: string, name: string): SpellEntry | undefined {
+  const c = CANTRIPS[cls]?.find(e => e.name === name);
+  if (c) return c;
+  for (let l = 1; l <= 5; l++) { const e = SPELL_LISTS_BY_LEVEL[l]?.[cls]?.find(x => x.name === name); if (e) return e; }
+  return undefined;
 }
 
 /** Returns { [slotLevel]: maxSlots } for a class at the given character level */

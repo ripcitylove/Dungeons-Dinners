@@ -8,7 +8,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import "../../globals.css";
 import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel, getClassSpellsAtLevel } from "../../../lib/spellData";
 import {
   getItemByName, getAllCatalogItems, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
@@ -951,6 +951,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [userId,           setUserId]            = useState<string | null>(null);
   const [partyChangePending, setPartyChangePending] = useState(false);
   const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log" | "combat">("party");
+  const [openSpellLevels,  setOpenSpellLevels]   = useState<number[]>([]); // expanded higher-level spell sections in the sheet
   const [enemies,          setEnemies]           = useState<CampaignEnemy[]>([]);
   const [combatActive,     setCombatActive]      = useState(false);
 
@@ -7232,7 +7233,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 })()}
 
                 {/* Spellbook */}
-                {SPELLCASTING_CLASSES.has(character.class) && ((character.cantrips_known?.length ?? 0) > 0 || (character.spells_prepared?.length ?? 0) > 0) && (
+                {SPELLCASTING_CLASSES.has(character.class) && ((character.cantrips_known?.length ?? 0) > 0 || (character.spells_prepared?.length ?? 0) > 0 || Object.keys(getSpellSlots(character.class, character.level)).length > 0) && (
                   <div>
                     <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)", cursor: "help" }}
                       onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.SPELLBOOK.title, MECHANIC_TIPS.SPELLBOOK.body, "#8b5cf6"), e)}
@@ -7319,6 +7320,77 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                     {availLvl !== null ? `L${availLvl} slot` : "no slots"}
                                   </span>
                                 </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Higher-level spells (2nd+) the caster has slots for — full class lists, cast consumes the right slot */}
+                    {(() => {
+                      const maxSlots   = getSpellSlots(character.class, character.level);
+                      const usedSlots  = character.spell_slots_used ?? {};
+                      const slotLevels = Object.keys(maxSlots).map(Number).sort((a, b) => a - b);
+                      const maxSlotLvl = slotLevels.length ? slotLevels[slotLevels.length - 1] : 0;
+                      // Half-casters (and anyone who picked no spells at creation) have no
+                      // 1st-level "Prepared Spells" list, so include level 1 here to give
+                      // them access. Full casters with prepared picks start at level 2.
+                      const startLvl = (character.spells_prepared?.length ?? 0) === 0 ? 1 : 2;
+                      if (maxSlotLvl < startLvl) return null;
+                      const sections: [number, { name: string; school: string; desc: string }[]][] = [];
+                      for (let L = startLvl; L <= maxSlotLvl; L++) {
+                        const spells = getClassSpellsAtLevel(character.class, L);
+                        if (spells.length) sections.push([L, spells]);
+                      }
+                      if (!sections.length) return null;
+                      return (
+                        <div style={{ marginTop: "12px" }}>
+                          <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }}>Higher-Level Spells</div>
+                          {sections.map(([L, spells]) => {
+                            const open    = openSpellLevels.includes(L);
+                            // Cast a level-L spell with the lowest available slot of level ≥ L (auto-upcast).
+                            const castLvl = slotLevels.find(sl => sl >= L && Math.max(0, (maxSlots[sl] ?? 0) - (usedSlots[sl] ?? 0)) > 0) ?? null;
+                            return (
+                              <div key={L} style={{ marginBottom: "4px" }}>
+                                <button
+                                  onClick={() => setOpenSpellLevels(prev => prev.includes(L) ? prev.filter(x => x !== L) : [...prev, L])}
+                                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.18)", borderRadius: "5px", padding: "5px 9px", cursor: "pointer", color: "#c4b5fd", fontSize: fs(0.72), fontWeight: 600 }}
+                                >
+                                  <span>Level {L} · {spells.length} spells</span>
+                                  <span style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                                    <span style={{ fontSize: fs(0.56), color: castLvl ? "#8b5cf6" : "#ef4444" }}>{castLvl ? `slot ready (L${castLvl})` : "no slot"}</span>
+                                    <span style={{ display: "inline-block", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▾</span>
+                                  </span>
+                                </button>
+                                {open && (
+                                  <div style={{ marginTop: "3px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    {spells.map((sp, i) => {
+                                      const canCast = !isTyping && castLvl !== null;
+                                      return (
+                                        <div key={i} role="button"
+                                          onClick={async () => {
+                                            if (!canCast || castLvl === null) return;
+                                            const newSlots = { ...usedSlots, [castLvl]: (usedSlots[castLvl] ?? 0) + 1 };
+                                            setCharacter(prev => prev ? { ...prev, spell_slots_used: newSlots } : null);
+                                            setCampaignParty(prev => prev.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c));
+                                            if (characterRef.current) characterRef.current = { ...characterRef.current, spell_slots_used: newSlots };
+                                            campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c);
+                                            await charWrite(character.id, { spell_slots_used: newSlots });
+                                            pendingSpellCastRef.current += 1;
+                                            handleSend(`I cast ${sp.name}.`);
+                                          }}
+                                          onMouseEnter={e => showTooltip(tipBox(sp.name, `${sp.school} · ${sp.desc}`, "#8b5cf6"), e)}
+                                          onMouseLeave={hideTooltip}
+                                          style={{ padding: "6px 10px", background: canCast ? "rgba(139,92,246,0.08)" : "rgba(0,0,0,0.2)", borderRadius: "5px", fontSize: fs(0.8), cursor: canCast ? "pointer" : "default", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: canCast ? 1 : 0.45, transition: "all 0.15s" }}
+                                        >
+                                          <span style={{ color: canCast ? undefined : "#475569" }}>◈ {sp.name}</span>
+                                          <span style={{ fontSize: fs(0.58), color: canCast ? "#8b5cf6" : "#3f3f46", fontWeight: 600 }}>{castLvl !== null ? `L${castLvl} slot` : "no slot"}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
