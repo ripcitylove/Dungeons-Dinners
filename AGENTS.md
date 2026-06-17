@@ -33,6 +33,15 @@ Every change must be tested before pushing to live. This is not optional.
 - Only after confirming the feature works correctly in the browser, report it as complete and offer to push.
 - Never claim a feature is working based solely on a successful build or TypeScript check — those verify correctness of code, not correctness of behavior.
 
+# Push vs. Deploy Vocabulary (Non-Negotiable)
+
+This project auto-deploys: a push to the `main` branch triggers a Vercel **production** deploy (the live site). A push to any other branch does **not** touch production. The user works across two machines and needs to back up / sync code to GitHub without going live. Honor this exact vocabulary:
+
+- **"push to git"** (or "push", "back up", "sync", "save to github") → commit and push to a **non-`main`** branch (`dev` by default). This updates GitHub only. **Never let this reach production.** Do NOT push to `main`.
+- **"push to live"** (or any phrasing where **"live"** is the operative word — "go live", "push live", "deploy to live") → promote to **`main`** so it deploys to production. Use the canonical deploy path (`scripts/deploy.mjs` / `DEPLOY.md`), which build-gates first.
+- When "live" is absent from the instruction, assume GitHub-only. **Production is only ever touched when the user explicitly uses "live" (or an unmistakable synonym like "deploy to production" / "ship to prod").** If a push instruction is ambiguous about production, default to GitHub-only and ask before deploying.
+- This does not override the standing rule that nothing is pushed at all unless the user explicitly asks.
+
 # Site-Wide Tooltip Standard
 
 Every interactive element — buttons, stats, class/race labels, spell slots, rest actions, skill chips, turn controls — must have a hover tooltip so new players understand what everything is and does.
