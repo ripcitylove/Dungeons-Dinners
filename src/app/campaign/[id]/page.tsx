@@ -23,6 +23,7 @@ import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt } from "../../../lib/turnPrompt";
 import { inferSkillCheck } from "../../../lib/skillCheck";
+import { findFastSpellCast } from "../../../lib/spellCast";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -3015,6 +3016,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // RESILIENCE: if the extractor call fails outright, tagged economy still applies,
   //   so an extractor outage no longer silently drops a player's gold/loot.
   const applyDmStateFromNarrative = useCallback((narrative: string) => {
+    // A [NO-TURN] response is a refusal or a clarification request — the player's
+    // action did NOT happen, so it must produce ZERO state changes (no spell
+    // slots, HP, gold, loot, XP, or status). The DM is instructed never to emit
+    // state tags after [NO-TURN]; this guard makes that authoritative on the
+    // client and prevents the chat-state extractor from phantom-charging a
+    // declined cast (e.g. a rejected Identify burning a spell slot).
+    if (/\[NO-?TURN\]/i.test(narrative)) return;
     const econ = parseEconomyTags(narrative);
     const econOnlyChange = (): StateChange => ({
       target_name: econ.target_name,
@@ -4481,20 +4489,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
 
       // Fast client-side spell slot detection — fire immediately so the card updates before chat-state returns.
-      // Scans the DM text for any spell name in this character's prepared list and consumes the slot instantly.
+      // Gated on the DM's explicit [SPELL:Caster:key] cast tag (emitted ONLY on a
+      // real cast, never on a [NO-TURN] refusal or a mere mention), NOT on the
+      // spell name appearing in the text. The old name-scan burned a slot whenever
+      // a prepared spell was merely mentioned/declined (e.g. "Identify doesn't work
+      // on ambient light…"), double-charging the player.
       if (!isOpeningScene && pendingSpellCastRef.current === 0) {
         const actingChar = characterRef.current;
         if (actingChar && SPELLCASTING_CLASSES.has(actingChar.class)) {
-          const prepared = [
+          const leveledPrepared = [
             ...(actingChar.cantrips_known ?? []),
             ...(actingChar.spells_prepared ?? []),
-          ];
-          // Find the first leveled spell mentioned in the DM narrative
-          const castSpell = prepared.find(spell => {
-            const slotLvl = getSpellLevel(spell);
-            if (slotLvl === 0) return false; // skip cantrips
-            return new RegExp(`\\b${spell.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(full);
-          });
+          ].filter(spell => getSpellLevel(spell) > 0); // cantrips never consume a slot
+          const castSpell = findFastSpellCast(full, actingChar.name, leveledPrepared);
           if (castSpell) {
             const spellLvl = getSpellLevel(castSpell);
             const allSlots = getSpellSlots(actingChar.class, actingChar.level);
