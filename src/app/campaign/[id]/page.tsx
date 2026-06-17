@@ -25,6 +25,7 @@ import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turn
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
+import { collapseRollMath } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -844,7 +845,11 @@ const _STRIP_INVISIBLE = new RegExp("[\\u200B-\\u200F\\u2028-\\u202F\\u2060-\\u2
 const _STRIP_CONTROL  = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F]", "g");
 const _STRIP_NONTEXT  = new RegExp("[^\\p{L}\\p{N}\\p{P}\\p{Zs}\\p{M}\\n\\r\\t]", "gu");
 function stripTtsArtifacts(text: string): string {
-  return text
+  return collapseRollMath(text)
+    // Collapse roll math to just the total — the narrator speaks the result, not
+    // the arithmetic ("12 + 2 [Perception] = 14 — clear enough." → "14 — clear
+    // enough."). Done before bracket removal so the [label] is consumed with the
+    // formula. The DISPLAYED chat text is unaffected — only TTS is.
     .replace(/\[[^\]]*\]/g, "")
     .replace(/\*+/g, "")
     .replace(_STRIP_EMOJI, "")
