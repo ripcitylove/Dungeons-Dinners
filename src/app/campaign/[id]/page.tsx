@@ -22,6 +22,7 @@ import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "
 import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt } from "../../../lib/turnPrompt";
+import { inferSkillCheck } from "../../../lib/skillCheck";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -1273,11 +1274,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // character whose turn just ended. The animation is gated to a single card
   // at a time so multiple turn changes don't overlap.
   const [turnEndCardId, setTurnEndCardId] = useState<string | null>(null);
-  const turnEndCardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Two-phase choreography: "liftoff" = float up off the tab with sparkles while
+  // still pinned in the active slot; "dropin" = flex order released so the card
+  // is now at the bottom of the turn order, where it spins and drops back on.
+  const [turnEndPhase, setTurnEndPhase] = useState<"liftoff" | "dropin" | null>(null);
+  const turnEndTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnEndTimer2Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const LIFTOFF_MS = 700; // must match .card-liftoff duration
+  const DROPIN_MS  = 850; // must match .card-dropin duration
   const triggerTurnEndAnim = useCallback((charId: string) => {
+    if (turnEndTimer1Ref.current) clearTimeout(turnEndTimer1Ref.current);
+    if (turnEndTimer2Ref.current) clearTimeout(turnEndTimer2Ref.current);
     setTurnEndCardId(charId);
-    if (turnEndCardTimerRef.current) clearTimeout(turnEndCardTimerRef.current);
-    turnEndCardTimerRef.current = setTimeout(() => setTurnEndCardId(null), 1700);
+    setTurnEndPhase("liftoff");
+    // After the lift-off completes, release the order pin (card relocates to the
+    // bottom) and play the spin-and-drop landing.
+    turnEndTimer1Ref.current = setTimeout(() => setTurnEndPhase("dropin"), LIFTOFF_MS);
+    turnEndTimer2Ref.current = setTimeout(() => { setTurnEndCardId(null); setTurnEndPhase(null); }, LIFTOFF_MS + DROPIN_MS);
   }, []);
 
   // Stat / currency tooltip hover
@@ -3914,7 +3927,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
-  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; _retryCount?: number }) => {
+  const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; suggestedCheck?: { skill: string; ability: string } | null; _retryCount?: number }) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -4048,6 +4061,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(nextPromptName && { currentTurnPlayerName: nextPromptName }),
           ...(prevActorName && nextPromptName && prevActorName !== nextPromptName && { prevActingPlayerName: prevActorName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
+          ...(opts?.suggestedCheck && { suggestedCheck: opts.suggestedCheck }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
           ...(opts?.allActed && { pendingReconciliation: true }),
           ...(opts?.isRollResult && { isRollResult: true }),
@@ -5073,11 +5087,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const turnIdxBeforeDM = currentTurnIndexRef.current;
     dmFollowUpBlockAdvanceRef.current = false; // reset before each DM call
     pendingReconciliationRef.current = null;
+    // Classify the action's likely 5e skill check (e.g. "investigate" →
+    // Investigation/INT) and hand the DM that hint so it stops mis-assigning
+    // checks. Only for free-text actions — not roll submissions or questions.
+    const suggestedCheck = (!isRollSubmit && !isQuestion) ? inferSkillCheck(text) : null;
     await sendToAI(updatedMessages, false, {
       trackRound:     order.length > 1,
       nextPlayerName,
       prevPlayerName: character?.name ?? null,
       allActed:       allActedForDM,
+      ...(suggestedCheck && { suggestedCheck }),
       ...(isRollSubmit && { isRollResult: true }),
       ...(wasGroupCheckRoll && { isGroupCheckResult: true }),
       ...(isQuestion && { isQuestion: true }),
@@ -6616,11 +6635,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
                 const isTurnEnding = turnEndCardId === char.id;
+                // Lift-off keeps the card pinned in its active slot (-1) so it floats
+                // up in place; drop-in releases it to the bottom of the order (0).
+                const turnEndOrder = isTurnEnding && turnEndPhase === "liftoff" ? -1 : 0;
                 return (
                   <div key={char.id}
-                    className={isTurnEnding ? "card-turn-end" : undefined}
+                    className={isTurnEnding ? (turnEndPhase === "liftoff" ? "card-liftoff" : "card-dropin") : undefined}
                     onClick={() => { if (campaignParty.length > 1) { setActiveCharIdx(idx); setSidebarTab("sheet"); } }}
-                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: isTurnEnding ? undefined : cardAnim, order: isDiceTarget ? -2 : (isCurrentTurn || isTurnEnding) ? -1 : 0, zIndex: isTurnEnding ? 3 : undefined, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
+                    style={{ "--card-rgb": classRgb, position: "relative", padding: "14px 16px", background: bgColor, borderRadius: "10px", border: `2px solid ${borderColor}`, boxShadow: cardShadow, animation: isTurnEnding ? undefined : cardAnim, order: isDiceTarget ? -2 : isCurrentTurn ? -1 : isTurnEnding ? turnEndOrder : 0, zIndex: isTurnEnding ? 5 : undefined, transition: "background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease", cursor: campaignParty.length > 1 ? "pointer" : "default" } as React.CSSProperties}>
+                    {isTurnEnding && turnEndPhase === "liftoff" && <span className="card-sparkles" aria-hidden="true" />}
                     {/* Party leader crown — top-left corner badge */}
                     {char.id === partyLeaderId && (
                       <span
