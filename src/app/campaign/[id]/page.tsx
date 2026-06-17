@@ -2032,12 +2032,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             .then(r => r.json())
             .then(({ sceneName, imageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; sceneType?: string; modifiers?: string[]; description?: string }) => {
               if (sceneRequestIdRef.current !== loadSceneReqId) return; // superseded by a newer request
-              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers); }
+              if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); }
               if (sceneName && sceneType) {
-                // On resume, honor a narrative-described silence so the ambiance
-                // matches the last prompt (e.g. "the harbor goes completely silent")
-                // instead of defaulting to the location's chatter/bustle.
+                // On resume, (re)start BOTH music and ambiance from the saved scene —
+                // not only when the background image changes. detect-scene frequently
+                // returns no new imageUrl on resume (scene unchanged), which used to
+                // leave the background MUSIC silent until the next scene change. fadeTo
+                // (music) and the ambiance resolver both no-op when their pool is
+                // already active, so calling these unconditionally is churn-safe.
+                // ambianceMood honors a narrative-described silence (e.g. "the harbor
+                // goes completely silent") instead of the location's default chatter.
                 const ambianceMood = detectAmbianceMood(sceneNarrative) ?? undefined;
+                (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
                 (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers, ambianceMood);
               }
             })
