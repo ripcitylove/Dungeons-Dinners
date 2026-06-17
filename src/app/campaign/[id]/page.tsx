@@ -2034,7 +2034,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               if (sceneRequestIdRef.current !== loadSceneReqId) return; // superseded by a newer request
               if (imageUrl) { currentSceneRef.current = sceneName; setCurrentSceneUrl(imageUrl); (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers); }
               if (sceneName && sceneType) {
-                (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers);
+                // On resume, honor a narrative-described silence so the ambiance
+                // matches the last prompt (e.g. "the harbor goes completely silent")
+                // instead of defaulting to the location's chatter/bustle.
+                const ambianceMood = detectAmbianceMood(sceneNarrative) ?? undefined;
+                (window as Window).__dndSetAmbianceScene?.(sceneName, sceneType, modifiers, ambianceMood);
               }
             })
             .catch(() => {});
@@ -5865,10 +5869,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       if (cached.sceneUrl) {
                         currentSceneRef.current = cached.sceneName;
                         setCurrentSceneUrl(cached.sceneUrl);
-                        channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName: cached.sceneName, imageUrl: cached.sceneUrl, sceneType: cached.sceneType, modifiers: cached.modifiers } });
+                        const openingMood = detectAmbianceMood(cached.dmText) ?? undefined;
+                        channelRef.current?.send({ type: "broadcast", event: "scene_change", payload: { senderId: userId, sceneName: cached.sceneName, imageUrl: cached.sceneUrl, sceneType: cached.sceneType, modifiers: cached.modifiers, ambianceMood: openingMood } });
                         if (cached.sceneType) {
                           (window as Window).__dndSetMusicScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
-                          (window as Window).__dndSetAmbianceScene?.(cached.sceneName, cached.sceneType, cached.modifiers);
+                          (window as Window).__dndSetAmbianceScene?.(cached.sceneName, cached.sceneType, cached.modifiers, openingMood);
                         }
                       }
                       setOpeningRevealText(cached.dmText);
