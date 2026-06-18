@@ -666,9 +666,10 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       `- Arcana / History / Religion / Nature (INT): RECALL knowledge of magic & planes / events & the past / gods, rituals & undead / plants, animals, weather & terrain.\n` +
       `- Medicine (WIS): diagnose, treat a wound, stabilize. Survival (WIS): track, navigate, forage, read weather.\n` +
       `- Athletics (STR): climb, swim, jump, force/break, shove, grapple. Acrobatics (DEX): balance, tumble, flip, keep footing, squeeze through — bodily agility ONLY, never examining or recalling.\n` +
-      `- Stealth (DEX): hide, sneak, move silently. Sleight of Hand (DEX): pickpocket, palm, plant/conceal an object.\n` +
+      `- Stealth (DEX): the ACTING character is hiding, sneaking, or moving silently to avoid being noticed. Sleight of Hand (DEX): pickpocket, palm, plant/conceal an object.\n` +
       `- Persuasion / Deception / Intimidation / Performance (CHA): convince / lie / threaten / entertain. Animal Handling (WIS): calm, control, or ride an animal.\n` +
-      `When several could apply, choose by intent: info from the environment = Investigation; sensing a creature = Insight/Perception; recalling facts = the matching knowledge skill. Use a listed proficient-skill bonus when present, otherwise d20 + the raw ability modifier.\n`
+      `When several could apply, choose by intent: info from the environment = Investigation; sensing a creature = Insight/Perception; recalling facts = the matching knowledge skill. Use a listed proficient-skill bonus when present, otherwise d20 + the raw ability modifier.\n` +
+      `CRITICAL: looking, searching, checking, scanning, or examining an area/the ground/a room for footprints, tracks, signs, clues, or recent activity is Perception or Investigation — NEVER Stealth. Stealth is only when the acting character is deliberately hiding their OWN presence. Never default to a character's signature/proficient skill (e.g. a rogue's Stealth) when the action does not call for it; match the skill to the described action.\n`
     : "";
   const checkBlock = (checksRelevant && suggestedCheck)
     ? `\n[SUGGESTED CHECK] The player's latest action classifies as a ${suggestedCheck.skill} (${suggestedCheck.ability}) check. If their action calls for an ability check, use ${suggestedCheck.skill} — it is correct for what they described. Do NOT substitute a different skill or ability.\n`
