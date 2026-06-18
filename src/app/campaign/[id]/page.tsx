@@ -27,6 +27,7 @@ import { detectTurnAddressee } from "../../../lib/turnAddressee";
 import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
+import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -952,6 +953,46 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "objectives_sync", payload: { senderId: userId, objectives: updated } });
   }, [params.id, userId, playTrackerChime, announceObjective]);
 
+  // ── Combat log ("What happened to me?") — per-character damage/healing history,
+  // recorded from the DM's [HP:Name:±N] tags. Persisted in localStorage per campaign
+  // so it survives reloads. Keyed by character id.
+  const [combatLog, setCombatLog] = useState<Record<string, CombatLogEntry[]>>({});
+  const combatLogRef = useRef<Record<string, CombatLogEntry[]>>({});
+  const combatLogIdRef = useRef(0);
+  const [combatLogOpen, setCombatLogOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`dnd_combatlog_${params.id}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, CombatLogEntry[]>;
+      let maxId = 0;
+      for (const arr of Object.values(parsed)) for (const e of arr) maxId = Math.max(maxId, e.id);
+      combatLogIdRef.current = maxId;
+      combatLogRef.current = parsed;
+      setCombatLog(parsed);
+    } catch { /* ignore */ }
+  }, [params.id]);
+  const recordCombatLogFromNarrative = useCallback((narrative: string) => {
+    if (!narrative || /\[NO-?TURN\]/i.test(narrative)) return;
+    const events = parseHpEvents(narrative);
+    if (events.length === 0) return;
+    const party = campaignPartyRef.current;
+    const next = { ...combatLogRef.current };
+    let changed = false;
+    for (const ev of events) {
+      const member = party.find(c => c.name.split(" ")[0].toLowerCase() === ev.firstName.toLowerCase());
+      if (!member) continue;
+      const note = summarizeHpCause(narrative, ev.firstName, ev.delta);
+      const entry: CombatLogEntry = { id: ++combatLogIdRef.current, ts: Date.now(), delta: ev.delta, note };
+      next[member.id] = [...(next[member.id] ?? []), entry].slice(-200); // cap per character
+      changed = true;
+    }
+    if (!changed) return;
+    combatLogRef.current = next;
+    setCombatLog(next);
+    try { localStorage.setItem(`dnd_combatlog_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
+  }, [params.id]);
+
   // Deterministic backstop: when the DM narration explicitly states a known buff/
   // debuff is ACTIVE on a party member ("Randiezel has Shillelagh active"), make sure
   // it shows on their card — even if the LLM state extractor missed it or this is a
@@ -1216,6 +1257,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // the campaign. Prevents B from skipping past a dialog the player is
       // actively interacting with.
       if (portraitModal) { setPortraitModal(null); e.preventDefault(); return; }
+      if (combatLogOpen) { setCombatLogOpen(false); e.preventDefault(); return; }
       if (showBackstory) { setShowBackstory(false); e.preventDefault(); return; }
       if (showDice)      { setShowDice(false);      e.preventDefault(); return; }
       if (showChatHint)  { setShowChatHint(false);  e.preventDefault(); return; }
@@ -1226,7 +1268,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, portraitModal, showBackstory, showDice, showChatHint]);
+  }, [router, portraitModal, combatLogOpen, showBackstory, showDice, showChatHint]);
 
   // Class-ability flash overlay — a brief colored pulse on the party card portrait
   // when ANY class ability is invoked. Key bumps each press so the CSS animation
@@ -2198,6 +2240,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // roll_request broadcast syncs the turn — no need to re-derive userId here
         // Deterministic economy tags (primary) + chat-state extractor (fallback).
         applyDmStateFromNarrative(payload.content as string);
+        recordCombatLogFromNarrative(payload.content as string);
         // Focus the party panel on the character whose turn the DM just announced
         if (campaignPartyRef.current.length > 1) {
           const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
@@ -4926,6 +4969,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
       // Backstop: surface any buff/debuff the DM narrates as active on a party member.
       applyActiveEffectsFromNarrative(full);
+      recordCombatLogFromNarrative(full);
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
       const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
@@ -7541,13 +7585,23 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     {character.title && <div style={{ fontSize: fs(0.72), color: "rgba(180,140,70,0.75)", fontStyle: "italic", marginTop: "2px" }}>&ldquo;{character.title}&rdquo;</div>}
                     <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{character.race} {character.class} · Lvl {character.level}</div>
                   </div>
-                  <button
-                    onClick={() => setShowBackstory(true)}
-                    style={{ fontSize: fs(0.72), padding: "5px 14px", borderRadius: "20px", background: "rgba(180,120,40,0.1)", border: "1px solid rgba(180,120,40,0.35)", color: "#d4a96a", cursor: "pointer", transition: "all 0.15s", fontWeight: 600, letterSpacing: "0.03em" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(180,120,40,0.22)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.6)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(180,120,40,0.1)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.35)"; }}>
-                    📖 Backstory
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
+                    <button
+                      onClick={() => setShowBackstory(true)}
+                      style={{ fontSize: fs(0.72), padding: "5px 14px", borderRadius: "20px", background: "rgba(180,120,40,0.1)", border: "1px solid rgba(180,120,40,0.35)", color: "#d4a96a", cursor: "pointer", transition: "all 0.15s", fontWeight: 600, letterSpacing: "0.03em", whiteSpace: "nowrap" }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(180,120,40,0.22)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.6)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "rgba(180,120,40,0.1)"; e.currentTarget.style.borderColor = "rgba(180,120,40,0.35)"; }}>
+                      📖 Backstory
+                    </button>
+                    <button
+                      onClick={() => setCombatLogOpen(true)}
+                      title="A running log of every wound and heal — and what caused it."
+                      style={{ fontSize: fs(0.72), padding: "5px 14px", borderRadius: "20px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.35)", color: "#f87171", cursor: "pointer", transition: "all 0.15s", fontWeight: 600, letterSpacing: "0.03em", whiteSpace: "nowrap" }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.22)"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.6)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)"; }}>
+                      🩸 What happened to me?
+                    </button>
+                  </div>
                 </div>
 
                 {/* Status effects */}
@@ -8402,6 +8456,57 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
           <p style={{ position: "absolute", bottom: "20px", color: "#334155", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Click anywhere to close</p>
         </div>,
+        document.body
+      )}
+
+      {/* "What happened to me?" — combat log modal for the active character */}
+      {combatLogOpen && character && typeof window !== "undefined" && createPortal(
+        (() => {
+          const entries = [...(combatLog[character.id] ?? [])].reverse(); // newest first
+          const { damage, healing } = combatLogTotals(combatLog[character.id] ?? []);
+          const relTime = (ts: number) => {
+            const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+            if (s < 60) return "just now";
+            const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+            const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+            return `${Math.floor(h / 24)}d ago`;
+          };
+          return (
+            <div onClick={() => setCombatLogOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.86)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000, padding: "20px" }}>
+              <div onClick={e => e.stopPropagation()} className="animate-fade-in" style={{ width: "100%", maxWidth: "560px", maxHeight: "82vh", display: "flex", flexDirection: "column", background: "linear-gradient(160deg, #160d12 0%, #100a0e 60%, #1a0d10 100%)", border: "2px solid rgba(239,68,68,0.4)", borderRadius: "14px", boxShadow: "0 0 70px rgba(120,20,20,0.28), 0 24px 64px rgba(0,0,0,0.85)", overflow: "hidden" }}>
+                <div style={{ padding: "20px 24px 14px", borderBottom: "1px solid rgba(239,68,68,0.18)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", fontFamily: "var(--font-cinzel), Georgia, serif", color: "#f1f5f9" }}>What happened to {character.name}?</h2>
+                      <p style={{ color: "#94a3b8", fontSize: "0.78rem", marginTop: "3px" }}>Every wound and heal, most recent first.</p>
+                    </div>
+                    <button onClick={() => setCombatLogOpen(false)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "1.2rem", lineHeight: 1, padding: "2px 6px" }}>✕</button>
+                  </div>
+                  <div style={{ display: "flex", gap: "20px", marginTop: "12px", fontSize: "0.85rem" }}>
+                    <span style={{ color: "#f87171", fontWeight: 700 }}>− {damage} damage taken</span>
+                    <span style={{ color: "#4ade80", fontWeight: 700 }}>+ {healing} healing received</span>
+                  </div>
+                </div>
+                <div style={{ overflowY: "auto", padding: "8px 12px 16px" }}>
+                  {entries.length === 0 ? (
+                    <div style={{ color: "#64748b", textAlign: "center", padding: "40px 20px", fontSize: "0.9rem" }}>No damage or healing recorded yet.</div>
+                  ) : entries.map(e => {
+                    const dmg = e.delta < 0;
+                    return (
+                      <div key={e.id} style={{ display: "flex", alignItems: "flex-start", gap: "12px", padding: "10px 12px", borderRadius: "9px", marginBottom: "5px", background: dmg ? "rgba(239,68,68,0.06)" : "rgba(34,197,94,0.06)", border: `1px solid ${dmg ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)"}` }}>
+                        <span style={{ flexShrink: 0, minWidth: "46px", textAlign: "right", fontWeight: 800, fontSize: "1rem", color: dmg ? "#f87171" : "#4ade80" }}>{dmg ? "" : "+"}{e.delta}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: "#dbe2ee", fontSize: "0.86rem", lineHeight: 1.4 }}>{e.note}</div>
+                          <div style={{ color: "#64748b", fontSize: "0.7rem", marginTop: "2px" }}>{relTime(e.ts)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })(),
         document.body
       )}
 
