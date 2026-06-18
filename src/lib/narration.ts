@@ -99,3 +99,19 @@ export function sliceThroughRollRequest(text: string): string {
   const m = ROLL_REQUEST_RE.exec(text);
   return m ? text.slice(0, m.index + m[0].length) : text;
 }
+
+/**
+ * A bare, short roll request like "Roll a d20." (11 chars) is below the TTS
+ * engine's minimum prosody window — it gets rejected/garbled, so the player
+ * never hears the call to roll. Expand ONLY a short, essentially-bare roll
+ * request into a fuller natural utterance so it's spoken clearly. Longer or
+ * named requests ("Shmang, roll a d20." = 19 chars) already clear the threshold
+ * and are returned unchanged.
+ */
+export function expandRollRequestForSpeech(text: string): string {
+  const t = text.trim();
+  if (t.length >= 16) return t; // already long enough for clean prosody
+  const m = /^(?:[A-Za-z][\w'-]*,?\s*)?roll\s+(?:a|an)\s+d(\d+)\b[^.!?]*[.!?]?$/i.exec(t);
+  if (!m) return t;
+  return `Go ahead — roll a d${m[1]}.`;
+}

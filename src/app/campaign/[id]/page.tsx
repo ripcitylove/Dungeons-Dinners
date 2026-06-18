@@ -26,7 +26,7 @@ import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
-import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest } from "../../../lib/narration";
+import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -4190,7 +4190,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             // "X, roll a dN.") then stop — any text the DM wrote after the roll is
             // truncated from the display, so we don't narrate that part.
             if (/\broll\s+a\s+d\d+\b/i.test(s)) {
-              const rollClean = stripSystemLeaks(sliceThroughRollRequest(s));
+              const rollClean = expandRollRequestForSpeech(stripSystemLeaks(sliceThroughRollRequest(s)));
               if (rollClean && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(rollClean))) enqueueNarration(rollClean);
               narBuf = ""; narDone = true; break;
             }
@@ -4217,7 +4217,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           // is the very LAST thing in the response — that case used to fall through to
           // the 24-char tail guard below and get silently dropped (the reported bug).
           if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
-            const speakTail = sliceThroughRollRequest(narBuf).trim();
+            const speakTail = expandRollRequestForSpeech(sliceThroughRollRequest(narBuf).trim());
             if (speakTail.length > 4 && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(speakTail))) {
               enqueueNarration(stripSystemLeaks(speakTail));
             }

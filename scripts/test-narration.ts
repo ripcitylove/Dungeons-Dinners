@@ -1,7 +1,7 @@
 // Narration (TTS) sanitization battery. Ensures the SPOKEN text never contains
 // markdown/symbols/tokens that make ElevenLabs hiss ("sssss"), slur, or garble —
 // while real speech is preserved. Run: node scripts/test-narration.ts
-import { collapseRollMath, sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest } from "../src/lib/narration.ts";
+import { collapseRollMath, sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech } from "../src/lib/narration.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -63,6 +63,15 @@ eq("roll request alone is kept (the bug)", sliceThroughRollRequest("Shmang, roll
 eq("narrate up to & including the roll, drop trailing", sliceThroughRollRequest("The symbol burns deep. Shmang, roll a d20. The blade then bites for 9."), "The symbol burns deep. Shmang, roll a d20.");
 eq("roll with no trailing punctuation", sliceThroughRollRequest("Aria, roll a d20"), "Aria, roll a d20");
 eq("no roll request -> unchanged", sliceThroughRollRequest("The door creaks open and the room falls silent."), "The door creaks open and the room falls silent.");
+
+// ── expandRollRequestForSpeech — short bare roll requests get a fuller utterance ──
+eq("bare short roll expanded (the bug)", expandRollRequestForSpeech("Roll a d20."), "Go ahead — roll a d20.");
+eq("bare short roll, no period", expandRollRequestForSpeech("Roll a d6"), "Go ahead — roll a d6.");
+eq("named roll already long -> unchanged", expandRollRequestForSpeech("Shmang, roll a d20."), "Shmang, roll a d20.");
+eq("long narration -> unchanged", expandRollRequestForSpeech("The symbol burns deep. Shmang, roll a d20."), "The symbol burns deep. Shmang, roll a d20.");
+eq("non-roll short text -> unchanged", expandRollRequestForSpeech("She nods."), "She nods.");
+const expanded = expandRollRequestForSpeech("Roll a d100.");
+truthy("expanded clears the 16-char narrate floor", expanded.length >= 16, true);
 
 console.log(`\nNarration sanitization battery: ${pass} passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
