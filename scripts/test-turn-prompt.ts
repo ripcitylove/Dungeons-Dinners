@@ -56,6 +56,29 @@ notPrompt("plain narration sentence", "The monument knocks back seven times, the
 notPrompt("narrative with 'your move' mid-clause", "The enemy general anticipates your move and repositions his line.");
 notPrompt("dialogue, not a prompt", "\"Are you going to open the door, or shall we do this forever?\"");
 
+// ── Coupling invariant (the held-narration fix depends on this) ──
+// Narration HOLDS a trailing turn prompt and DROPS it iff this message becomes the
+// bridge (reconciliation strips the prompt from the display). For that to be
+// correct, the sentence the DISPLAY strips must be exactly what the narration layer
+// classifies as a turn prompt — otherwise the voice and the screen disagree (the
+// reported "spoke a prompt the green box doesn't show" bug). Verify they match: for
+// each bridge message, the removed tail IS an isTurnPromptSentence.
+const BRIDGE_MESSAGES = [
+  "The crack splits wide. A black root tears free of the earth, sweeping across the clearing.\n\nBarnabus, what do you do?",
+  "The young woman grabs Vi's arm. \"The seals are failing.\"\n\nWhat do you do, Barnabus?",
+  "Both bandits lie still in the mud. What now, Tiegan?",
+  "The vault seals shut behind you. You're up, Kael.",
+  "Silence falls over the ruined hall. What's your next move, Aria?",
+];
+for (const msg of BRIDGE_MESSAGES) {
+  const body = stripTrailingTurnPrompt(msg);
+  if (body === msg) { fails.push(`  ✗ bridge tail not stripped: ${JSON.stringify(msg)}`); continue; }
+  // The removed tail = everything after the kept body, cleaned of leading punctuation/space.
+  const removed = msg.slice(body.length).replace(/^[\s.!?…"')\]]+/, "").trim();
+  if (isTurnPromptSentence(removed)) pass++;
+  else fails.push(`  ✗ stripped tail is NOT a turn-prompt sentence (display/narration would disagree): ${JSON.stringify(removed)}`);
+}
+
 console.log(`\nRound-end prompt de-dup battery: ${pass} checks passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
 else console.log("✓ Trailing turn-prompts stripped from round-completing messages; narration preserved.");
