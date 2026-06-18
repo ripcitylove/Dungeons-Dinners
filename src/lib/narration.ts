@@ -85,3 +85,17 @@ export function sanitizeForTts(text: string): string {
 export function hasSpeakableContent(text: string): boolean {
   return /[a-zA-Z0-9]/.test(text);
 }
+
+const ROLL_REQUEST_RE = /\broll\s+a\s+d\d+[^.!?\n]*[.!?]?/i;
+
+/**
+ * Returns the substring of `text` up to AND INCLUDING the first "roll a dN"
+ * request, or the whole `text` if there is none. The DM is told to stop at the
+ * roll request but sometimes writes past it; narrating this slice lets the player
+ * HEAR "Shmang, roll a d20." while the text the DM wrongly added after it is
+ * dropped from speech (and the display is truncated to match).
+ */
+export function sliceThroughRollRequest(text: string): string {
+  const m = ROLL_REQUEST_RE.exec(text);
+  return m ? text.slice(0, m.index + m[0].length) : text;
+}

@@ -26,7 +26,7 @@ import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
-import { sanitizeForTts, hasSpeakableContent } from "../../../lib/narration";
+import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -4186,9 +4186,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
           const { chunks: sents, remaining } = pullNarrationChunks(narBuf, false);
           for (const s of sents) {
-            // Stop streaming narration at a roll request — post-roll text may be truncated
-            // from the display, so we must not narrate it
-            if (/\broll\s+a\s+d\d+\b/i.test(s)) { narBuf = ""; narDone = true; break; }
+            // At a roll request, narrate UP TO AND INCLUDING it (the player must hear
+            // "X, roll a dN.") then stop — any text the DM wrote after the roll is
+            // truncated from the display, so we don't narrate that part.
+            if (/\broll\s+a\s+d\d+\b/i.test(s)) {
+              const rollClean = stripSystemLeaks(sliceThroughRollRequest(s));
+              if (rollClean && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(rollClean))) enqueueNarration(rollClean);
+              narBuf = ""; narDone = true; break;
+            }
             // On a round-completing response, the trailing "what do you do, X?" is
             // stripped from the DISPLAYED text by reconciliation — so don't narrate it
             // either, or the voice asks for an action the screen never shows.
@@ -4206,13 +4211,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         let lastRollEnd = -1;
         let rm: RegExpExecArray | null;
         while ((rm = rollSentRe.exec(full)) !== null) lastRollEnd = rm.index + rm[0].length;
-        if (lastRollEnd > 0 && lastRollEnd < full.length - 1) {
-          // Narrate any pre-roll content still sitting in narBuf (< 40 chars, never matched
-          // the streaming regex) before clearing it — otherwise that content is silently lost.
+        if (lastRollEnd > 0) {
+          // Narrate the not-yet-narrated tail UP TO AND INCLUDING the roll request,
+          // so the player hears "X, roll a dN." This runs even when the roll request
+          // is the very LAST thing in the response — that case used to fall through to
+          // the 24-char tail guard below and get silently dropped (the reported bug).
           if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone) {
-            const rollInNarBuf = narBuf.search(/\broll\s+a\s+d\d+/i);
-            const preRoll = (rollInNarBuf > 0 ? narBuf.slice(0, rollInNarBuf) : narBuf).trim();
-            if (preRoll.length > 8) enqueueNarration(stripSystemLeaks(preRoll));
+            const speakTail = sliceThroughRollRequest(narBuf).trim();
+            if (speakTail.length > 4 && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(speakTail))) {
+              enqueueNarration(stripSystemLeaks(speakTail));
+            }
           }
           full = full.slice(0, lastRollEnd).trim();
           narBuf = "";

@@ -1,7 +1,7 @@
 // Narration (TTS) sanitization battery. Ensures the SPOKEN text never contains
 // markdown/symbols/tokens that make ElevenLabs hiss ("sssss"), slur, or garble —
 // while real speech is preserved. Run: node scripts/test-narration.ts
-import { collapseRollMath, sanitizeForTts, hasSpeakableContent } from "../src/lib/narration.ts";
+import { collapseRollMath, sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest } from "../src/lib/narration.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -57,6 +57,12 @@ truthy("lone dash not speakable",  hasSpeakableContent(sanitizeForTts("—")), f
 truthy("punctuation-only not speakable", hasSpeakableContent(sanitizeForTts('..."')), false);
 truthy("real sentence is speakable", hasSpeakableContent(sanitizeForTts("Or perhaps he does.")), true);
 truthy("number-only is speakable", hasSpeakableContent(sanitizeForTts("14.")), true);
+
+// ── sliceThroughRollRequest — narrate the roll request, drop post-roll text ──
+eq("roll request alone is kept (the bug)", sliceThroughRollRequest("Shmang, roll a d20."), "Shmang, roll a d20.");
+eq("narrate up to & including the roll, drop trailing", sliceThroughRollRequest("The symbol burns deep. Shmang, roll a d20. The blade then bites for 9."), "The symbol burns deep. Shmang, roll a d20.");
+eq("roll with no trailing punctuation", sliceThroughRollRequest("Aria, roll a d20"), "Aria, roll a d20");
+eq("no roll request -> unchanged", sliceThroughRollRequest("The door creaks open and the room falls silent."), "The door creaks open and the room falls silent.");
 
 console.log(`\nNarration sanitization battery: ${pass} passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
