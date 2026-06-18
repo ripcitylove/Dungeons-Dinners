@@ -6231,6 +6231,41 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <span style={{ animation: "blink 1s step-end infinite" }}>✦</span> Generating scene…
           </div>
         )}
+        {/* ── Enemy/NPC portrait cards — left edge of the scene for immersion. Portraits
+              are AI-generated once per enemy TYPE and cached in storage, so the same
+              monster reuses its image instead of re-calling the model. Click to target. ── */}
+        {enemies.some(e => !e.is_defeated) && (
+          <div style={{ position: "absolute", top: "50%", left: "14px", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: "12px", zIndex: 6, maxHeight: "calc(100% - 40px)", overflowY: "auto", paddingRight: "2px" }}>
+            {enemies.filter(e => !e.is_defeated).map(e => {
+              const isTargeted = targetedEnemyId === e.id;
+              const cond       = e.condition ?? "healthy";
+              const condColor  = CONDITION_COLORS[cond];
+              const condPct    = CONDITION_PCT[cond];
+              return (
+                <div key={e.id} className="animate-fade-in"
+                  onClick={() => setTargetedEnemyId(prev => prev === e.id ? null : e.id)}
+                  onMouseEnter={ev => { const condLabel = CONDITION_LABELS[cond]; const condDesc = ENEMY_CONDITION_TIPS[condLabel]; showTooltip(tipBox(e.name, `${condLabel}${condDesc ? " — " + condDesc : ""}\n${e.enemy_type} · CR ${e.cr} · AC ${e.ac} · ATK +${e.attack_bonus}`, condColor), ev); }}
+                  onMouseLeave={hideTooltip}
+                  style={{ width: "min(122px, 17vw)", cursor: "pointer", flexShrink: 0, background: "rgba(12,8,10,0.62)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: `2px solid ${isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`, borderRadius: "12px", padding: "8px", boxShadow: isTargeted ? "0 0 24px rgba(239,68,68,0.5)" : "0 6px 22px rgba(0,0,0,0.55)", animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : undefined, transition: "border-color 0.25s, box-shadow 0.25s" }}>
+                  <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.07)", marginBottom: "6px", position: "relative" }}>
+                    {e.portrait_url
+                      ? <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>{e.portrait_emoji}</div>}
+                    {!e.portrait_url && <div title="Conjuring portrait…" style={{ position: "absolute", bottom: "4px", right: "4px", width: "7px", height: "7px", borderRadius: "50%", background: "#8b5cf6", animation: "blink 1s step-end infinite" }} />}
+                  </div>
+                  <div style={{ fontSize: "0.72rem", fontWeight: 700, color: isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{e.name}</div>
+                  <div style={{ fontSize: "0.55rem", color: "#d8b4b4", textAlign: "center", marginBottom: "5px", letterSpacing: "0.02em" }}>CR {e.cr} · AC {e.ac}</div>
+                  <div style={{ width: "100%", height: "4px", background: "rgba(0,0,0,0.5)", borderRadius: "2px", overflow: "hidden" }}>
+                    <div style={{ width: `${condPct}%`, height: "100%", background: condColor, transition: "width 0.5s ease, background 0.4s ease" }} />
+                  </div>
+                  {isTargeted && (
+                    <div style={{ marginTop: "4px", textAlign: "center", fontSize: "0.5rem", color: "#fca5a5", fontWeight: 800, letterSpacing: "0.06em" }}>⚔ TARGET</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {/* ── Objectives Tracker (quest spine) — top-right of the scene, transparent + collapsible ── */}
         {(() => {
           const visObjectives = visibleObjectives(objectives);
