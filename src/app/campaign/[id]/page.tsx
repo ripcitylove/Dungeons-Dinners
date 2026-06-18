@@ -27,7 +27,7 @@ import { detectTurnAddressee } from "../../../lib/turnAddressee";
 import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
-import { inferSkillCheck } from "../../../lib/skillCheck";
+import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
@@ -7941,24 +7941,39 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   );
                 })()}
 
-                {/* Proficiencies */}
+                {/* Proficiencies — with the actual computed bonus for every proficient
+                    save and skill (ability modifier + proficiency bonus). */}
                 {(() => {
                   const pb = character.level <= 4 ? 2 : character.level <= 8 ? 3 : character.level <= 12 ? 4 : 5;
                   const saves = CLASS_SAVES[character.class] ?? [];
                   const skills = character.skill_proficiencies ?? [];
+                  const ABIL: Record<string, number> = {
+                    STR: character.strength, DEX: character.dexterity, CON: character.constitution,
+                    INT: character.intelligence, WIS: character.wisdom, CHA: character.charisma,
+                  };
+                  const modOf = (abil: string) => Math.floor((((ABIL[abil] ?? 10)) - 10) / 2);
+                  const sign  = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+                  const ABIL_NAME: Record<string, string> = { STR: "Strength", DEX: "Dexterity", CON: "Constitution", INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma" };
                   if (saves.length === 0 && skills.length === 0) return null;
                   return (
                     <div>
                       <h3 style={{ fontSize: fs(0.85), fontWeight: "bold", marginBottom: "10px", color: "var(--primary)" }}>
-                        Proficiencies <span style={{ fontSize: fs(0.72), color: "#64748b", fontWeight: 400 }}>+{pb} prof. bonus</span>
+                        Proficiencies <span style={{ fontSize: fs(0.72), color: "#22c55e", fontWeight: 700, cursor: "help" }}
+                          onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.PROFICIENCY?.title ?? "Proficiency Bonus", MECHANIC_TIPS.PROFICIENCY?.body ?? "Added to attack rolls, skill checks, and saves you're trained in. +2 at levels 1–4, +3 at 5–8, +4 at 9–12, +5 at 13+.", "#22c55e"), e)}
+                          onMouseLeave={hideTooltip}>+{pb} prof. bonus</span>
                       </h3>
                       {saves.length > 0 && (
                         <div style={{ marginBottom: "8px" }}>
                           <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }}>Saving Throws</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                            {saves.map(s => (
-                              <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)", fontWeight: 600 }}>{s}</span>
-                            ))}
+                            {saves.map(s => {
+                              const bonus = modOf(s) + pb;
+                              return (
+                                <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)", fontWeight: 600, cursor: "help" }}
+                                  onMouseEnter={e => showTooltip(tipBox(`${ABIL_NAME[s] ?? s} Save`, `${ABIL_NAME[s] ?? s} modifier (${sign(modOf(s))}) + proficiency (+${pb}) = ${sign(bonus)}. Roll d20 ${sign(bonus)} on a ${ABIL_NAME[s] ?? s} saving throw.`, "#22c55e"), e)}
+                                  onMouseLeave={hideTooltip}>{s} <span style={{ color: "#86efac" }}>{sign(bonus)}</span></span>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -7966,9 +7981,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         <div>
                           <div style={{ fontSize: fs(0.65), color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }}>Skill Proficiencies</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                            {skills.map(s => (
-                              <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(139,92,246,0.12)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", fontWeight: 600 }}>{s}</span>
-                            ))}
+                            {skills.map(s => {
+                              const abil = SKILL_ABILITY[s] ?? "DEX";
+                              const bonus = modOf(abil) + pb;
+                              return (
+                                <span key={s} style={{ fontSize: fs(0.75), padding: "3px 10px", borderRadius: "4px", background: "rgba(139,92,246,0.12)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", fontWeight: 600, cursor: "help" }}
+                                  onMouseEnter={e => showTooltip(tipBox(`${s} (${abil})`, `${abil} modifier (${sign(modOf(abil))}) + proficiency (+${pb}) = ${sign(bonus)}. Roll d20 ${sign(bonus)} on a ${s} check.`, "#8b5cf6"), e)}
+                                  onMouseLeave={hideTooltip}>{s} <span style={{ color: "#ddd6fe" }}>{sign(bonus)}</span></span>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
