@@ -22,6 +22,7 @@ import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "
 import { parseStatusEffect, getDominantEffect, getCardEffectGlow, resolveStatusEffect } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turnPrompt";
+import { detectRequiredDieFromText } from "../../../lib/diceRequest";
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -3912,24 +3913,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, []);
 
   // ── Dice type detection ──────────────────────────────────────────────────────
-  const detectRequiredDiceType = useCallback((narrative: string): number | null => {
-    // Explicit die mention: "roll a d6", "roll 2d8", "d20 check"
-    const explicit = narrative.match(/\broll\s+(?:\d+)?d(\d+)\b/i)
-      ?? narrative.match(/\bd(\d+)\b/i);
-    if (explicit) {
-      const n = parseInt(explicit[1]);
-      if ([4, 6, 8, 10, 12, 20, 100].includes(n)) return n;
-    }
-    // Ability checks / saving throws / attack rolls / initiative = d20
-    const d20 = [
-      /\broll\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|attack roll|attack|initiative)\b/i,
-      /\bmake\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|roll)\b/i,
-      /\bgive me\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|roll)\b/i,
-      /\broll\s+(?:for\s+)?(?:initiative|stealth|perception|athletics|acrobatics|persuasion|deception|insight|investigation|arcana|history|nature|religion|survival|medicine|performance|intimidation)\b/i,
-    ];
-    if (d20.some(p => p.test(narrative))) return 20;
-    return null;
-  }, []);
+  // Delegates to the unit-tested lib. The die named in the actual "roll a dN"
+  // phrase wins over any incidental "dN" mentioned earlier in the prose (the bug
+  // where a stray "d6" made the dice screen show a d6 instead of the called d20).
+  const detectRequiredDiceType = useCallback((narrative: string): number | null =>
+    detectRequiredDieFromText(narrative), []);
 
   // ── AI call ───────────────────────────────────────────────────────────────────
   const sendToAI = async (allMessages: Message[], isOpeningScene = false, opts?: { trackRound?: boolean; roundSummary?: { name: string; action: string }[]; nextPlayerName?: string | null; prevPlayerName?: string | null; allActed?: boolean; preserveNarration?: boolean; isRollResult?: boolean; isTurnSkip?: boolean; skippedPlayerName?: string; isGroupCheckResult?: boolean; turnOrder?: string[]; isQuestion?: boolean; isResumeRecap?: boolean; departedAddresseeName?: string; suggestedCheck?: { skill: string; ability: string } | null; suppressTurnPromptNarration?: boolean; _retryCount?: number }) => {
@@ -5541,14 +5529,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   };
 
   const handleDiceCancel = () => {
+    // Backing out of the dice modal only CLOSES it — the DM's call for a roll must
+    // persist so the player can reopen the roller and still roll (the bug: cancel
+    // wiped the whole request, leaving the dice button locked / no way to roll).
+    // Auto-show won't re-fire (diceRollTarget is unchanged), so it stays closed
+    // until the player reopens it via the roll button; the chat input is re-enabled
+    // meanwhile so they can also type instead.
     setShowDice(false);
     setPendingDiceShow(false);
-    setDiceRollTarget(null);
-    setRequiredDiceType(null);
-    setRequiredRollMode(null);
-    setDiceRollContext(null);
-    setRollRequestedUserId(null);
-    rollRequestedUserIdRef.current = null;
   };
 
   const currentTurnPlayerId = turnOrder[currentTurnIndex] ?? null;
