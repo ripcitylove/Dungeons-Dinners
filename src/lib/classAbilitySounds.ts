@@ -581,7 +581,11 @@ export type SpellAnimKind =
   | "heal" | "fire" | "cold" | "lightning" | "thunder" | "acid" | "poison"
   | "radiant" | "necrotic" | "force" | "psychic" | "physical" | "buff" | "enchant";
 
-export const SPELL_META: Record<string, { name: string; anim: SpellAnimKind; color: string; targetSide: "caster" | "target" | "both" }> = {
+// `buff` (optional) names the canonical STATUS_EFFECTS entry this spell grants its
+// recipient. When the DM emits the spell's [SPELL:...] tag, the engine deterministically
+// applies that status effect (so the buff icon ALWAYS shows on the recipient's card —
+// no reliance on prose extraction). Recipient = the tag's target if named, else caster.
+export const SPELL_META: Record<string, { name: string; anim: SpellAnimKind; color: string; targetSide: "caster" | "target" | "both"; buff?: string }> = {
   // Damage
   fire_bolt:          { name: "Fire Bolt",          anim: "fire",      color: "#f97316", targetSide: "target" },
   eldritch_blast:     { name: "Eldritch Blast",     anim: "force",     color: "#8b5cf6", targetSide: "target" },
@@ -606,13 +610,22 @@ export const SPELL_META: Record<string, { name: string; anim: SpellAnimKind; col
   healing_word:       { name: "Healing Word",       anim: "heal",      color: "#4ade80", targetSide: "target" },
   goodberry:          { name: "Goodberry",          anim: "heal",      color: "#65a30d", targetSide: "target" },
   spare_the_dying:    { name: "Spare the Dying",    anim: "heal",      color: "#86efac", targetSide: "target" },
-  // Buffs / protection — gold/violet
-  bless:              { name: "Bless",              anim: "buff",      color: "#fde68a", targetSide: "both"   },
-  shield:             { name: "Shield",             anim: "buff",      color: "#a78bfa", targetSide: "caster" },
-  mage_armor:         { name: "Mage Armor",         anim: "buff",      color: "#c4b5fd", targetSide: "caster" },
-  shield_of_faith:    { name: "Shield of Faith",    anim: "buff",      color: "#fde68a", targetSide: "target" },
-  heroism:            { name: "Heroism",            anim: "buff",      color: "#fbbf24", targetSide: "target" },
-  divine_favor:       { name: "Divine Favor",       anim: "buff",      color: "#fcd34d", targetSide: "caster" },
+  // Buffs / protection — gold/violet. Each grants a status effect to its recipient.
+  bless:              { name: "Bless",              anim: "buff",      color: "#fde68a", targetSide: "both",   buff: "Blessed"         },
+  shield:             { name: "Shield",             anim: "buff",      color: "#a78bfa", targetSide: "caster", buff: "Shielded"        },
+  mage_armor:         { name: "Mage Armor",         anim: "buff",      color: "#c4b5fd", targetSide: "caster", buff: "Mage Armor"      },
+  shield_of_faith:    { name: "Shield of Faith",    anim: "buff",      color: "#fde68a", targetSide: "target", buff: "Shield of Faith" },
+  heroism:            { name: "Heroism",            anim: "buff",      color: "#fbbf24", targetSide: "target", buff: "Heroism"         },
+  divine_favor:       { name: "Divine Favor",       anim: "buff",      color: "#fcd34d", targetSide: "caster", buff: "Empowered"       },
+  guidance:           { name: "Guidance",           anim: "buff",      color: "#fcd34d", targetSide: "target", buff: "Guidance"        },
+  shillelagh:         { name: "Shillelagh",         anim: "buff",      color: "#84cc16", targetSide: "caster", buff: "Shillelagh"      },
+  resistance:         { name: "Resistance",         anim: "buff",      color: "#60a5fa", targetSide: "target", buff: "Resistance"      },
+  barkskin:           { name: "Barkskin",           anim: "buff",      color: "#84cc16", targetSide: "target", buff: "Barkskin"        },
+  longstrider:        { name: "Longstrider",        anim: "buff",      color: "#2dd4bf", targetSide: "target", buff: "Longstrider"     },
+  aid:                { name: "Aid",                anim: "buff",      color: "#f472b6", targetSide: "target", buff: "Aided"           },
+  enlarge:            { name: "Enlarge",            anim: "buff",      color: "#f87171", targetSide: "target", buff: "Enlarged"        },
+  reduce:             { name: "Reduce",             anim: "buff",      color: "#94a3b8", targetSide: "target", buff: "Reduced"         },
+  protection_from_evil_and_good: { name: "Protection from Evil and Good", anim: "buff", color: "#a78bfa", targetSide: "target", buff: "Protected" },
   // Utility / enchant
   faerie_fire:        { name: "Faerie Fire",        anim: "enchant",   color: "#f472b6", targetSide: "target" },
   detect_magic:       { name: "Detect Magic",       anim: "enchant",   color: "#a78bfa", targetSide: "caster" },

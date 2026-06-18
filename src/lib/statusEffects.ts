@@ -205,6 +205,13 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     cardGlow: "rgba(252,211,77,0.5)", badgeBg: "rgba(252,211,77,0.15)", badgeColor: "#fcd34d",
     bonusLabel: "+1d4",
   },
+  Shillelagh: {
+    icon: "🪵", type: "buff",
+    description: "Your club or quarterstaff is wreathed in nature's power: it counts as magical, uses your spellcasting modifier for attack and damage rolls, and its damage die becomes a d8.",
+    defaultDuration: "1 minute",
+    cardGlow: "rgba(132,204,22,0.5)", badgeBg: "rgba(132,204,22,0.15)", badgeColor: "#84cc16",
+    bonusLabel: "d8",
+  },
   Resistance: {
     icon: "🪬", type: "buff",
     description: "A protective cantrip. Add 1d4 to ONE saving throw of your choice before you know the result. Requires the caster's concentration.",
@@ -436,10 +443,38 @@ export function resolveStatusEffect(rawName: string): StatusEffect | null {
   return null;
 }
 
+/** The canonical STATUS_EFFECTS key for a raw/alias/cased name, or null if unknown.
+ *  Used to look up the matching custom SVG glyph. */
+export function resolveStatusKey(rawName: string): string | null {
+  const eff = resolveStatusEffect(rawName);
+  if (!eff) return null;
+  for (const k of Object.keys(STATUS_EFFECTS)) if (STATUS_EFFECTS[k] === eff) return k;
+  return null;
+}
+
 export function parseStatusEffect(raw: string): { name: string; duration: string | null } {
   const m = raw.match(/^(.+?)\s+\(([^)]+)\)\s*$/);
   if (m) return { name: m[1].trim(), duration: m[2].trim() };
   return { name: raw.trim(), duration: null };
+}
+
+/**
+ * Collapse a status_effects list so a character never carries two of the SAME effect
+ * (no-stacking rule), comparing by effect NAME — so "Guidance" and "Guidance (1 minute)"
+ * count as one. When duplicates exist, the entry that carries a duration is kept (it's
+ * more informative); otherwise the first occurrence. Order is otherwise preserved.
+ */
+export function dedupeStatusEffects(effects: string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const raw of effects) {
+    if (!raw || !raw.trim()) continue;
+    const { name, duration } = parseStatusEffect(raw);
+    const key = name.toLowerCase();
+    const existing = byKey.get(key);
+    if (!existing) { byKey.set(key, raw); continue; }
+    if (parseStatusEffect(existing).duration == null && duration != null) byKey.set(key, raw);
+  }
+  return [...byKey.values()];
 }
 
 export function getDominantEffect(effects: string[]): StatusEffect | null {

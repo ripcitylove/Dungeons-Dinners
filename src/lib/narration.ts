@@ -108,13 +108,18 @@ export function sliceThroughRollRequest(text: string): string {
  * request into a fuller natural utterance so it's spoken clearly. Longer or
  * named requests ("Shmang, roll a d20." = 19 chars) already clear the threshold
  * and are returned unchanged.
+ *
+ * The die comes FIRST, followed by a throwaway trailing beat ("— go ahead."):
+ * TTS engines clip the final fraction of short clips, so we make that clipped
+ * tail land on "go ahead" instead of the die — the player always hears the full
+ * "roll a dN".
  */
 export function expandRollRequestForSpeech(text: string): string {
   const t = text.trim();
   if (t.length >= 16) return t; // already long enough for clean prosody
   const m = /^(?:[A-Za-z][\w'-]*,?\s*)?roll\s+(?:a|an)\s+d(\d+)\b[^.!?]*[.!?]?$/i.exec(t);
   if (!m) return t;
-  return `Go ahead — roll a d${m[1]}.`;
+  return `Roll a d${m[1]} — go ahead.`;
 }
 
 const ROLL_MENTION_RE = /\broll\s+(?:a|an)\s+d\d+\b/i;

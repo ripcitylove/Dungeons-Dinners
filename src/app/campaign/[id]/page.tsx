@@ -19,10 +19,14 @@ import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS, resolveIte
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio, playSpellSound, preloadSpellAudio, SPELL_META } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
-import { parseStatusEffect, getDominantEffect, getCardEffectGlow, resolveStatusEffect } from "../../../lib/statusEffects";
+import { parseStatusEffect, getDominantEffect, getCardEffectGlow, resolveStatusEffect, dedupeStatusEffects } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turnPrompt";
 import { detectRequiredDieFromText } from "../../../lib/diceRequest";
+import { detectTurnAddressee } from "../../../lib/turnAddressee";
+import { detectActiveEffects } from "../../../lib/activeEffects";
+import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
+import { computeRefund } from "../../../lib/optimisticCharge";
 import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -534,40 +538,12 @@ function detectDmAddressee(text: string): string | null {
   return lastMatch?.name ?? null;
 }
 
+// Delegates to the unit-tested lib. Prefers the VOCATIVE addressee (a name set off
+// by a comma before/after the prompt) so a non-addressed name sitting nearer the
+// prompt — "Randiezel, Ekko is bleeding out… what do you do?" — can't steal the
+// turn (the resume "Acting"-on-wrong-player bug).
 function detectNextTurnPlayer(text: string, partyNames: string[]): string | null {
-  const tail = text.slice(-350);
-  let lastMatch: { idx: number; name: string } | null = null;
-  for (const fullName of partyNames) {
-    const firstName = fullName.split(" ")[0];
-    if (firstName.length < 2) continue;
-    const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Second-person: "[Name], what do you do?" / "What do you do, [Name]?"
-    const actionPrompt = `what (?:\\w+ ){0,4}(?:do|will|would|shall|can|could) you|what(?:'s| is) your (?:action|move|next move)|which (?:\\w+ ){0,4}(?:do|will|would|shall) you|(?:do|would|will) you (?:like|want|wish|prefer|choose|pick|decide|select)|your (?:move|turn|action)|you(?:'re| are) up|how (?:do|will|would) you (?:respond|react|proceed)|(?:make|take) your (?:move|action|choice)|(?:the )?(?:choice|move|moment|decision|call) is yours|what now|(?:like|want) to (?:try|do|attempt)|try (?:something (?:else|different)|again|instead)`;
-    const re = new RegExp(
-      `\\b${esc}\\b[^\\n]{0,120}(?:${actionPrompt})` +
-      `|(?:${actionPrompt})[^\\n]{0,120}\\b${esc}\\b`,
-      "gi"
-    );
-    let m: RegExpExecArray | null;
-    re.lastIndex = 0;
-    while ((m = re.exec(tail)) !== null) {
-      if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name: fullName };
-    }
-    // Third-person: "What does [Name] do?" / "How does [Name] respond?" / "[Name], what do they do?"
-    // Also: "Does/Will/Is/Can/Should/Shall [Name] X?" — yes/no question directed at the player
-    const thirdRe = new RegExp(
-      `what (?:does|will|would|can|shall) \\b${esc}\\b[^?\\n]{0,80}\\?` +
-      `|how (?:does|will|would|should) \\b${esc}\\b[^?\\n]{0,80}\\?` +
-      `|\\b${esc}\\b[^?\\n]{0,60},?\\s+(?:what|how)[^?\\n]{0,80}\\?` +
-      `|(?:does|will|is|are|can|should|would|shall)\\s+\\b${esc}\\b[^?\\n]{0,60}\\?`,
-      "gi"
-    );
-    thirdRe.lastIndex = 0;
-    while ((m = thirdRe.exec(tail)) !== null) {
-      if (!lastMatch || m.index > lastMatch.idx) lastMatch = { idx: m.index, name: fullName };
-    }
-  }
-  return lastMatch?.name ?? null;
+  return detectTurnAddressee(text, partyNames);
 }
 
 // Fades in each chunk of text as it arrives during streaming
@@ -951,6 +927,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const playTrackerChimeRef = useRef(playTrackerChime);
   useEffect(() => { playTrackerChimeRef.current = playTrackerChime; }, [playTrackerChime]);
 
+  // Full-screen "A New Objective Has Been Discovered!" banner, shown in sync with
+  // the chime. `key` bumps on every trigger so the element remounts and the
+  // animate-in/hold/fade-out CSS replays even if one is already on screen.
+  const [objBanner, setObjBanner] = useState<{ visible: boolean; key: number }>({ visible: false, key: 0 });
+  const announceObjective = useCallback(() => setObjBanner(s => ({ visible: true, key: s.key + 1 })), []);
+  const announceObjectiveRef = useRef(announceObjective);
+  useEffect(() => { announceObjectiveRef.current = announceObjective; }, [announceObjective]);
+
   // Apply DM [OBJECTIVE-NEW:n]/[OBJECTIVE-DONE:n] tags from a narrative: update the
   // tracker, persist to the campaign (best-effort — null-safe if the column is
   // missing), and sync to the party. Pass broadcast=false on the receiver side.
@@ -962,11 +946,48 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (updated === prev) return; // no change
     objectivesRef.current = updated;
     setObjectives(updated);
-    if (hasNewlyRevealed(prev, updated)) playTrackerChime(); // a new objective appeared
+    if (hasNewlyRevealed(prev, updated)) { playTrackerChime(); announceObjective(); } // a new objective appeared
     supabase.from("campaigns").update({ objectives: updated }).eq("id", params.id)
       .then(({ error }) => { if (error) console.warn("[objectives] save failed (migration pending?):", error.message); });
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "objectives_sync", payload: { senderId: userId, objectives: updated } });
-  }, [params.id, userId, playTrackerChime]);
+  }, [params.id, userId, playTrackerChime, announceObjective]);
+
+  // Deterministic backstop: when the DM narration explicitly states a known buff/
+  // debuff is ACTIVE on a party member ("Randiezel has Shillelagh active"), make sure
+  // it shows on their card — even if the LLM state extractor missed it or this is a
+  // resume recap (which replays cached text without re-extracting). ADD-only and
+  // idempotent, so it never double-applies or fights the extractor's removals.
+  // Add status effect(s) to a party member's card: idempotent (skips effects already
+  // present by name), updates local state + the active sheet, persists, and broadcasts
+  // a character_sync so every player's view shows the buff. Shared by the narration
+  // backstop and the deterministic [SPELL:...] buff path.
+  const addStatusEffectsToMember = useCallback((memberId: string, effects: string[]) => {
+    const member = campaignPartyRef.current.find(c => c.id === memberId);
+    if (!member || effects.length === 0) return;
+    const current = member.status_effects ?? [];
+    const have = new Set(current.map(s => parseStatusEffect(s).name.toLowerCase()));
+    const toAdd = effects.filter(e => e && !have.has(e.toLowerCase()));
+    if (toAdd.length === 0) return;
+    const newStatuses = dedupeStatusEffects([...current, ...toAdd]);
+    setCampaignParty(prev => prev.map(c => c.id === memberId ? { ...c, status_effects: newStatuses } : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === memberId ? { ...c, status_effects: newStatuses } : c);
+    if (characterRef.current?.id === memberId) {
+      const updated = { ...characterRef.current, status_effects: newStatuses };
+      setCharacter(updated); characterRef.current = updated;
+    }
+    charWriteRef.current?.(memberId, { status_effects: newStatuses });
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: memberId, status_effects: newStatuses } });
+  }, []);
+
+  const applyActiveEffectsFromNarrative = useCallback((narrative: string) => {
+    const party = campaignPartyRef.current;
+    if (!narrative || party.length === 0) return;
+    const detected = detectActiveEffects(narrative, party.map(c => c.name));
+    for (const first of Object.keys(detected)) {
+      const member = party.find(c => c.name.split(" ")[0].toLowerCase() === first.toLowerCase());
+      if (member) addStatusEffectsToMember(member.id, detected[first]);
+    }
+  }, [addStatusEffectsToMember]);
   const narVolumeRef = useRef<number>(1);
   const narMutedRef  = useRef<boolean>(false);
   const selectedVoiceRef = useRef<string>("bard");
@@ -1241,9 +1262,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const turnEndTimer2Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
   const LIFTOFF_MS = 700; // must match .card-liftoff duration
   const DROPIN_MS  = 850; // must match .card-dropin duration
+  // Card-shuffle SFX, played as a party card lifts off the board. Preloaded once
+  // and reset to start so rapid turn changes don't overlap or re-fetch.
+  const cardShuffleRef = useRef<HTMLAudioElement | null>(null);
   const triggerTurnEndAnim = useCallback((charId: string) => {
     if (turnEndTimer1Ref.current) clearTimeout(turnEndTimer1Ref.current);
     if (turnEndTimer2Ref.current) clearTimeout(turnEndTimer2Ref.current);
+    try {
+      let el = cardShuffleRef.current;
+      if (!el) { el = new Audio("/sounds/card-shuffle.mp3"); el.volume = 0.5; cardShuffleRef.current = el; }
+      el.currentTime = 0;
+      void el.play().catch(() => { /* autoplay not yet unlocked — ignore */ });
+    } catch { /* ignore */ }
     setTurnEndCardId(charId);
     setTurnEndPhase("liftoff");
     // After the lift-off completes, release the order pin (card relocates to the
@@ -1382,6 +1412,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const pendingSpellCastRef      = useRef<number>(0);
   const pendingSpellCastLevelRef = useRef<number>(0);
   const pendingHpDeltaRef        = useRef<number>(0);
+  // Optimistic spell-slot / ability-resource charge made by a BUTTON click before
+  // the DM confirms. If the DM rejects the action ([NO-TURN]), this charge is
+  // refunded — resources are only truly spent on a SUCCESSFUL cast/use.
+  const optimisticChargeRef      = useRef<null | { charId: string; spellLevel?: number; abilityKey?: string; abilityCost?: number; rageApplied?: boolean }>(null);
   const prevActingCharIdRef      = useRef<string | null>(null);
   const sceneRequestIdRef    = useRef(0);
   const usesCCTableRef       = useRef(false);
@@ -1908,10 +1942,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const effectiveMax = c.max_hp + ib.hpMaxAdd;
           const clampedHp = c.hp > effectiveMax ? effectiveMax : c.hp;
           const statuses = c.status_effects ?? [];
-          const fixedStatuses = clampedHp > 0 && statuses.includes("Unconscious")
-            ? statuses.filter(s => s !== "Unconscious")
-            : statuses;
-          if (clampedHp === c.hp && fixedStatuses === statuses) return c;
+          // Collapse any stored same-effect duplicates (no-stacking) on load, and clear
+          // a stale Unconscious when HP is positive. So resumed cards never show two of
+          // the same buff.
+          const deduped = dedupeStatusEffects(statuses);
+          const fixedStatuses = clampedHp > 0 && deduped.includes("Unconscious")
+            ? deduped.filter(s => s !== "Unconscious")
+            : deduped;
+          const statusUnchanged = fixedStatuses.length === statuses.length && fixedStatuses.every((s, k) => s === statuses[k]);
+          if (clampedHp === c.hp && statusUnchanged) return c;
           return { ...c, hp: clampedHp, status_effects: fixedStatuses };
         });
         if (normalizedParty.some((c, i) => c.hp !== party[i].hp || c.status_effects !== party[i].status_effects)) {
@@ -2092,7 +2131,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const next = normalizeObjectives(payload.objectives);
         objectivesRef.current = next;
         setObjectives(next);
-        if (hasNewlyRevealed(prev, next)) playTrackerChimeRef.current?.();
+        if (hasNewlyRevealed(prev, next)) { playTrackerChimeRef.current?.(); announceObjectiveRef.current?.(); }
       })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -2354,7 +2393,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(p.inventory        !== undefined && { inventory:        p.inventory        }),
           ...(p.spell_slots_used !== undefined && { spell_slots_used: p.spell_slots_used }),
           ...(p.class_resources  !== undefined && { class_resources:  p.class_resources  }),
-          ...(p.status_effects   !== undefined && { status_effects:   p.status_effects   }),
+          ...(p.status_effects   !== undefined && { status_effects:   dedupeStatusEffects(p.status_effects) }),
         });
         setCampaignParty(prev => prev.map(c => c.id !== p.charId ? c : merge(c)));
         // Also update the active character sheet for other players' characters
@@ -2490,6 +2529,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Mouse-wheel over the narration window scrolls a fixed 3 text lines per notch
+  // (instead of the browser's larger default), for slow, controlled reading. One
+  // line ≈ chat font size × 1.55 line-height; kept current in a ref so the wheel
+  // listener (attached once, non-passive so preventDefault actually works) always
+  // uses the live font size.
+  const wheelStepRef = useRef(72);
+  useEffect(() => {
+    wheelStepRef.current = Math.max(48, chatFontSize * chatWidthRatio * 16 * 1.55 * 3);
+  }, [chatFontSize, chatWidthRatio]);
+  useEffect(() => {
+    const el = msgContainerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;            // leave pinch/ctrl-zoom to the browser
+      e.preventDefault();
+      el.scrollBy({ top: (e.deltaY > 0 ? 1 : -1) * wheelStepRef.current, behavior: "smooth" });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   // Keep the latest narration pinned to the bottom whenever the messages VIEWPORT
@@ -2774,8 +2834,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (newHp === 0 && adjustedHpDelta < 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0 && newHp <= effectiveMaxHp) newStatuses = newStatuses.filter(s => s !== "Unconscious");
       if (isExplicitTarget) {
-        change.status_effects_gained.forEach(s => { if (!newStatuses.includes(s)) newStatuses.push(s); });
-        newStatuses = newStatuses.filter(s => !change.status_effects_lost.includes(s));
+        // Name-normalized so "Guidance" and "Guidance (1 minute)" never both land
+        // (no same-effect stacking). Removal also matches by name.
+        const lostNames = new Set(change.status_effects_lost.map(s => parseStatusEffect(s).name.toLowerCase()));
+        newStatuses = newStatuses.filter(s => !lostNames.has(parseStatusEffect(s).name.toLowerCase()));
+        newStatuses = dedupeStatusEffects([...newStatuses, ...change.status_effects_gained]);
       }
     } else if (adjustedHpDelta !== 0) {
       if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
@@ -3665,6 +3728,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     characterRef.current = updated;
     setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
     campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updated : c);
+    // Record the optimistic charge so it can be refunded if the DM rejects the use
+    // ([NO-TURN]). Only when a resource was actually spent (cost > 0).
+    if (cost > 0) optimisticChargeRef.current = { charId: char.id, abilityKey: resourceKey, abilityCost: cost, rageApplied: resourceKey === "rage" };
     await charWrite(char.id, { class_resources: newClassResources, status_effects: newStatusEffects });
     channelRef.current?.send({
       type: "broadcast", event: "character_sync",
@@ -3676,6 +3742,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       },
     });
   }, [charWrite, triggerAbilityFlash]);
+
+  // Refund a button-click's optimistic spell-slot / ability-resource charge when the
+  // DM rejected the action ([NO-TURN]) — a failed/declined use must NOT cost a slot.
+  // Restores the slot/resource (and clears a Rage status applied by the click),
+  // resets the pending-cast guard, persists, and broadcasts so all clients revert.
+  const refundOptimisticCharge = useCallback(() => {
+    const pc = optimisticChargeRef.current;
+    optimisticChargeRef.current = null;
+    if (!pc) return;
+    const char = campaignPartyRef.current.find(c => c.id === pc.charId);
+    if (!char) return;
+    if (pc.spellLevel != null) {
+      pendingSpellCastRef.current = Math.max(0, pendingSpellCastRef.current - 1);
+      pendingSpellCastLevelRef.current = 0;
+    }
+    const { spell_slots_used, class_resources, status_effects, changed } = computeRefund(char, pc);
+    if (!changed) return;
+    const updated = { ...char, spell_slots_used, class_resources, status_effects };
+    setCampaignParty(prev => prev.map(c => c.id === pc.charId ? updated : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === pc.charId ? updated : c);
+    if (characterRef.current?.id === pc.charId) { setCharacter(updated); characterRef.current = updated; }
+    charWriteRef.current?.(pc.charId, { spell_slots_used, class_resources, status_effects });
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: pc.charId, spell_slots_used, class_resources, status_effects } });
+  }, []);
 
   const handlePartyShortRest = useCallback(async () => {
     const party = campaignPartyRef.current;
@@ -4746,6 +4836,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         for (const m of campaignPartyRef.current) partyByFirst.set(m.name.split(" ")[0].toLowerCase(), { id: m.id, name: m.name });
         spellHits.forEach(({ caster, key, target }, i) => {
           const meta = SPELL_META[key];
+          // Deterministic buff: a bonus-granting spell puts its status effect on the
+          // recipient (named target, else caster) the instant its tag fires — so the
+          // buff icon ALWAYS appears, regardless of how the prose was phrased.
+          if (meta?.buff) {
+            const casterId = partyByFirst.get(caster.split(" ")[0].toLowerCase())?.id;
+            const targetId = target ? partyByFirst.get(target.split(" ")[0].toLowerCase())?.id : undefined;
+            const recipientId = targetId ?? casterId;
+            if (recipientId) addStatusEffectsToMember(recipientId, [meta.buff]);
+          }
           setTimeout(() => {
             playSpellSound(key);
             if (!meta) return;
@@ -4814,11 +4913,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         applyDmStateFromNarrative(full);
       }
 
+      // A button-click optimistically spent a spell slot / ability resource. If the
+      // DM REJECTED the action ([NO-TURN]), refund it — slots/resources are only
+      // spent on a successful cast/use. On success, the charge stands.
+      if (/\[NO-?TURN\]/i.test(full)) refundOptimisticCharge();
+      else optimisticChargeRef.current = null;
+
       // Objective progress — the DM's [OBJECTIVE-NEW:n]/[OBJECTIVE-DONE:n] tags
       // reveal/complete milestones. Skip on a [NO-TURN] refusal (nothing happened).
       if (!/\[NO-?TURN\]/i.test(full)) {
         applyObjectiveTagsFromNarrative(full);
       }
+      // Backstop: surface any buff/debuff the DM narrates as active on a party member.
+      applyActiveEffectsFromNarrative(full);
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
       const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
@@ -5825,6 +5932,32 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         );
       })()}
       {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} narVolume={narVolume} narMuted={narMuted} />}
+
+      {/* New-objective announcement — full-screen, above everything, plays with the
+          chime: golden fantasy text animates in, holds ~2s, then fades out. */}
+      {objBanner.visible && (
+        <div
+          key={objBanner.key}
+          onAnimationEnd={() => setObjBanner(s => ({ ...s, visible: false }))}
+          style={{
+            position: "fixed", inset: 0, zIndex: 100000, pointerEvents: "none",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "objectiveBannerAnim 3.3s ease-in-out forwards",
+          }}
+        >
+          {/* radial glow pool behind the text */}
+          <div style={{ position: "absolute", width: "min(900px, 90vw)", height: "340px",
+            background: "radial-gradient(ellipse at center, rgba(212,175,55,0.22) 0%, rgba(212,175,55,0.08) 38%, transparent 72%)" }} />
+          <div style={{ position: "relative", textAlign: "center", padding: "0 24px" }}>
+            <div style={{ fontFamily: "var(--font-cinzel), Georgia, serif", fontWeight: 700, fontSize: "clamp(0.62rem, 1.6vw, 0.95rem)", letterSpacing: "0.5em", textTransform: "uppercase", color: "#e6c668", marginBottom: "0.85em", marginLeft: "0.5em", filter: "drop-shadow(0 1px 5px rgba(0,0,0,0.7))" }}>
+              ✦&nbsp;&nbsp;✦&nbsp;&nbsp;✦
+            </div>
+            <div className="objective-banner-text" style={{ fontFamily: "var(--font-cinzel), Georgia, serif", fontWeight: 900, fontSize: "clamp(1.7rem, 5.2vw, 3.5rem)", lineHeight: 1.18, letterSpacing: "0.02em" }}>
+              A New Objective Has Been Discovered!
+            </div>
+          </div>
+        </div>
+      )}
       {toastMsg && (
         <div onClick={() => setToastMsg(null)} style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "rgba(127,29,29,0.95)", border: "1px solid rgba(239,68,68,0.5)", borderRadius: "10px", padding: "12px 20px", color: "#fca5a5", fontSize: "0.85rem", maxWidth: "420px", textAlign: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
           🔇 {toastMsg}
@@ -5967,6 +6100,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         }
                       }
                     }
+
+                    // Resume backstop: the recap replays cached text without re-running
+                    // state extraction, so any buff the DM narrates as still active
+                    // ("Randiezel has Shillelagh active") would otherwise show no icon.
+                    if (resumeNarrationRef.current) applyActiveEffectsFromNarrative(resumeNarrationRef.current);
 
                     setSessionStarted(true);
 
@@ -6428,8 +6566,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           )}
           <div ref={messagesEndRef} />
         </div>
-          {/* Manual scroll buttons — float over the bottom-right of the narration window */}
-          <div style={{ position: "absolute", right: "12px", bottom: "14px", display: "flex", flexDirection: "column", gap: "8px", zIndex: 6 }}>
+          {/* Manual scroll buttons — anchored to the top-right of the narration window */}
+          <div style={{ position: "absolute", right: "12px", top: "14px", display: "flex", flexDirection: "column", gap: "8px", zIndex: 6 }}>
             {[{ dir: -1 as const, glyph: "▲", tip: ["Scroll Up", "Scroll the story window up to re-read earlier narration."] },
               { dir: 1 as const,  glyph: "▼", tip: ["Scroll Down", "Scroll the story window down toward the latest narration."] }].map(b => (
               <button
@@ -7010,7 +7148,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\n${durationLine}`, eff.badgeColor), e)}
                               onMouseLeave={hideTooltip}
                             >
-                              {eff.icon}
+                              {hasStatusGlyph(name) ? <StatusGlyph name={name} color={eff.badgeColor} size={fs(1.05)} /> : eff.icon}
                               {eff.bonusLabel && <span style={{ fontSize: fs(0.52), color: eff.badgeColor, fontWeight: 700, lineHeight: 1 }}>{eff.bonusLabel}</span>}
                             </div>
                           );
@@ -7239,7 +7377,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               style={{ width: fs(1.8), height: fs(1.8), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.05), flexShrink: 0 }}
                               onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\nDuration: ${duration ?? eff.defaultDuration}`, eff.badgeColor), e)}
                               onMouseLeave={hideTooltip}
-                            >{eff.icon}</div>
+                            >{hasStatusGlyph(name) ? <StatusGlyph name={name} color={eff.badgeColor} size={fs(1.1)} /> : eff.icon}</div>
                           );
                         })}
                       </div>
@@ -7427,7 +7565,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           style={{ width: fs(1.9), height: fs(1.9), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 8px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.1), flexShrink: 0 }}
                           onMouseEnter={e => showTooltip(tipBox(name, `${eff.description}\n\nDuration: ${duration ?? eff.defaultDuration}`, eff.badgeColor), e)}
                           onMouseLeave={hideTooltip}
-                        >{eff.icon}</div>
+                        >{hasStatusGlyph(name) ? <StatusGlyph name={name} color={eff.badgeColor} size={fs(1.15)} /> : eff.icon}</div>
                       );
                     })}
                   </div>
@@ -7695,6 +7833,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                             campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === character.id ? { ...c, spell_slots_used: newSlots } : c);
                                             await charWrite(character.id, { spell_slots_used: newSlots });
                                             pendingSpellCastRef.current += 1;
+                                            // Refundable if the DM rejects the cast ([NO-TURN]).
+                                            optimisticChargeRef.current = { charId: character.id, spellLevel: castLvl };
                                             handleSend(`I cast ${sp.name}.`);
                                           }}
                                           onMouseEnter={e => showTooltip(tipBox(sp.name, `${sp.school} · ${sp.desc}`, "#8b5cf6"), e)}

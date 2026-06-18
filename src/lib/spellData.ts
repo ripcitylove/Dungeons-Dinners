@@ -740,6 +740,27 @@ export function getSpellSlots(cls: string, charLevel: number): Record<number, nu
   return result;
 }
 
+/**
+ * Remaining spell slots per level = class-table max minus used. Used to tell the DM
+ * exactly how many slots are LEFT (not just how many were used) so it can't wrongly
+ * refuse a valid cast. `used` keys may be strings (JSON) or numbers. e.g. a level-1
+ * Druid with 1 first-level slot spent → { 1: 1 } (still castable).
+ */
+export function spellSlotsRemaining(
+  cls: string,
+  charLevel: number,
+  used: Record<string, number> | Record<number, number> | undefined | null,
+): Record<number, number> {
+  const max = getSpellSlots(cls, charLevel);
+  const u = (used ?? {}) as Record<string, number>;
+  const out: Record<number, number> = {};
+  for (const [lvl, m] of Object.entries(max)) {
+    const spent = Number(u[lvl]) || 0;
+    out[Number(lvl)] = Math.max(0, m - spent);
+  }
+  return out;
+}
+
 export type StatTier = "primary" | "secondary" | "useful" | "dump";
 export type StatGuide = { tier: StatTier; reason: string };
 

@@ -72,8 +72,9 @@ eq("roll with no trailing punctuation", sliceThroughRollRequest("Aria, roll a d2
 eq("no roll request -> unchanged", sliceThroughRollRequest("The door creaks open and the room falls silent."), "The door creaks open and the room falls silent.");
 
 // ── expandRollRequestForSpeech — short bare roll requests get a fuller utterance ──
-eq("bare short roll expanded (the bug)", expandRollRequestForSpeech("Roll a d20."), "Go ahead — roll a d20.");
-eq("bare short roll, no period", expandRollRequestForSpeech("Roll a d6"), "Go ahead — roll a d6.");
+eq("bare short roll expanded (die first, throwaway tail)", expandRollRequestForSpeech("Roll a d20."), "Roll a d20 — go ahead.");
+eq("bare short roll, no period", expandRollRequestForSpeech("Roll a d6"), "Roll a d6 — go ahead.");
+truthy("expanded die is not the final token (tail-clip safe)", /go ahead\.?$/i.test(expandRollRequestForSpeech("Roll a d20.")), true);
 eq("named roll already long -> unchanged", expandRollRequestForSpeech("Shmang, roll a d20."), "Shmang, roll a d20.");
 eq("long narration -> unchanged", expandRollRequestForSpeech("The symbol burns deep. Shmang, roll a d20."), "The symbol burns deep. Shmang, roll a d20.");
 eq("non-roll short text -> unchanged", expandRollRequestForSpeech("She nods."), "She nods.");

@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { DM_LOOT_GUIDE } from "../../../lib/lootData";
 import { formatMessagesForDM } from "../../../lib/dmMessageFormat";
 import { objectivesForPrompt, currentObjectiveId, type Objective } from "../../../lib/objectives";
+import { getSpellSlots, spellSlotsRemaining } from "../../../lib/spellData";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
@@ -124,6 +125,8 @@ You are allowed — and encouraged — to be cheeky, dry, and lightly mocking wh
 - A character's specific weakness shows up (Strength 8 Wizard tries to kick down a reinforced door, Wisdom 7 Sorcerer tries to "read the room") → the failure can be played for a small, affectionate laugh.
 - A character's strength shines (Bard rolls Performance, Cleric heals at the brink, Barbarian rages through a hit that should have dropped them) → celebrate it.
 Never be mean-spirited. Never punch down at the player — punch at the situation, the dice, the NPC who underestimated them. Keep it brief: one sentence of wit, then back to the story. Bleak moments stay bleak. Tragedy is not the time to crack jokes.
+
+NO THINKING ALOUD — show conclusions, not your reasoning. Players hear every word read aloud, so never narrate your own rules-checking, deliberation, or self-correction. Don't write your work ("but that's a concentration spell, and she's already… wait, no", "let me think", "actually", "hmm", "the issue is simpler", "on second thought"). Resolve rules, math, and edge cases silently and present only the player-relevant outcome, cleanly and concisely. The ONLY time you may surface reasoning is when the player genuinely benefits from knowing it (e.g. teaching a rule that affects their next choice) — and even then, state it as a single clear fact, not a monologue of second-guessing.
 
 CONTINUITY & MEMORY — THE WORLD REMEMBERS
 The conversation history below is the full record of everything that has happened in this campaign. Treat it as the world's memory. Players notice — and love — when the DM calls back to earlier choices and moments. Do this naturally and often:
@@ -310,8 +313,10 @@ SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstN
   Valid spell keys (exact lowercase, underscores):
     Damage:  fire_bolt, eldritch_blast, magic_missile, sacred_flame, ray_of_frost, shocking_grasp, thunderwave, acid_splash, chill_touch, poison_spray, vicious_mockery, thorn_whip, burning_hands, guiding_bolt, inflict_wounds, produce_flame, dissonant_whispers, ice_knife
     Healing: cure_wounds, healing_word, goodberry, spare_the_dying
-    Buffs:   bless, shield, mage_armor, shield_of_faith, heroism, divine_favor
+    Buffs:   bless, shield, mage_armor, shield_of_faith, heroism, divine_favor, guidance, shillelagh, resistance, barkskin, longstrider, aid, enlarge, reduce, protection_from_evil_and_good
     Utility: faerie_fire, detect_magic, sleep, charm_person
+
+  BONUS-GRANTING SPELLS — ALWAYS emit the [SPELL:...] tag (it both flashes the card AND puts the buff icon on the recipient so players can see the bonus is active). This includes minor cantrips: when ANYONE casts Guidance, Resistance, or Shillelagh, emit the tag (e.g. [SPELL:Randiezel:guidance:Ekko] when Randiezel casts Guidance on Ekko; [SPELL:Randiezel:shillelagh] for a self-cast). Name the target for spells cast on an ally; omit it for self-casts.
 
   When to include the optional target:
     - Include it when the spell aims at a SPECIFIC party member (e.g. Cure Wounds on Aria, Healing Word on Thorin, Bless touching Aria, Mage Armor on someone other than caster). Target is that member's first name.
@@ -361,13 +366,13 @@ SPELLS & SLOTS
 
 INVALID / IMPOSSIBLE / OUT-OF-RESOURCE ACTIONS — DO NOT CONSUME THE TURN
 When a player declares an action they CANNOT actually perform — for any of the reasons below — DO NOT narrate it as happening. Instead:
-1. In ONE sentence, briefly tell them they can't (no judgment, just the rule reason).
+1. In ONE sentence, briefly tell them they can't — JUST the single rule reason, stated as a conclusion. Do NOT think aloud, weigh possibilities, or self-correct in the visible text. Never write your rules-checking process ("but X is a concentration spell, and she's already… wait, no", "the issue is simpler", "actually", "hmm", "let me think"). Resolve the rules silently in your head and output only the final, player-relevant reason. (Wrong: "Giggles has his hands full — but Guidance is a concentration spell, and Vi is already… wait. She isn't concentrating. The issue is simpler: Guidance aids a skill check, not dodging attacks." Right: "Guidance aids a skill check, not dodging attacks, Vi.")
 2. End your response with a redirect question asking what they want to actually try ("What do you do instead, {Name}?" or "{Name}, what would you actually like to try?").
 3. APPEND THE TAG [NO-TURN] (engine tag, stripped from display). This tells the engine the player's submission was invalid and their turn is NOT yet consumed — they still get to take their actual action.
 
 Triggers for [NO-TURN]:
 - Casting a spell that is NOT in their Cantrips or Prepared spells list. ("That spell isn't in your prepared list. What would you like to do instead, Aria? [NO-TURN]")
-- Casting a leveled spell when their spell slots for that level are exhausted. ("You're out of 2nd-level slots — what else, Aria? [NO-TURN]")
+- Casting a leveled spell when that level shows 0 remaining in the character's "Spell slots remaining" line — and ONLY then. If the line shows 1 or more remaining for that level, the cast is VALID: resolve it and consume a slot; never refuse it. Re-read the exact remaining count before refusing. ("You're out of 2nd-level slots — what else, Aria? [NO-TURN]" — but only when 2nd level truly reads 0.) Cantrips never cost a slot, so they are never refused for slots.
 - Using a class feature their class doesn't have, or that their level doesn't yet grant (e.g. a level-1 druid trying Wild Shape, a non-rogue trying Sneak Attack, a non-monk trying Flurry of Blows).
 - Using a class resource that's already exhausted (Wild Shape uses, Bardic Inspiration, Ki, Rage uses, Channel Divinity, Action Surge, Second Wind, etc.).
 - Using an item the character doesn't have in their inventory.
@@ -500,7 +505,7 @@ The game engine automatically tracks buffs, debuffs, conditions, diseases, and e
 
 Available effects by category (use these exact names):
 CONDITIONS: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated, Burning
-BUFFS: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary, Guidance, Resistance, Aided, Heroism, Shield of Faith, Protected, Barkskin, Longstrider, Enlarged
+BUFFS: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary, Guidance, Shillelagh, Resistance, Aided, Heroism, Shield of Faith, Protected, Barkskin, Longstrider, Enlarged
 DEBUFFS: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark, Baned, Slowed, Reduced
 DISEASES: Diseased, Infected, Fevered, Sewer Plague
 ENCHANTMENTS: Attuned, Empowered, Enchanted, Mage Armor, Mirror Image
@@ -757,10 +762,15 @@ ${partyScaleHint(partySize, avgLevel)}`;
   if (char.cantrips_known?.length || char.spells_prepared?.length) {
     const cantrips  = char.cantrips_known?.join(", ") || "none";
     const prepared  = char.spells_prepared?.join(", ") || "none";
-    const used      = char.spell_slots_used ?? {};
-    const slotLines = Object.entries(used).filter(([, u]) => u > 0)
-      .map(([lvl, u]) => `${u}x level-${lvl} used`).join(", ") || "none used";
-    spellInfo = `\nCantrips: ${cantrips}\nPrepared spells: ${prepared}\nSlots used this session: ${slotLines}`;
+    // Present REMAINING / MAX per slot level (computed from the class table minus
+    // used), NOT just "used". Without the max the DM can't tell how many are left
+    // and wrongly refuses valid casts (e.g. "no 1st-level slots" when 1 of 2 remain).
+    const maxSlots  = char.class ? getSpellSlots(char.class, char.level ?? 1) : {};
+    const remaining = spellSlotsRemaining(char.class ?? "", char.level ?? 1, char.spell_slots_used);
+    const slotEntries = Object.entries(maxSlots).map(([lvl, max]) =>
+      `level ${lvl}: ${remaining[Number(lvl)] ?? 0} of ${max} remaining`);
+    const slotLine  = slotEntries.length ? slotEntries.join(", ") : "no leveled spell slots";
+    spellInfo = `\nCantrips: ${cantrips}\nPrepared spells: ${prepared}\nSpell slots remaining: ${slotLine}\n(A leveled spell is castable whenever its level shows 1+ remaining above. Cantrips are always free. Only refuse a cast for "out of slots" when that level shows 0 remaining.)`;
   }
 
   const soloResUsed = Object.entries(char.class_resources ?? {}).filter(([, n]) => (n ?? 0) > 0);

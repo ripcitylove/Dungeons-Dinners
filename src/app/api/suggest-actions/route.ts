@@ -140,13 +140,19 @@ PRONOUN RULE — NON-NEGOTIABLE, APPLIES TO EVERY NAMED CHARACTER:
 - This rule applies to BOTH the acting character AND every other party member you mention. Suggestions like "Heal him" / "Pass her the potion" / "Ask them to flank" MUST match the listed pronouns.
 - If you cannot recall a member's pronouns mid-suggestion, refer to them by name only (no third-person pronoun) rather than guessing.
 
-CRITICAL SPELL RULE: Only suggest spells the character actually has. Non-spellcasters get zero spell suggestions.
+CRITICAL — STAY INSIDE THE ACTING CHARACTER'S KIT (this is the #1 source of bad suggestions):
+- You suggest actions ONLY for the acting character named in the Character line. Every one of the 4 options must be something THAT character can actually do right now using: their listed Cantrips, their listed Prepared spells (slots permitting), their listed Weapons, their class features, OR universal actions any character can take (move/reposition, hide, dash, take cover, help an ally, talk/whisper/shout, ready or use an item they carry, attack with a weapon they have, make a skill check, retreat).
+- The DM's prose frequently narrates what OTHER characters just did — e.g. "Randiezel's staff hums, ready" describes Randiezel casting Shillelagh, NOT the acting character. NEVER suggest the acting character use a spell, cantrip, weapon, or feature that belongs to another character or is merely mentioned in the prose. Judge ONLY by the acting character's own listed Cantrips/Prepared spells/Weapons.
+- Match every option to the character's CLASS. A Wizard cannot cast druid/cleric spells (no Entangle, no Shillelagh, no Cure Wounds) unless those exact names appear in THIS character's lists. A Fighter/Monk/Rogue with no spell lists gets ZERO spell suggestions. If an ability is not in this character's own lists, it does not exist for them.
+- When in doubt, prefer a safe universal action (move, attack with a listed weapon, use a known cantrip, talk, investigate, take cover) over guessing at an ability they may not have.
+
+CRITICAL SPELL RULE: Only suggest spells/cantrips that appear verbatim in THIS character's Cantrips or Prepared spells list above. Non-spellcasters get zero spell suggestions.
 
 CRITICAL SPELL-SLOT RULE: "Prepared spells" are LEVELED — each one costs a spell slot to cast. Cantrips are FREE and always castable. When the Character line shows "Spell slots remaining: 0", you MUST NOT suggest ANY prepared/leveled spell (e.g. Hellish Rebuke, Cure Wounds, Magic Missile, Healing Word) — suggest only cantrips, weapon attacks, movement, items, or skill uses. Never suggest a spell the character has no slot to cast.`,
       messages: [
         {
           role: "user",
-          content: `${charLine}${partyLine}${enemyLine}\n\nDM's last message:\n"${dmResponse.slice(0, 1200)}"\n\nGenerate 4 action suggestions that make sense right now — consult the PARTY block before suggesting anything about other characters.`,
+          content: `${charLine}${partyLine}${enemyLine}\n\nDM's last message:\n"${dmResponse.slice(0, 1200)}"\n\nGenerate 4 action suggestions for ${character?.name ?? "the acting character"}${character?.class ? ` the ${character.class}` : ""} that make sense right now. EVERY option must be something ${character?.name ?? "they"} can actually do with the Cantrips / Prepared spells / Weapons / class features listed in their Character line above, or a universal action — NEVER an ability another character performed in the prose. Consult the PARTY block before referencing other characters.`,
         },
       ],
     });
