@@ -238,7 +238,7 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   {
     icon: "⚔️",
     title: "Turns & The Party Panel",
-    body: "In multiplayer, everyone takes turns. The party cards on the left show every adventurer — the card outlined in their class color and gently rising is the active player. Click any party card to view that character's full sheet on the right.",
+    body: "In multiplayer, everyone takes turns. The party cards in the right-hand panel show every adventurer — the one with the glowing \"Acting\" badge (its card lifts off and shuffles to the back as turns pass) is whose turn it is. Active buffs, debuffs, and conditions appear as glowing icons right on each card. Click any party card to open that character's full sheet.",
     tip: "Solo? Your input is always active. The DM scales encounters to your party size automatically.",
     diagram: "party" as const,
   },
@@ -252,14 +252,14 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   {
     icon: "📋",
     title: "Sheet, Party, Log & Combat",
-    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spells, inventory, HP. PARTY shows everyone's live stats and gold. LOG is the full transcript. COMBAT appears when enemies are present — click an enemy to target them.",
-    tip: "Party leaders see an \"⊕ Invite Players\" panel at the bottom of the Party tab — invite anyone from your roster anytime you're out of combat.",
+    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spell slots, inventory, HP, and every proficiency bonus. PARTY shows everyone's live stats and gold. STORY LOG is the full transcript. COMBAT appears when enemies are present. When you're hurt and can't recall why, the Character tab's \"🩸 What happened to me?\" button shows a running log of every wound and heal — and what caused it.",
+    tip: "When enemies appear, their portraits stack down the LEFT of the scene — click one (or a combat card) to target it. Party leaders also get an \"⊕ Invite Players\" panel at the bottom of the Party tab when out of combat.",
     diagram: "sheet" as const,
   },
   {
     icon: "🔊",
     title: "Narration & Atmosphere",
-    body: "Toggle the 🔊 button at the top of the chat to enable AI voice narration — the DM speaks the story aloud in the voice you pick. The music player at bottom-right swaps between exploration, combat, and tavern tracks. Both feel great on a TV.",
+    body: "Toggle the 🔊 button at the top of the chat to enable AI voice narration — the DM speaks the story aloud in the voice you pick. The ☀️/🌙 button beside it switches between light and dark themes. Your current objectives glow in a tracker at the top-right of the scene. The music player at bottom-right swaps between exploration, combat, and tavern tracks.",
     tip: "Playing on Xbox via MS Edge? Use the D-pad to navigate — focused buttons show a gold ring so you always know where you are.",
     diagram: "audio" as const,
   },
