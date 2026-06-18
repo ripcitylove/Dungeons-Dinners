@@ -18,6 +18,12 @@ const truthy = (name: string, v: boolean, want: boolean) => {
 eq("roll math screenshot", collapseRollMath("12 + 2 [Perception] = 14 — clear enough."), "14 — clear enough.");
 eq("roll math no labels",  collapseRollMath("14 + 5 = 19 — hits AC 15!"), "19 — hits AC 15!");
 eq("gold untouched",       collapseRollMath("You find 47 gold pieces."), "You find 47 gold pieces.");
+// Labeled damage/attack breakdowns (the new universal-labeling rule) still collapse
+// to just the total for SPEECH — the voice says "17 bludgeoning", not the formula.
+eq("labeled damage collapses", collapseRollMath("14 + 3 [STR] = 17 bludgeoning."), "17 bludgeoning.");
+eq("labeled enemy attack collapses", collapseRollMath("14 + 5 [ATK] = 19 — hits AC 15!"), "19 — hits AC 15!");
+eq("multi-label check collapses", collapseRollMath("8 + 3 [STR] + 2 [Prof] = 13 — misses AC 14."), "13 — misses AC 14.");
+eq("labeled damage spoken as total only", sanitizeForTts("14 + 3 [STR] = 17 bludgeoning."), "17 bludgeoning.");
 
 // ── The reported bugs: *"…"* / **"…"** dialogue must lose BOTH the asterisks AND
 //    the quote marks (quote-wrapped short lines trigger ElevenLabs yells/hiss). ──
