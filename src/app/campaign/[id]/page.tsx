@@ -19,7 +19,7 @@ import { MECHANIC_TIPS, ENEMY_CONDITION_TIPS, WEAPON_TIPS, ITEM_TIPS, resolveIte
 import { CLASS_RESOURCES, SHORT_REST_RESET_KEYS, getBardicInspirationDie, getSneakAttackDice, getWildShapeCR, getRageDamageBonus } from "../../../lib/classFeatures";
 import { playAbilitySound, primeAbilitySounds, preloadWildShapeAudio, preloadAbilityAudio, playSpellSound, preloadSpellAudio, SPELL_META } from "../../../lib/classAbilitySounds";
 import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "../../../lib/wildShapeForms";
-import { STATUS_EFFECTS, parseStatusEffect, getDominantEffect, getCardEffectGlow } from "../../../lib/statusEffects";
+import { parseStatusEffect, getDominantEffect, getCardEffectGlow, resolveStatusEffect } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turnPrompt";
 import { inferSkillCheck } from "../../../lib/skillCheck";
@@ -4089,6 +4089,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       let full    = "";
       let narBuf  = "";
       let narDone = false; // set true once we've enqueued enough narration for this response
+      // A trailing "what do you do, X?" is HELD rather than spoken immediately: if
+      // this message turns out to be the round-completing bridge, reconciliation
+      // strips that prompt from the displayed text — so speaking it would ask for an
+      // action the screen never shows AND double-prompt the next player. We resolve
+      // the held prompt (speak or drop) only AFTER round management runs and we know
+      // whether reconciliation will strip it. Closes the multiplayer race where the
+      // round completes mid-call (allActed detected inside sendToAI, not predicted).
+      let heldTurnPromptNarration: string | null = null;
+      const flushHeldPrompt = () => { if (heldTurnPromptNarration) { enqueueNarration(heldTurnPromptNarration); heldTurnPromptNarration = null; } };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -4111,12 +4120,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               if (rollClean && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(rollClean))) enqueueNarration(rollClean);
               narBuf = ""; narDone = true; break;
             }
-            // On a round-completing response, the trailing "what do you do, X?" is
-            // stripped from the DISPLAYED text by reconciliation — so don't narrate it
-            // either, or the voice asks for an action the screen never shows.
+            // On a PREDICTED round-completing response, the trailing "what do you do,
+            // X?" is stripped from the DISPLAYED text by reconciliation — never narrate
+            // it. For non-predicted turn prompts, HOLD (don't speak yet): if the round
+            // turns out to complete mid-call, we drop it at the end instead.
             if (opts?.suppressTurnPromptNarration && isTurnPromptSentence(s)) continue;
             const cleaned = stripSystemLeaks(s);
-            if (cleaned) enqueueNarration(cleaned);
+            if (!cleaned) continue;
+            if (isTurnPromptSentence(s)) {
+              flushHeldPrompt();              // a prior held prompt wasn't final after all
+              heldTurnPromptNarration = cleaned;
+            } else {
+              flushHeldPrompt();              // narrative follows the held prompt → it wasn't final
+              enqueueNarration(cleaned);
+            }
           }
           if (!narDone) narBuf = remaining;
         }
@@ -4160,7 +4177,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (opts?.suppressTurnPromptNarration && isTurnPromptSentence(s)) continue;
           if (!shouldSpeakTailChunk(s)) continue;
           const cleaned = stripSystemLeaks(expandRollRequestForSpeech(s));
-          if (cleaned) enqueueNarration(cleaned);
+          if (!cleaned) continue;
+          if (isTurnPromptSentence(s)) {
+            flushHeldPrompt();              // a prior held prompt wasn't final after all
+            heldTurnPromptNarration = cleaned;
+          } else {
+            flushHeldPrompt();              // narrative follows the held prompt → it wasn't final
+            enqueueNarration(cleaned);
+          }
         }
       }
 
@@ -4835,6 +4859,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           }
           // Turn advance for non-reconciliation case already happened in handleSend
         }
+      }
+
+      // Resolve the held trailing turn prompt now that round management has run.
+      // If this message became the round-completing bridge (predicted via allActed,
+      // OR detected just above this call), reconciliation WILL strip its prompt from
+      // the displayed text — so DROP the held narration. Otherwise it's a normal
+      // next-player prompt that IS shown: speak it.
+      if (heldTurnPromptNarration) {
+        const willBeStripped = opts?.allActed || pendingReconciliationRef.current !== null;
+        if (!willBeStripped) flushHeldPrompt();
+        else heldTurnPromptNarration = null;
       }
 
       // Scene detection — skip on roll submissions and on the brief pendingReconciliation bridge
@@ -6023,7 +6058,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const curObjId = currentObjectiveId(objectives);
           const activeCount = visObjectives.filter(o => o.status !== "done").length;
           return (
-            <div style={{ position: "absolute", top: sceneLoading ? "50px" : "14px", right: "14px", width: "min(380px, 56%)", maxHeight: "calc(100% - 28px)", overflowY: "auto", zIndex: 6, background: "rgba(10,8,20,0.52)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "1px solid rgba(139,92,246,0.34)", borderRadius: "12px", padding: objectivesCollapsed ? "10px 14px" : "12px 14px 13px", boxShadow: "0 8px 26px rgba(0,0,0,0.5)", transition: "padding 0.18s ease" }}>
+            <div style={{ position: "absolute", top: sceneLoading ? "50px" : "14px", right: "14px", width: "min(380px, 56%)", maxHeight: "calc(100% - 28px)", overflowY: "auto", zIndex: 6, background: "rgba(20,15,6,0.55)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "1px solid rgba(212,175,55,0.42)", borderRadius: "12px", padding: objectivesCollapsed ? "10px 14px" : "12px 14px 13px", boxShadow: "0 8px 26px rgba(0,0,0,0.5), 0 0 18px rgba(212,175,55,0.12)", transition: "padding 0.18s ease" }}>
               <button
                 onClick={toggleObjectivesCollapsed}
                 title={objectivesCollapsed ? "Show objectives" : "Hide objectives"}
@@ -6031,11 +6066,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 onMouseLeave={hideTooltip}
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: 0, margin: objectivesCollapsed ? "0" : "0 0 9px 0", cursor: "pointer" }}
               >
-                <span style={{ fontSize: "0.74rem", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, color: "#b9a6e8", display: "flex", alignItems: "center", gap: "7px", textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>
+                <span style={{ fontSize: "0.74rem", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, color: "#e6c668", display: "flex", alignItems: "center", gap: "7px", textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>
                   <span aria-hidden="true">🎯</span> Objectives
-                  {objectivesCollapsed && <span style={{ marginLeft: "5px", color: "#8273ad", fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({activeCount} active)</span>}
+                  {objectivesCollapsed && <span style={{ marginLeft: "5px", color: "#b29a55", fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({activeCount} active)</span>}
                 </span>
-                <span style={{ fontSize: "0.82rem", lineHeight: 1, transform: objectivesCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block", color: "#8273ad" }}>▾</span>
+                <span style={{ fontSize: "0.82rem", lineHeight: 1, transform: objectivesCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block", color: "#b29a55" }}>▾</span>
               </button>
               {!objectivesCollapsed && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -6045,10 +6080,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     return (
                       <div key={o.id} className={current ? "objective-current" : undefined}
                         style={{ display: "flex", alignItems: "flex-start", gap: "9px", fontSize: "0.9rem", lineHeight: 1.42, padding: "7px 10px", borderRadius: "9px",
-                          background: current ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.18)",
-                          border: `1px solid ${current ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.05)"}`,
-                          color: done ? "#8b93a7" : current ? "#f3effe" : "#dbe2ee" }}>
-                        <span style={{ flexShrink: 0, marginTop: "1px", fontSize: "0.86rem", color: done ? "#22c55e" : current ? "#c4b5fd" : "#7c899e" }}>{done ? "✓" : current ? "◆" : "○"}</span>
+                          background: current ? "rgba(212,175,55,0.16)" : "rgba(0,0,0,0.2)",
+                          border: `1px solid ${current ? "rgba(229,194,90,0.55)" : "rgba(212,175,55,0.1)"}`,
+                          color: done ? "#9a8f73" : current ? "#fdf6e3" : "#e6ddc8" }}>
+                        <span style={{ flexShrink: 0, marginTop: "1px", fontSize: "0.86rem", color: done ? "#22c55e" : current ? "#f0d27a" : "#9a8c66" }}>{done ? "✓" : current ? "◆" : "○"}</span>
                         <span style={{ textDecoration: done ? "line-through" : "none", textShadow: "0 1px 3px rgba(0,0,0,0.9)", position: "relative", zIndex: 1 }}>{o.text}</span>
                       </div>
                     );
@@ -6969,13 +7004,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(raw => {
                           const { name, duration } = parseStatusEffect(raw);
-                          const eff = STATUS_EFFECTS[name];
+                          const eff = resolveStatusEffect(name);
                           if (!eff) {
+                            // Unknown effect — still show an icon badge (generic) so every
+                            // active buff/debuff is visible at a glance; name is in the tooltip.
                             return (
-                              <span key={raw} style={{ fontSize: fs(0.6), padding: "1px 6px", borderRadius: "10px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700, cursor: "help" }}
-                                onMouseEnter={e => showTooltip(tipBox(name, name, "#94a3b8"), e)}
+                              <div key={raw} style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: fs(1.7), height: fs(1.7), background: "rgba(148,163,184,0.16)", border: "1.5px solid #94a3b8", borderRadius: "6px", boxShadow: "0 0 7px rgba(148,163,184,0.4)", cursor: "help", fontSize: fs(0.95), flexShrink: 0 }}
+                                onMouseEnter={e => showTooltip(tipBox(name, `${name}${duration ? `\n\nDuration: ${duration}` : ""}`, "#94a3b8"), e)}
                                 onMouseLeave={hideTooltip}
-                              >{name}</span>
+                              >✦</div>
                             );
                           }
                           const durationLine = duration ? `Duration: ${duration}` : `Duration: ${eff.defaultDuration}`;
@@ -7204,8 +7241,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                         {vc.status_effects!.map(raw => {
                           const { name, duration } = parseStatusEffect(raw);
-                          const eff = STATUS_EFFECTS[name];
-                          if (!eff) return <span key={raw} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700 }}>{name}</span>;
+                          const eff = resolveStatusEffect(name);
+                          if (!eff) return <div key={raw} style={{ width: fs(1.8), height: fs(1.8), display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(148,163,184,0.16)", border: "1.5px solid #94a3b8", borderRadius: "6px", boxShadow: "0 0 7px rgba(148,163,184,0.4)", cursor: "help", fontSize: fs(1.05), flexShrink: 0 }}
+                            onMouseEnter={e => showTooltip(tipBox(name, `${name}${duration ? `\n\nDuration: ${duration}` : ""}`, "#94a3b8"), e)}
+                            onMouseLeave={hideTooltip}
+                          >✦</div>;
                           return (
                             <div key={raw}
                               style={{ width: fs(1.8), height: fs(1.8), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 7px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.05), flexShrink: 0 }}
@@ -7389,8 +7429,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                     {character.status_effects!.map(raw => {
                       const { name, duration } = parseStatusEffect(raw);
-                      const eff = STATUS_EFFECTS[name];
-                      if (!eff) return <span key={raw} style={{ fontSize: fs(0.72), padding: "3px 10px", borderRadius: "20px", background: "rgba(100,116,139,0.2)", color: "#94a3b8", fontWeight: 700 }}>{name}</span>;
+                      const eff = resolveStatusEffect(name);
+                      if (!eff) return <div key={raw} style={{ width: fs(1.9), height: fs(1.9), display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(148,163,184,0.16)", border: "1.5px solid #94a3b8", borderRadius: "6px", boxShadow: "0 0 8px rgba(148,163,184,0.4)", cursor: "help", fontSize: fs(1.1), flexShrink: 0 }}
+                        onMouseEnter={e => showTooltip(tipBox(name, `${name}${duration ? `\n\nDuration: ${duration}` : ""}`, "#94a3b8"), e)}
+                        onMouseLeave={hideTooltip}
+                      >✦</div>;
                       return (
                         <div key={raw}
                           style={{ width: fs(1.9), height: fs(1.9), display: "flex", alignItems: "center", justifyContent: "center", background: eff.badgeBg, border: `1.5px solid ${eff.badgeColor}`, borderRadius: "6px", boxShadow: `0 0 8px ${eff.cardGlow}`, cursor: "help", fontSize: fs(1.1), flexShrink: 0 }}

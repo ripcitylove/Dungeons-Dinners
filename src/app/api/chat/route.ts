@@ -499,13 +499,15 @@ STATUS EFFECTS
 The game engine automatically tracks buffs, debuffs, conditions, diseases, and enchantments on player character cards — complete with glowing icons and tooltip descriptions. Use canonical effect names in your narrative and the engine detects and applies them. When an effect expires or is removed, just narrate it ending.
 
 Available effects by category (use these exact names):
-CONDITIONS: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated
-BUFFS: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary
-DEBUFFS: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark
+CONDITIONS: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated, Burning
+BUFFS: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary, Guidance, Resistance, Aided, Heroism, Shield of Faith, Protected, Barkskin, Longstrider, Enlarged
+DEBUFFS: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark, Baned, Slowed, Reduced
 DISEASES: Diseased, Infected, Fevered, Sewer Plague
 ENCHANTMENTS: Attuned, Empowered, Enchanted, Mage Armor, Mirror Image
 
-When applying an effect, mention the duration naturally if known: "Aria falls Prone", "the Blessed effect lasts 1 minute", "Thorin is Poisoned". When it ends: "the paralysis fades", "Aria shakes off the Frightened condition". No special tags needed — the engine reads your prose.
+EVERY buff, debuff, or condition that lands on a player character must be applied as a status effect so its icon shows on their card — this includes minor and short-lived ones. Guidance is a buff: when anyone casts Guidance on a player, apply Guidance to that player. The same goes for Bless (Blessed), Bane (Baned), Resistance, Shield of Faith, and any other spell, ability, item, or hazard that grants or imposes an effect.
+
+When applying an effect, mention the duration naturally if known: "Aria falls Prone", "the Blessed effect lasts 1 minute", "Thorin is Poisoned", "Guidance settles over Barnabus". When it ends: "the paralysis fades", "Aria shakes off the Frightened condition", "the Guidance winks out as the check resolves". No special tags needed — the engine reads your prose.
 
 NO SAME-EFFECT STACKING — NON-NEGOTIABLE
 A character may carry multiple DIFFERENT status effects at once (Blessed + Hasted + Inspired is fine), but NEVER two copies of the same effect. Before applying any spell, cantrip, ability, weapon, or item that grants or imposes a status effect, check the target's current status_effects in the PARTY block.

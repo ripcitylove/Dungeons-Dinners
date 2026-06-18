@@ -109,6 +109,13 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     defaultDuration: "Until end of next turn",
     cardGlow: "rgba(239,68,68,0.4)", badgeBg: "rgba(239,68,68,0.12)", badgeColor: "#f87171",
   },
+  Burning: {
+    icon: "🔥", type: "condition",
+    description: "On fire. Takes fire damage at the start of each of your turns until the flames are put out (an action to extinguish, or dropping prone and rolling).",
+    defaultDuration: "Until extinguished",
+    cardGlow: "rgba(249,115,22,0.6)", badgeBg: "rgba(249,115,22,0.2)", badgeColor: "#f97316",
+    bonusLabel: "dmg/turn",
+  },
 
   // === BUFFS ===
   Blessed: {
@@ -191,6 +198,68 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     defaultDuration: "1 minute",
     cardGlow: "rgba(251,191,36,0.35)", badgeBg: "rgba(251,191,36,0.1)", badgeColor: "#fcd34d",
   },
+  Guidance: {
+    icon: "🔆", type: "buff",
+    description: "A divine cantrip steadies you. Add 1d4 to ONE ability check of your choice before you know the result. Requires the caster's concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(252,211,77,0.5)", badgeBg: "rgba(252,211,77,0.15)", badgeColor: "#fcd34d",
+    bonusLabel: "+1d4",
+  },
+  Resistance: {
+    icon: "🪬", type: "buff",
+    description: "A protective cantrip. Add 1d4 to ONE saving throw of your choice before you know the result. Requires the caster's concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(96,165,250,0.45)", badgeBg: "rgba(96,165,250,0.12)", badgeColor: "#60a5fa",
+    bonusLabel: "+1d4",
+  },
+  Aided: {
+    icon: "💗", type: "buff",
+    description: "The Aid spell bolsters your vitality — your hit point maximum and current HP are increased for the duration.",
+    defaultDuration: "8 hours",
+    cardGlow: "rgba(244,114,182,0.45)", badgeBg: "rgba(244,114,182,0.12)", badgeColor: "#f472b6",
+    bonusLabel: "+HP",
+  },
+  Heroism: {
+    icon: "🦁", type: "buff",
+    description: "Immune to the Frightened condition, and you gain temporary HP at the start of each of your turns equal to the caster's spellcasting modifier.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(251,146,60,0.5)", badgeBg: "rgba(251,146,60,0.15)", badgeColor: "#fb923c",
+    bonusLabel: "temp HP",
+  },
+  "Shield of Faith": {
+    icon: "🔰", type: "buff",
+    description: "A shimmering field of protection grants a +2 bonus to your AC for the duration. Requires the caster's concentration.",
+    defaultDuration: "Concentration, up to 10 minutes",
+    cardGlow: "rgba(252,211,77,0.45)", badgeBg: "rgba(252,211,77,0.12)", badgeColor: "#fcd34d",
+    bonusLabel: "+2 AC",
+  },
+  Protected: {
+    icon: "🛐", type: "buff",
+    description: "Protection from Evil and Good: aberrations, celestials, elementals, fey, fiends, and undead have disadvantage on attacks against you, and you can't be charmed, frightened, or possessed by them.",
+    defaultDuration: "Concentration, up to 10 minutes",
+    cardGlow: "rgba(167,139,250,0.45)", badgeBg: "rgba(167,139,250,0.12)", badgeColor: "#a78bfa",
+  },
+  Barkskin: {
+    icon: "🌳", type: "buff",
+    description: "Your skin turns rough and bark-like. Your AC can't be lower than 16, regardless of the armor you wear. Requires concentration.",
+    defaultDuration: "Concentration, up to 1 hour",
+    cardGlow: "rgba(101,163,13,0.45)", badgeBg: "rgba(101,163,13,0.15)", badgeColor: "#84cc16",
+    bonusLabel: "AC 16",
+  },
+  Longstrider: {
+    icon: "👟", type: "buff",
+    description: "Your speed increases by 10 feet for the duration.",
+    defaultDuration: "1 hour",
+    cardGlow: "rgba(45,212,191,0.45)", badgeBg: "rgba(45,212,191,0.12)", badgeColor: "#2dd4bf",
+    bonusLabel: "+10 ft",
+  },
+  Enlarged: {
+    icon: "🔺", type: "buff",
+    description: "Enlarge: your size doubles. Advantage on STR checks and STR saves, and your weapon attacks deal an extra 1d4 damage. Requires concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(248,113,113,0.45)", badgeBg: "rgba(248,113,113,0.12)", badgeColor: "#f87171",
+    bonusLabel: "+1d4 dmg",
+  },
 
   // === DEBUFFS ===
   Cursed: {
@@ -231,6 +300,27 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
     defaultDuration: "1 hour (concentration)",
     cardGlow: "rgba(180,83,9,0.45)", badgeBg: "rgba(180,83,9,0.15)", badgeColor: "#d97706",
     bonusLabel: "+1d6 dmg",
+  },
+  Baned: {
+    icon: "🌑", type: "debuff",
+    description: "The Bane spell saps you — subtract 1d4 from each attack roll and saving throw you make. Requires the caster's concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(124,58,237,0.5)", badgeBg: "rgba(124,58,237,0.18)", badgeColor: "#7c3aed",
+    bonusLabel: "-1d4",
+  },
+  Slowed: {
+    icon: "🐌", type: "debuff",
+    description: "The Slow spell: speed halved, -2 to AC and DEX saves, no reactions, and only one action OR bonus action each turn. Requires concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(100,116,139,0.5)", badgeBg: "rgba(100,116,139,0.18)", badgeColor: "#94a3b8",
+    bonusLabel: "-2 AC",
+  },
+  Reduced: {
+    icon: "🔻", type: "debuff",
+    description: "Reduce: your size halves. Disadvantage on STR checks and STR saves, and your weapon attacks deal 1d4 less damage. Requires concentration.",
+    defaultDuration: "Concentration, up to 1 minute",
+    cardGlow: "rgba(148,163,184,0.4)", badgeBg: "rgba(148,163,184,0.12)", badgeColor: "#cbd5e1",
+    bonusLabel: "-1d4 dmg",
   },
 
   // === DISEASES ===
@@ -296,6 +386,56 @@ export const STATUS_EFFECTS: Record<string, StatusEffect> = {
 
 const TYPE_PRIORITY: EffectType[] = ["condition", "disease", "debuff", "enchantment", "buff"];
 
+// The DM/extraction LLM does not always write the exact canonical key — it may use
+// the spell's name ("Bless", "Bane", "Haste") instead of the effect form
+// ("Blessed", "Baned", "Hasted"), or a near-synonym. These aliases map those common
+// variants onto a canonical STATUS_EFFECTS key so the card still shows the right
+// icon. Keys are normalized: lowercased, apostrophes removed, whitespace collapsed.
+const EFFECT_ALIASES: Record<string, string> = {
+  bless: "Blessed", blessing: "Blessed",
+  haste: "Hasted",
+  rage: "Raging", enraged: "Raging",
+  bane: "Baned",
+  slow: "Slowed",
+  enlarge: "Enlarged",
+  reduce: "Reduced",
+  hex: "Hexed",
+  curse: "Cursed",
+  guided: "Guidance", guidance: "Guidance",
+  aid: "Aided",
+  concentration: "Concentrating", concentrate: "Concentrating",
+  invisibility: "Invisible",
+  poison: "Poisoned",
+  fly: "Flying", flight: "Flying",
+  inspiration: "Inspired",
+  "protection from evil and good": "Protected", "protection from evil": "Protected", protection: "Protected",
+  "hunters mark": "Hunter's Mark",
+  "wild shape": "Wild Shaped", wildshape: "Wild Shaped",
+  paralysis: "Paralyzed",
+  burned: "Burning", "on fire": "Burning", ablaze: "Burning", aflame: "Burning",
+};
+
+const normEffectKey = (s: string) => s.trim().toLowerCase().replace(/['']/g, "").replace(/\s+/g, " ");
+
+/**
+ * Resolve an effect name (canonical key, case variant, or known alias / spell name)
+ * to its StatusEffect, or null if truly unknown. Pass the bare NAME (strip any
+ * "(duration)" with parseStatusEffect first).
+ */
+export function resolveStatusEffect(rawName: string): StatusEffect | null {
+  if (!rawName) return null;
+  const name = rawName.trim();
+  if (STATUS_EFFECTS[name]) return STATUS_EFFECTS[name];
+  const norm = normEffectKey(name);
+  // case-insensitive exact key match
+  for (const k of Object.keys(STATUS_EFFECTS)) {
+    if (normEffectKey(k) === norm) return STATUS_EFFECTS[k];
+  }
+  const alias = EFFECT_ALIASES[norm];
+  if (alias && STATUS_EFFECTS[alias]) return STATUS_EFFECTS[alias];
+  return null;
+}
+
 export function parseStatusEffect(raw: string): { name: string; duration: string | null } {
   const m = raw.match(/^(.+?)\s+\(([^)]+)\)\s*$/);
   if (m) return { name: m[1].trim(), duration: m[2].trim() };
@@ -308,7 +448,7 @@ export function getDominantEffect(effects: string[]): StatusEffect | null {
   let bestPriority = TYPE_PRIORITY.length;
   for (const raw of effects) {
     const { name } = parseStatusEffect(raw);
-    const effect = STATUS_EFFECTS[name];
+    const effect = resolveStatusEffect(name);
     if (!effect) continue;
     const p = TYPE_PRIORITY.indexOf(effect.type);
     if (p < bestPriority) { bestPriority = p; best = effect; }
