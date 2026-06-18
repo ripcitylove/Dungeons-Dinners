@@ -895,7 +895,9 @@ body.dice-modal-open .tooltip-size-toolbar {
   }
 }
 .card-liftoff {
-  animation: cardLiftOff 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  /* Slowed 0.7s → 0.8s and eased more gently so the lift glides rather than snaps.
+     Duration MUST match LIFTOFF_MS in campaign/[id]/page.tsx. */
+  animation: cardLiftOff 0.8s cubic-bezier(0.33, 0, 0.3, 1) forwards;
   transform-origin: center center;
   will-change: transform, opacity, filter;
 }
@@ -906,13 +908,13 @@ body.dice-modal-open .tooltip-size-toolbar {
     opacity: 0;
     filter: brightness(1.35) drop-shadow(0 0 18px rgba(196,181,253,0.85));
   }
-  50% {
-    transform: translateY(8px) scale(1.05) rotate(0deg);
+  55% {
+    transform: translateY(5px) scale(1.035) rotate(0deg);
     opacity: 1;
-    filter: brightness(1.12) drop-shadow(0 0 8px rgba(196,181,253,0.4));
+    filter: brightness(1.1) drop-shadow(0 0 8px rgba(196,181,253,0.4));
   }
-  72% {
-    transform: translateY(-4px) scale(0.98) rotate(0deg);
+  76% {
+    transform: translateY(-2px) scale(0.99) rotate(0deg);
     opacity: 1;
   }
   100% {
@@ -922,7 +924,9 @@ body.dice-modal-open .tooltip-size-toolbar {
   }
 }
 .card-dropin {
-  animation: cardDropIn 0.85s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  /* Slowed 0.85s → 1.0s with a softer spring (overshoot 1.56 → 1.18) so the card
+     settles smoothly instead of bouncing hard. Duration MUST match DROPIN_MS. */
+  animation: cardDropIn 1.0s cubic-bezier(0.32, 1.18, 0.5, 1) forwards;
   transform-origin: center center;
   will-change: transform, opacity, filter;
 }

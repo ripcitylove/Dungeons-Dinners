@@ -1260,8 +1260,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [turnEndPhase, setTurnEndPhase] = useState<"liftoff" | "dropin" | null>(null);
   const turnEndTimer1Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turnEndTimer2Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const LIFTOFF_MS = 700; // must match .card-liftoff duration
-  const DROPIN_MS  = 850; // must match .card-dropin duration
+  const LIFTOFF_MS = 800;  // must match .card-liftoff duration (slowed + smoothed)
+  const DROPIN_MS  = 1000; // must match .card-dropin duration
   // Card-shuffle SFX, played as a party card lifts off the board. Preloaded once
   // and reset to start so rapid turn changes don't overlap or re-fetch.
   const cardShuffleRef = useRef<HTMLAudioElement | null>(null);

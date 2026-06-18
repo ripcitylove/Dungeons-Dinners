@@ -308,7 +308,7 @@ function DieSVG({
           <line x1="50" y1="6" x2="50" y2="94" stroke={edgeColor} strokeWidth="0.8" strokeOpacity="0.28"/>
           <circle cx="50" cy="50" r="44" fill={`url(#${uid}rg)`}/>
           {numberValue != null && (
-            <text x={g.nx} y={g.ny} textAnchor="middle" dominantBaseline="middle"
+            <text x={50} y={50} textAnchor="middle" dominantBaseline="central"
               fontSize={g.nSize} fontWeight="700" fill="rgba(255,255,255,0.97)"
               stroke="rgba(0,0,0,0.55)" strokeWidth="0.5" paintOrder="stroke"
               fontFamily="Cinzel,Palatino Linotype,serif">{numberValue}</text>
@@ -354,7 +354,7 @@ function DieSVG({
 
         {/* Die number */}
         {numberValue != null && (
-          <text x={g.nx} y={g.ny} textAnchor="middle" dominantBaseline="middle"
+          <text x={50} y={50} textAnchor="middle" dominantBaseline="central"
             fontSize={g.nSize} fontWeight="700" fill="rgba(255,255,255,0.97)"
             stroke="rgba(0,0,0,0.60)" strokeWidth="0.6" paintOrder="stroke"
             fontFamily="Cinzel,Palatino Linotype,serif">{numberValue}</text>

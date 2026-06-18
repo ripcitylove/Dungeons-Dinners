@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { NextRequest } from "next/server";
+import { numbersToWords } from "../../../lib/numberSpeech";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,19 +31,19 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   },
   gravedigger: {
     voiceId:    "N2lVS1w4EtoT3dr4eOWO",
-    stability:  0.68,
-    similarity: 0.78,
-    style:      0.40,
+    // 0.68 → 0.76 + style 0.40 → 0.34: steadier inflection, fewer odd emphases.
+    stability:  0.76,
+    similarity: 0.80,
+    style:      0.34,
   },
   bard: {
     voiceId:    "pFZP5JQG7iQjIQuC4Bku",
-    // Lifted from 0.62 → 0.74 after continued reports of slurring / nonsense
-    // syllables on bard, the most popular default voice. 0.62 was still under
-    // the safe band; 0.74 keeps the playful prosody while eliminating the
-    // erratic-phoneme failure mode on short-to-medium clips.
-    stability:  0.74,
-    similarity: 0.78,
-    style:      0.32,   // was 0.40 — small drop reduces expressive overshoot
+    // Lifted 0.62 → 0.74 → 0.80 after continued reports of slurring / odd
+    // inflection on bard, the most popular default voice. 0.80 keeps the playful
+    // prosody while keeping emphasis and phonemes steady on short-to-medium clips.
+    stability:  0.80,
+    similarity: 0.80,
+    style:      0.28,   // was 0.32 — a touch less expressive overshoot
   },
   oracle: {
     voiceId:    "Xb7hH8MSUJpSbSDYk0k2",
@@ -52,11 +53,11 @@ const VOICE_CONFIG: Record<AllowedVoice, {
   },
   shade: {
     voiceId:    "SOYHLrjzK2X1ezoPC6cr",
-    // Same rationale as bard — 0.65 was the second-lowest setting in the
-    // roster and shade's hard-edged delivery amplified any erratic phonemes.
-    stability:  0.72,
-    similarity: 0.78,
-    style:      0.30,   // was 0.35
+    // Same rationale as bard — 0.65 → 0.72 → 0.78. Shade's hard-edged delivery
+    // amplified any erratic phonemes / odd inflection; 0.78 steadies it.
+    stability:  0.78,
+    similarity: 0.80,
+    style:      0.28,
   },
   sage: {
     voiceId:    "pqHfZKP75CvOlQylNhV4",
@@ -158,12 +159,15 @@ function normalizeForTTS(raw: string): string {
     .trim();
 }
 
+// numbersToWords runs as the LAST step (after symbol stripping) so the engine
+// pronounces "5" as "five" and "d20" as "d twenty" instead of slurring digits.
+
 async function synthesize(text: string, voice: string, fresh = false): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
   if (!text?.trim()) return new Response("No text", { status: 400 });
 
-  text = normalizeForTTS(text);
+  text = numbersToWords(normalizeForTTS(text));
 
   // Reject short fragments. Given < ~16 chars of context (raised from 4
   // after continued reports of slurring), ElevenLabs cannot reliably establish
