@@ -1131,6 +1131,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return 0.9;
   });
 
+  // Light / dark theme — persisted, applied (scoped) to the campaign <main> below.
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("dnd_theme");
+      if (saved === "light" || saved === "dark") return saved;
+    }
+    return "dark";
+  });
+  useEffect(() => { try { localStorage.setItem("dnd_theme", theme); } catch { /* ignore */ } }, [theme]);
+
   // Resizable pane widths — persisted across sessions
   const [chatPaneWidth,    setChatPaneWidth]    = useState<number>(380);
   const [sidebarPaneWidth, setSidebarPaneWidth] = useState<number>(270);
@@ -5739,7 +5749,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
+    <main data-theme={theme} style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
       {/* ── Empty-party reclaim modal ──
           Fires when a campaign loads with zero seated characters. Owner picks
           one of their roster characters to seat as the new party leader. */}
@@ -6285,7 +6295,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       </div>
 
       {/* ── Pane 2: Chat ── */}
-      <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--background)", overflow: "hidden" }}>
+      <div style={{ width: chatPaneWidth, flex: "0 0 auto", display: "flex", flexDirection: "column", background: "var(--canvas-bg)", overflow: "hidden" }}>
         {/* Header */}
         <header className="glass-panel" style={{ margin: "16px", padding: "12px 16px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", overflow: "visible", flexShrink: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -6317,6 +6327,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A+</button>
           </div>
+          {/* Light / dark theme toggle */}
+          <button
+            onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: "8px", width: "36px", height: "36px", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", flexShrink: 0, transition: "all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#94a3b8"; }}
+          >
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
           {/* Narrator mute button — shown only when narration is on */}
           {narrationEnabled && (
             <button
@@ -6762,7 +6782,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       </div>
 
       {/* ── Pane 3: Sidebar ── */}
-      <div style={{ width: sidebarPaneWidth, flex: "0 0 auto", background: "var(--card-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ width: sidebarPaneWidth, flex: "0 0 auto", background: "var(--canvas-side-bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Tab toggle */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           {(["party", "sheet", "log"] as const).map(tab => {

@@ -21,6 +21,41 @@
   --gold: #d4a96a;
   --gold-soft: rgba(212, 169, 106, 0.45);
   --gold-glow: rgba(212, 169, 106, 0.28);
+
+  /* ── Theme canvases (DARK = default) ──────────────────────────────────────────
+     Layered background values (subtle texture gradients + base color) for the
+     narration/story pane and the party/sidebar pane. The dark cards & message
+     bubbles float on top and read on either theme. --text-on-canvas* style the few
+     labels that sit directly on the canvas (sender names, turn bar). */
+  --canvas-bg:
+    radial-gradient(115% 90% at 18% -10%, rgba(139,92,246,0.10), transparent 55%),
+    radial-gradient(120% 80% at 95% 110%, rgba(212,175,55,0.06), transparent 55%),
+    linear-gradient(160deg, #0c1020 0%, #080b16 60%, #0b0e1c 100%);
+  --canvas-side-bg:
+    radial-gradient(120% 70% at 100% 0%, rgba(139,92,246,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(24,32,52,0.85) 0%, rgba(16,22,38,0.92) 100%);
+  --text-on-canvas: #e2e8f0;
+  --text-on-canvas-dim: #94a3b8;
+  --text-on-canvas-faint: #64748b;
+}
+
+/* ── LIGHT THEME ────────────────────────────────────────────────────────────────
+   A warm "tabletop" canvas (parchment / candle-lit wood) with the existing dark
+   fantasy cards & bubbles floating on it — coherent and readable without a full
+   inline-color refactor. */
+[data-theme="light"] {
+  --background: #efe7d6;
+  --foreground: #2a2520;
+  --canvas-bg:
+    radial-gradient(115% 90% at 18% -10%, rgba(120,82,34,0.12), transparent 55%),
+    radial-gradient(120% 80% at 95% 110%, rgba(90,70,140,0.08), transparent 55%),
+    linear-gradient(160deg, #efe6d4 0%, #e7ddc8 60%, #ece2cd 100%);
+  --canvas-side-bg:
+    radial-gradient(120% 70% at 100% 0%, rgba(120,82,34,0.12), transparent 60%),
+    linear-gradient(180deg, #ece2cc 0%, #e4d9c0 100%);
+  --text-on-canvas: #2c2620;
+  --text-on-canvas-dim: #6b5f4d;
+  --text-on-canvas-faint: #8a7d66;
 }
 
 * {
