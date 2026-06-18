@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import '../globals.css';
 
 import { supabase } from '../../lib/supabaseClient';
+import { sanitizeCharacterName, characterNameError } from '../../lib/nameValidation';
 import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
@@ -320,7 +321,8 @@ export default function CreateCharacter() {
   // ── Navigation ──────────────────────────────────────────────────────────────
   const nextStep = () => {
     if (step === 1) {
-      if (!character.name.trim()) { setNameError('Your character needs a name.'); return; }
+      const nameErr = characterNameError(character.name);
+      if (nameErr) { setNameError(nameErr); return; }
       if (!character.race) return;
     }
     if (step === 2) {
@@ -363,7 +365,8 @@ export default function CreateCharacter() {
       if (!user) { alert("You must be logged in!"); router.push('/auth'); return; }
 
       const trimmedName = character.name.trim();
-      if (!trimmedName) { setStep(1); setNameError('Your character needs a name.'); setSaving(false); return; }
+      const nameErr = characterNameError(trimmedName);
+      if (nameErr) { setStep(1); setNameError(nameErr); setSaving(false); return; }
 
       // Roster cap — a user may keep at most 40 characters in their roster.
       const { count: rosterCount } = await supabase
@@ -641,7 +644,11 @@ export default function CreateCharacter() {
                     onMouseLeave={hideTooltip}>Character Name</label>
                   <input
                     type="text" value={character.name}
-                    onChange={e => { setCharacter(c => ({ ...c, name: e.target.value })); setNameError(''); }}
+                    onChange={e => {
+                      const clean = sanitizeCharacterName(e.target.value);
+                      setNameError(clean !== e.target.value ? "Names use letters, spaces, apostrophes, and hyphens only." : '');
+                      setCharacter(c => ({ ...c, name: clean }));
+                    }}
                     style={{ width: '100%', padding: '18px 20px', borderRadius: '10px', border: `1px solid ${nameError ? '#ef4444' : 'var(--border)'}`, background: 'rgba(0,0,0,0.25)', color: 'white', fontSize: '1.2rem' }}
                     placeholder="e.g. Elara Moonwhisper"
                   />

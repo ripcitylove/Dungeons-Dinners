@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import { sanitizeCharacterName, characterNameError } from "../../lib/nameValidation";
 import "../globals.css";
 import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
@@ -385,7 +386,8 @@ export default function CreateCampaignWizard() {
 
     if (phase === "characters") {
       if (charStep === 1) {
-        if (!draft.name.trim()) { setCharNameErr("Your character needs a name."); return; }
+        const nameErr = characterNameError(draft.name);
+        if (nameErr) { setCharNameErr(nameErr); return; }
         if (!draft.race) return;
         const nameTaken = completedChars.some(c => c.name.trim().toLowerCase() === draft.name.trim().toLowerCase());
         if (nameTaken) { setCharNameErr(`"${draft.name.trim()}" is already in your party.`); return; }
@@ -815,7 +817,11 @@ export default function CreateCampaignWizard() {
                           onMouseLeave={hideTooltip}>Character Name</label>
                         <input
                           autoFocus type="text" value={draft.name}
-                          onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setCharNameErr(""); }}
+                          onChange={e => {
+                            const clean = sanitizeCharacterName(e.target.value);
+                            setCharNameErr(clean !== e.target.value ? "Names use letters, spaces, apostrophes, and hyphens only." : "");
+                            setDraft(d => ({ ...d, name: clean }));
+                          }}
                           placeholder="e.g. Elara Moonwhisper"
                           style={{ width: "100%", padding: "18px 20px", borderRadius: "10px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.25)", color: "white", fontSize: "1.2rem" }}
                         />
