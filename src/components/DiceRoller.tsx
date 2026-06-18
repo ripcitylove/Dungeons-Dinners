@@ -205,7 +205,11 @@ function crystalRing(ctx: AudioContext, t: number, vol = 0.18) {
   [2200,3300,4400,6600].forEach((f,i) => tone(ctx, f, vol*(0.9**i), t, 0.6+i*0.08));
   tone(ctx, 1100, vol*0.55, t, 0.9, "triangle");
 }
-function playRollSound() {
+// Recorded dice-rattle SFX, played the instant the die is thrown. Cached so rapid
+// re-rolls restart cleanly. Falls back to a synthesized rattle if the clip can't
+// load/play. Fired from a user click (die press), so autoplay policy permits it.
+let _diceRollAudio: HTMLAudioElement | null = null;
+function playSynthRollSound() {
   const ctx = getCtx(); if (!ctx) return;
   noise(ctx, 0.03, 2400, 0.55, 0, 2.2);
   noise(ctx, 0.04,  900, 0.48, 0.005);
@@ -216,6 +220,13 @@ function playRollSound() {
   noise(ctx, 0.12, 280, 0.52, 1.32);
   tone(ctx, 160, 0.14, 1.32, 0.4, "triangle");
   crystalRing(ctx, 1.36, 0.14);
+}
+function playRollSound() {
+  try {
+    if (!_diceRollAudio) { _diceRollAudio = new Audio("/sounds/dice-roll.mp3"); _diceRollAudio.volume = 0.7; }
+    _diceRollAudio.currentTime = 0;
+    _diceRollAudio.play().catch(() => { playSynthRollSound(); });
+  } catch { playSynthRollSound(); }
 }
 function playResultSound(q: Quality) {
   const ctx = getCtx(); if (!ctx) return;
