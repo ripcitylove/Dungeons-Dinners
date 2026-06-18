@@ -5186,15 +5186,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       && roundActionsRef.current.length >= campaignPartyRef.current.length
       && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
 
-    // This response will complete the round → reconciliation fires next and strips
-    // any trailing "what do you do, X?" from THIS message's displayed text. Tell
-    // sendToAI to skip NARRATING that prompt too, so the voice doesn't ask for an
-    // action the screen never shows. Covers both the bridge (allActedForDM) and a
-    // round-ending roll submission (whose response also gets stripped).
-    const rollCompletesRound = isRollSubmit && order.length > 1
-      && roundActionsRef.current.length >= campaignPartyRef.current.length
-      && order.every(cid => roundActionsRef.current.some(a => a.characterId === cid));
-    const suppressTurnPromptNarration = allActedForDM || rollCompletesRound;
+    // Suppress NARRATING a trailing "what do you do, X?" only for the bridge
+    // response (allActedForDM) — that message is ALWAYS followed by reconciliation,
+    // which strips its prompt from the displayed text, so narrating it would have
+    // the voice ask for an action the screen never shows. We do NOT suppress on
+    // roll submissions: a roll result usually prompts the NEXT player normally
+    // (prompt shown AND should be spoken), and predicting "this roll ends the
+    // round" was wrong often enough to silence legitimate prompts.
+    const suppressTurnPromptNarration = allActedForDM;
 
     // Capture current turn index before the DM responds so we can detect whether
     // (The previous "round-complete short circuit" that fired reconciliation
@@ -6105,33 +6104,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const curObjId = currentObjectiveId(objectives);
           const activeCount = visObjectives.filter(o => o.status !== "done").length;
           return (
-            <div style={{ position: "absolute", top: sceneLoading ? "46px" : "12px", right: "12px", width: "min(290px, 46%)", zIndex: 6, background: "rgba(10,8,20,0.40)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)", border: "1px solid rgba(139,92,246,0.28)", borderRadius: "10px", padding: objectivesCollapsed ? "7px 11px" : "9px 11px 10px", boxShadow: "0 6px 22px rgba(0,0,0,0.45)", transition: "padding 0.18s ease" }}>
+            <div style={{ position: "absolute", top: sceneLoading ? "50px" : "14px", right: "14px", width: "min(380px, 56%)", maxHeight: "calc(100% - 28px)", overflowY: "auto", zIndex: 6, background: "rgba(10,8,20,0.52)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "1px solid rgba(139,92,246,0.34)", borderRadius: "12px", padding: objectivesCollapsed ? "10px 14px" : "12px 14px 13px", boxShadow: "0 8px 26px rgba(0,0,0,0.5)", transition: "padding 0.18s ease" }}>
               <button
                 onClick={toggleObjectivesCollapsed}
                 title={objectivesCollapsed ? "Show objectives" : "Hide objectives"}
                 onMouseEnter={e => showTooltip(tipBox("Objectives", "Your campaign's quest spine. The glowing entry is your current goal — the DM reveals new objectives as the party discovers them, and checks them off as you complete them."), e)}
                 onMouseLeave={hideTooltip}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: 0, margin: objectivesCollapsed ? "0" : "0 0 7px 0", cursor: "pointer" }}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: 0, margin: objectivesCollapsed ? "0" : "0 0 9px 0", cursor: "pointer" }}
               >
-                <span style={{ fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: 700, color: "#a78bda", display: "flex", alignItems: "center", gap: "6px", textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>
+                <span style={{ fontSize: "0.74rem", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, color: "#b9a6e8", display: "flex", alignItems: "center", gap: "7px", textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>
                   <span aria-hidden="true">🎯</span> Objectives
-                  {objectivesCollapsed && <span style={{ marginLeft: "4px", color: "#8273ad", fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({activeCount} active)</span>}
+                  {objectivesCollapsed && <span style={{ marginLeft: "5px", color: "#8273ad", fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>({activeCount} active)</span>}
                 </span>
-                <span style={{ fontSize: "0.72rem", lineHeight: 1, transform: objectivesCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block", color: "#7c6aa8" }}>▾</span>
+                <span style={{ fontSize: "0.82rem", lineHeight: 1, transform: objectivesCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.18s ease", display: "inline-block", color: "#8273ad" }}>▾</span>
               </button>
               {!objectivesCollapsed && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {visObjectives.map(o => {
                     const done = o.status === "done";
                     const current = o.id === curObjId;
                     return (
                       <div key={o.id} className={current ? "objective-current" : undefined}
-                        style={{ display: "flex", alignItems: "flex-start", gap: "7px", fontSize: "0.75rem", lineHeight: 1.32, padding: "4px 7px", borderRadius: "7px",
-                          background: current ? "rgba(139,92,246,0.14)" : "transparent",
-                          border: `1px solid ${current ? "rgba(167,139,250,0.45)" : "transparent"}`,
-                          color: done ? "#7c8497" : current ? "#ede9fe" : "#cbd5e1" }}>
-                        <span style={{ flexShrink: 0, marginTop: "1px", fontSize: "0.72rem", color: done ? "#22c55e" : current ? "#c4b5fd" : "#64748b" }}>{done ? "✓" : current ? "◆" : "○"}</span>
-                        <span style={{ textDecoration: done ? "line-through" : "none", textShadow: "0 1px 3px rgba(0,0,0,0.85)", position: "relative", zIndex: 1 }}>{o.text}</span>
+                        style={{ display: "flex", alignItems: "flex-start", gap: "9px", fontSize: "0.9rem", lineHeight: 1.42, padding: "7px 10px", borderRadius: "9px",
+                          background: current ? "rgba(139,92,246,0.16)" : "rgba(0,0,0,0.18)",
+                          border: `1px solid ${current ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.05)"}`,
+                          color: done ? "#8b93a7" : current ? "#f3effe" : "#dbe2ee" }}>
+                        <span style={{ flexShrink: 0, marginTop: "1px", fontSize: "0.86rem", color: done ? "#22c55e" : current ? "#c4b5fd" : "#7c899e" }}>{done ? "✓" : current ? "◆" : "○"}</span>
+                        <span style={{ textDecoration: done ? "line-through" : "none", textShadow: "0 1px 3px rgba(0,0,0,0.9)", position: "relative", zIndex: 1 }}>{o.text}</span>
                       </div>
                     );
                   })}
