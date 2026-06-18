@@ -26,7 +26,7 @@ import { inferSkillCheck } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
-import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech } from "../../../lib/narration";
+import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -847,91 +847,8 @@ function hexToRgb(hex: string): string {
 // runs, and trims hiss-triggering clutter from the SPOKEN text only.
 const stripTtsArtifacts = sanitizeForTts;
 
-// Pull as many TTS-ready chunks as possible from a streaming narration buffer.
-// Returns the chunks plus the leftover buffer.
-//
-// Three failure modes this handles:
-//   1. Multiple complete sentences in one chunk — loop until none match.
-//   2. Smart/curly quotes after the sentence-ender (DM models love " " ' ') —
-//      character class accepts them alongside straight quotes.
-//   3. A genuinely long clause (DM writes a 600-char run-on or quotes block) —
-//      force-split at the nearest clause boundary so no TTS clip exceeds the
-//      45s watchdog limit. Worst-case forces a hard cut.
-//
-// When `isFinal=true` (end of stream), accept sentences without trailing
-// whitespace and dump anything left over as a final fragment.
-function pullNarrationChunks(buf: string, isFinal: boolean): { chunks: string[]; remaining: string } {
-  const chunks: string[] = [];
-  const MAX_CHUNK = 280;   // ~20s of speech — safely under the 45s watchdog
-  const MIN_FORCED = 60;   // never force-split shorter than this
-  // Quote characters allowed after a sentence-ender: straight ' " plus all curly variants
-  const QUOTE_CLASS = "[\\u2018\\u2019\\u201C\\u201D'\"]";
-  // Streaming match: 40+ chars then sentence-ender + optional quote + whitespace
-  const SENT_RE_STREAM = new RegExp(`^([\\s\\S]{40,}?[.!?…]${QUOTE_CLASS}?)\\s+`);
-  // Final match: shorter min, trailing whitespace OR end-of-buffer
-  const SENT_RE_FINAL  = new RegExp(`^([\\s\\S]{8,}?[.!?…]${QUOTE_CLASS}?)(?:\\s+|$)`);
-
-  while (true) {
-    const m = buf.match(isFinal ? SENT_RE_FINAL : SENT_RE_STREAM);
-    if (m) {
-      chunks.push(m[1].trim());
-      buf = buf.slice(m[0].length);
-      continue;
-    }
-    // No sentence-ender found — force-split if the buffer has grown past MAX_CHUNK
-    if (buf.length > MAX_CHUNK) {
-      const slice = buf.slice(0, MAX_CHUNK);
-      const boundary = Math.max(
-        slice.lastIndexOf(", "),
-        slice.lastIndexOf("; "),
-        slice.lastIndexOf("— "),
-        slice.lastIndexOf("– "),
-      );
-      if (boundary > MIN_FORCED) {
-        chunks.push(buf.slice(0, boundary + 1).trim());
-        buf = buf.slice(boundary + 2);
-        continue;
-      }
-      const wsBoundary = slice.lastIndexOf(" ");
-      if (wsBoundary > MIN_FORCED) {
-        chunks.push(buf.slice(0, wsBoundary).trim());
-        buf = buf.slice(wsBoundary + 1);
-        continue;
-      }
-      // Last resort: hard cut at MAX_CHUNK
-      chunks.push(buf.slice(0, MAX_CHUNK).trim());
-      buf = buf.slice(MAX_CHUNK);
-      continue;
-    }
-    break;
-  }
-  // At end of stream, anything still in the buffer is the final fragment
-  if (isFinal && buf.trim().length > 0) {
-    chunks.push(buf.trim());
-    buf = "";
-  }
-
-  // Merge tiny chunks (< MIN_TTS_CHARS) with the next chunk. ElevenLabs given a
-  // ~25-char fragment in isolation (e.g. `"Where did you get those?"`) rushes
-  // the prosody and drops syllables — the resulting clip sounds like nonsense
-  // or a foreign language. Concatenating short sentences with the next sentence
-  // gives the model enough context to voice them naturally.
-  //
-  // The merge only fires when there IS a next chunk. The final chunk is left
-  // untouched (even if short) — the alternative would be losing it entirely.
-  const MIN_TTS_CHARS = 40;
-  const merged: string[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    let cur = chunks[i];
-    // Merge forward — combined with subsequent chunks until length meets the floor
-    while (cur.length < MIN_TTS_CHARS && i + 1 < chunks.length && cur.length + chunks[i + 1].length + 1 <= MAX_CHUNK) {
-      cur = cur + " " + chunks[i + 1];
-      i++;
-    }
-    merged.push(cur);
-  }
-  return { chunks: merged, remaining: buf };
-}
+// pullNarrationChunks now lives in ../../../lib/narration so the streaming split
+// is unit-tested by the same code path the app runs. Imported above.
 
 const CLASS_EMOJI: Record<string, string> = {
   Fighter: "⚔️", Wizard: "🧙", Rogue: "🗡️", Cleric: "✝️", Paladin: "🛡️", Ranger: "🏹",
@@ -4230,17 +4147,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       // Final flush — split anything remaining into sentence-sized chunks so we never
       // dump a multi-paragraph response as one giant TTS clip (which the watchdog kills).
-      // Tail guard raised from 8 → 24 chars: ElevenLabs at < ~16-24 chars of context
-      // routinely produces slurred or "speaking in tongues" output because there's not
-      // enough prosody window to settle on a voice. The text still appears in chat;
-      // we just skip narrating that one stub. Falling short on the LAST sentence's
-      // audio is preferable to playing a garbled clip the player has to mentally
-      // un-hear.
-      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 24) {
+      // Per-chunk gating via shouldSpeakTailChunk: ElevenLabs at < ~24 chars of context
+      // routinely produces slurred or "speaking in tongues" output, so generic short
+      // stubs are still skipped — BUT a turn prompt ("Shmang, what do you do?", 23 chars)
+      // and a bare roll request ("Roll a d20.", 11 chars) are the two short lines a turn
+      // most often ENDS on, and both MUST be heard. The old blanket `> 24` tail guard
+      // silently ate them. shouldSpeakTailChunk speaks those two while still dropping
+      // true garble stubs; roll requests are expanded to clear the engine's 16-char floor.
+      if (narrationEnabledRef.current && !campaignLoadingRef.current && !narDone && narBuf.trim().length > 0) {
         const { chunks: tail } = pullNarrationChunks(narBuf, true);
         for (const s of tail) {
           if (opts?.suppressTurnPromptNarration && isTurnPromptSentence(s)) continue;
-          const cleaned = stripSystemLeaks(s);
+          if (!shouldSpeakTailChunk(s)) continue;
+          const cleaned = stripSystemLeaks(expandRollRequestForSpeech(s));
           if (cleaned) enqueueNarration(cleaned);
         }
       }
