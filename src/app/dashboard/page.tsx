@@ -562,8 +562,8 @@ export default function Dashboard() {
             <h2 style={{ fontSize: "2.01rem", fontWeight: 800, marginBottom: "24px" }}>Here&apos;s how to get started in 3 steps:</h2>
             <div style={{ display: "flex", gap: "18px", flexWrap: "wrap" }}>
               {[
-                { n: "1", icon: "⚒️", title: "Create a Character", desc: "Head to the Roster section on the right and hit Create a Character. Pick your race, class, and roll your ability scores." },
-                { n: "2", icon: "🗺️", title: "Start a Campaign",   desc: "Click + New Campaign. Set how many players are starting today, then build or import characters from your roster." },
+                { n: "1", icon: "⚒️", title: "Create a Character", desc: "Hit + Create a Character in the Heroes panel. Pick your race, class, and roll your ability scores." },
+                { n: "2", icon: "🗺️", title: "Start a Campaign",   desc: "Hit + Start a Campaign in the Adventures panel. Set how many players are starting today, then build or import characters from your roster." },
                 { n: "3", icon: "🔗", title: "Invite Your Party",   desc: "Once inside your campaign, hit the Invite button to copy a link. Send it to friends — they join instantly." },
               ].map(({ n, icon, title, desc }) => (
                 <div key={n} style={{ flex: "1 1 220px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "20px 22px", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -589,20 +589,25 @@ export default function Dashboard() {
                 <h2 style={{ fontSize: "1.61rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Campaigns</h2>
                 <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
               </div>
-              <button
-                onClick={() => router.push("/create-campaign")}
-                className="btn-cta"
-                style={{ flexShrink: 0 }}
-              >
-                <span className="btn-cta-plus">+</span> New Campaign
-              </button>
+              {/* Header CTA only when the list is non-empty — the empty-state card
+                  carries its own button, so we don't show two for the same action.
+                  Mirrors the Characters section for a symmetric layout. */}
+              {campaigns.length > 0 && (
+                <button
+                  onClick={() => router.push("/create-campaign")}
+                  className="btn-cta"
+                  style={{ flexShrink: 0 }}
+                >
+                  <span className="btn-cta-plus">+</span> New Campaign
+                </button>
+              )}
             </div>
 
             {campaigns.length === 0 ? (
-              <div className="glass-panel" style={{ padding: "64px 48px", textAlign: "center" }}>
-                <div style={{ fontSize: "3.5rem", marginBottom: "20px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
-                <h3 style={{ fontSize: "1.84rem", fontWeight: 700, marginBottom: "10px" }}>No campaigns yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "1.28rem", marginBottom: "28px", maxWidth: "380px", margin: "0 auto 32px", lineHeight: 1.65 }}>
+              <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center", minHeight: "340px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: "3.2rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
+                <h3 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "10px" }}>No campaigns yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6 }}>
                   Start your first campaign or join one with a friend&apos;s invite link.
                 </p>
                 <button onClick={() => router.push("/create-campaign")} className="btn-cta">
@@ -769,19 +774,19 @@ export default function Dashboard() {
             })()}
             {!loading && characters.length > 0 && campaigns.length === 0 && (
               <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "1.57rem", color: "#c4b5fd", lineHeight: 1.6 }}>
-                💡 Ready to play? Hit <strong>+ New Campaign</strong> to start an adventure with your characters.
+                💡 Ready to play? Hit <strong>+ Start a Campaign</strong> to start an adventure with your characters.
               </div>
             )}
 
             {characters.length === 0 ? (
-              <div className="glass-panel" style={{ padding: "40px 24px", textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: "12px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
-                <h3 style={{ fontSize: "1.67rem", fontWeight: 700, marginBottom: "8px" }}>No characters yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "1.61rem", marginBottom: "20px", lineHeight: 1.6 }}>
+              <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center", minHeight: "340px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: "3.2rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
+                <h3 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "10px" }}>No characters yet</h3>
+                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6 }}>
                   Create your first hero to start adventuring.
                 </p>
                 <Link href="/create-character" style={{ textDecoration: "none" }}>
-                  <button className="btn-primary" style={{ fontSize: "1.28rem" }}>Create a Character</button>
+                  <button className="btn-cta"><span className="btn-cta-plus">+</span> Create a Character</button>
                 </Link>
               </div>
             ) : (
