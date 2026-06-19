@@ -7627,11 +7627,72 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       );
                     })()}
+                    {/* Proficiencies (read-only) — saves & skills with their bonuses */}
+                    {(() => {
+                      const pb = vc.level <= 4 ? 2 : vc.level <= 8 ? 3 : vc.level <= 12 ? 4 : 5;
+                      const saves = CLASS_SAVES[vc.class] ?? [];
+                      const skills = vc.skill_proficiencies ?? [];
+                      if (saves.length === 0 && skills.length === 0) return null;
+                      const ABIL: Record<string, number> = { STR: vc.strength, DEX: vc.dexterity, CON: vc.constitution, INT: vc.intelligence, WIS: vc.wisdom, CHA: vc.charisma };
+                      const modOf = (a: string) => Math.floor((((ABIL[a] ?? 10)) - 10) / 2);
+                      const sign  = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+                      return (
+                        <div>
+                          <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Proficiencies · +{pb} prof.</div>
+                          {saves.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: skills.length ? "6px" : 0 }}>
+                              {saves.map(s => <span key={s} style={{ fontSize: fs(0.72), padding: "2px 8px", borderRadius: "4px", background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)", fontWeight: 600 }}>{s} {sign(modOf(s) + pb)}</span>)}
+                            </div>
+                          )}
+                          {skills.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                              {skills.map(s => { const a = SKILL_ABILITY[s] ?? "DEX"; return <span key={s} style={{ fontSize: fs(0.72), padding: "2px 8px", borderRadius: "4px", background: "rgba(139,92,246,0.12)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", fontWeight: 600 }}>{s} {sign(modOf(a) + pb)}</span>; })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {/* Spellbook (read-only) — slots, cantrips, prepared spells */}
+                    {SPELLCASTING_CLASSES.has(vc.class) && ((vc.cantrips_known?.length ?? 0) > 0 || (vc.spells_prepared?.length ?? 0) > 0 || Object.keys(getSpellSlots(vc.class, vc.level)).length > 0) && (() => {
+                      const maxSlots = getSpellSlots(vc.class, vc.level);
+                      const used = (vc.spell_slots_used ?? {}) as Record<string, number>;
+                      return (
+                        <div>
+                          <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Spellbook</div>
+                          {Object.keys(maxSlots).length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "10px" }}>
+                              {Object.entries(maxSlots).map(([lvl, max]) => { const avail = Math.max(0, (max as number) - (Number(used[lvl]) || 0)); return (
+                                <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                                  <span style={{ fontSize: fs(0.65), color: "#94a3b8", fontWeight: 700 }}>L{lvl}</span>
+                                  {Array.from({ length: max as number }, (_, i) => <div key={i} style={{ width: "10px", height: "10px", borderRadius: "50%", background: i < avail ? "#8b5cf6" : "transparent", border: `1.5px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}` }} />)}
+                                </div>
+                              ); })}
+                            </div>
+                          )}
+                          {(vc.cantrips_known?.length ?? 0) > 0 && (
+                            <>
+                              <div style={{ fontSize: fs(0.62), color: "#64748b", marginBottom: "4px" }}>Cantrips · at-will</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "8px" }}>
+                                {vc.cantrips_known!.map((s, i) => <span key={i} style={{ fontSize: fs(0.72), padding: "2px 8px", borderRadius: "4px", background: "rgba(99,102,241,0.12)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)", fontWeight: 600 }}>{s}</span>)}
+                              </div>
+                            </>
+                          )}
+                          {(vc.spells_prepared?.length ?? 0) > 0 && (
+                            <>
+                              <div style={{ fontSize: fs(0.62), color: "#64748b", marginBottom: "4px" }}>Prepared Spells</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                                {vc.spells_prepared!.map((s, i) => <span key={i} style={{ fontSize: fs(0.72), padding: "2px 8px", borderRadius: "4px", background: "rgba(139,92,246,0.12)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)", fontWeight: 600 }}>{s}</span>)}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {((vc.inventory?.items?.length ?? 0) + (vc.inventory?.weapons?.length ?? 0)) > 0 && (
                       <div>
                         <div style={{ fontSize: fs(0.75), color: "#64748b", marginBottom: "8px", letterSpacing: "0.05em", textTransform: "uppercase" }}>Inventory</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {[...(vc.inventory?.weapons ?? []), ...(vc.inventory?.items ?? [])].slice(0, 8).map((item, i) => {
+                          {[...(vc.inventory?.weapons ?? []), ...(vc.inventory?.items ?? [])].map((item, i) => {
                             const vcCatalog = getItemByName(item);
                             const vcWepTip = WEAPON_TIPS[item];
                             const vcItemTip = ITEM_TIPS[item];
