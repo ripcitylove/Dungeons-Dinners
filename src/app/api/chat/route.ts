@@ -336,6 +336,13 @@ SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstN
     - For spells NOT in the list above. The list is the complete set of spells the engine has sound + visuals for.
     - For non-spell attacks (weapon swings, dagger throws, fists).
 
+NPC TAGS — give story characters a face. When a NAMED non-combat character is present in the scene that the party can see or talk to (an innkeeper, guard, guide, merchant, child, elder, a villain mid-dialogue — anyone who is NOT a combat enemy), emit one tag the FIRST time they appear in a scene:
+  [NPC:Name:a short vivid VISUAL description] — e.g. [NPC:Mira:a freckled middle-aged innkeeper with kind eyes and flour-dusted apron], [NPC:Captain Reyes:a stern human guard captain in dented plate, grey at the temples].
+  • Name is how the party knows them (1–4 words). The description is for their portrait — focus on appearance (age, race, build, clothing, distinctive features), 1 short phrase.
+  • Emit it ONCE when they enter the scene. Do NOT re-emit every turn. The engine generates and caches their portrait by name, so reuse the EXACT same Name for a recurring character so they keep the same face.
+  • When that NPC leaves, dies, or the party moves on from them, emit [NPC-GONE:Name] so their card is removed.
+  • Only for genuine characters present in the scene — never for crowds, the party's own player characters, or combat enemies (those are handled by the encounter system). Tags are stripped from display and narration.
+
 TEMP HP TAGS — mandatory after resolving any temporary-HP grant on a player character:
   Append: [THP:FirstName:+N] for N temporary hit points granted (always positive). Use the exact first name from the stat block.
   These cover False Life (1d4+4), Heroism (CHA modifier per turn), Aid (5/10/15), Inspiring Leader (level + CHA mod), Armor of Agathys, Death Ward, and any other spell or effect that grants temporary hit points.

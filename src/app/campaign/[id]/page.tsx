@@ -28,6 +28,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
+import { parseNpcTags } from "../../../lib/npcTags";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -992,6 +993,59 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setCombatLog(next);
     try { localStorage.setItem(`dnd_combatlog_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
   }, [params.id]);
+
+  // ── Story NPCs (non-combat characters present in the scene). Driven by the DM's
+  // [NPC:Name:desc] / [NPC-GONE:Name] tags. Portraits are AI-generated once per NPC
+  // name and cached in storage. Synced to peers + persisted per campaign. ───────────
+  type SceneNpc = { name: string; desc: string; portrait_url?: string };
+  const [npcs, setNpcs] = useState<SceneNpc[]>([]);
+  const npcsRef = useRef<SceneNpc[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`dnd_npcs_${params.id}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SceneNpc[];
+      if (Array.isArray(parsed)) { npcsRef.current = parsed; setNpcs(parsed); }
+    } catch { /* ignore */ }
+  }, [params.id]);
+  const commitNpcs = useCallback((next: SceneNpc[], broadcast = true) => {
+    npcsRef.current = next;
+    setNpcs(next);
+    try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
+    if (broadcast) channelRef.current?.send({ type: "broadcast", event: "npcs_sync", payload: { senderId: userId, npcs: next } });
+  }, [params.id, userId]);
+  const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true) => {
+    const { entered, gone } = parseNpcTags(narrative);
+    if (entered.length === 0 && gone.length === 0) return;
+    let next = [...npcsRef.current];
+    if (gone.length) {
+      const goneSet = new Set(gone.map(g => g.toLowerCase()));
+      next = next.filter(n => !goneSet.has(n.name.toLowerCase()));
+    }
+    for (const e of entered) {
+      const idx = next.findIndex(n => n.name.toLowerCase() === e.name.toLowerCase());
+      if (idx >= 0) next[idx] = { ...next[idx], desc: e.desc || next[idx].desc };
+      else next.push({ name: e.name, desc: e.desc });
+    }
+    next = next.slice(-6); // show at most the 6 most recent present NPCs
+    commitNpcs(next, broadcast);
+  }, [commitNpcs]);
+
+  // Fetch a portrait for any NPC missing one (cached per name in storage).
+  useEffect(() => {
+    const need = npcs.filter(n => !n.portrait_url);
+    if (need.length === 0) return;
+    need.forEach(n => {
+      fetch("/api/generate-npc-portrait", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n.name, role: n.desc }) })
+        .then(r => r.json())
+        .then(({ portraitUrl }: { portraitUrl: string | null }) => {
+          if (!portraitUrl) return;
+          const updated = npcsRef.current.map(x => x.name.toLowerCase() === n.name.toLowerCase() ? { ...x, portrait_url: portraitUrl } : x);
+          commitNpcs(updated);
+        })
+        .catch(() => {});
+    });
+  }, [npcs, commitNpcs]);
 
   // Deterministic backstop: when the DM narration explicitly states a known buff/
   // debuff is ACTIVE on a party member ("Randiezel has Shillelagh active"), make sure
@@ -2185,6 +2239,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setObjectives(next);
         if (hasNewlyRevealed(prev, next)) { playTrackerChimeRef.current?.(); announceObjectiveRef.current?.(); }
       })
+      .on("broadcast", { event: "npcs_sync" }, ({ payload }) => {
+        if (payload.senderId === userIdRef.current) return;
+        const next = Array.isArray(payload.npcs) ? (payload.npcs as { name: string; desc: string; portrait_url?: string }[]) : [];
+        npcsRef.current = next;
+        setNpcs(next);
+        try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
+      })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
         // Skip empty broadcasts — these occur when the sender suppressed a degenerate response
@@ -2251,6 +2312,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         // Deterministic economy tags (primary) + chat-state extractor (fallback).
         applyDmStateFromNarrative(payload.content as string);
         recordCombatLogFromNarrative(payload.content as string);
+        applyNpcTagsFromNarrative(payload.content as string, false);
         // Focus the party panel on the character whose turn the DM just announced
         if (campaignPartyRef.current.length > 1) {
           const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
@@ -3996,6 +4058,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[ITEM-?LOST:[^\]]+\]/gi, "")
       .replace(/\[XP:[^\]]+\]/gi, "")
       .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
+      .replace(/\[NPC:[^\]]*\]/gi, "")
+      .replace(/\[NPC-GONE:[^\]]*\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -4980,6 +5044,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Backstop: surface any buff/debuff the DM narrates as active on a party member.
       applyActiveEffectsFromNarrative(full);
       recordCombatLogFromNarrative(full);
+      applyNpcTagsFromNarrative(full);
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
       const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
@@ -6231,11 +6296,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <span style={{ animation: "blink 1s step-end infinite" }}>✦</span> Generating scene…
           </div>
         )}
-        {/* ── Enemy/NPC portrait cards — left edge of the scene for immersion. Portraits
-              are AI-generated once per enemy TYPE and cached in storage, so the same
-              monster reuses its image instead of re-calling the model. Click to target. ── */}
-        {enemies.some(e => !e.is_defeated) && (
+        {/* ── NPC + Enemy portrait cards — left edge of the scene for immersion.
+              NPCs (gold, story characters) sit above enemies (red, combat). Portraits
+              are AI-generated once per name/type and cached in storage so they're
+              reused instead of re-calling the model. Click an enemy to target it. ── */}
+        {(npcs.length > 0 || enemies.some(e => !e.is_defeated)) && (
           <div style={{ position: "absolute", top: "50%", left: "14px", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: "12px", zIndex: 6, maxHeight: "calc(100% - 40px)", overflowY: "auto", paddingRight: "2px" }}>
+            {npcs.map(n => (
+              <div key={`npc-${n.name}`} className="animate-fade-in"
+                onMouseEnter={ev => showTooltip(tipBox(n.name, n.desc || "An NPC in your story.", "#d4a96a"), ev)}
+                onMouseLeave={hideTooltip}
+                style={{ width: "min(122px, 17vw)", flexShrink: 0, background: "rgba(14,11,6,0.62)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "2px solid rgba(212,169,106,0.45)", borderRadius: "12px", padding: "8px", boxShadow: "0 6px 22px rgba(0,0,0,0.55), 0 0 14px rgba(212,169,106,0.12)" }}>
+                <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(212,169,106,0.25)", marginBottom: "6px", position: "relative" }}>
+                  {n.portrait_url
+                    ? <img src={n.portrait_url} alt={n.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.4rem" }}>🧑</div>}
+                  {!n.portrait_url && <div title="Conjuring portrait…" style={{ position: "absolute", bottom: "4px", right: "4px", width: "7px", height: "7px", borderRadius: "50%", background: "#d4a96a", animation: "blink 1s step-end infinite" }} />}
+                </div>
+                <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#e6c78a", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{n.name}</div>
+                <div style={{ fontSize: "0.52rem", color: "#cbb89a", textAlign: "center", letterSpacing: "0.04em", textTransform: "uppercase", marginTop: "1px" }}>NPC</div>
+              </div>
+            ))}
             {enemies.filter(e => !e.is_defeated).map(e => {
               const isTargeted = targetedEnemyId === e.id;
               const cond       = e.condition ?? "healthy";
