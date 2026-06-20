@@ -87,14 +87,38 @@ export function hasSpeakableContent(text: string): boolean {
   return /[a-zA-Z0-9]/.test(text);
 }
 
-const ROLL_REQUEST_RE = /\broll\s+a\s+d\d+[^.!?\n]*[.!?]?/i;
+// Any dice-roll request the DM may voice. Covers the article forms ("roll a
+// d20"), bare and multi-die damage rolls ("roll 2d6", "roll d6", "roll 3d8 + 2"),
+// and die-less damage asks ("roll your damage", "roll for damage", "roll damage").
+const ROLL_DICE_FRAG  = "(?:(?:a|an|your|the|for)\\s+)?(?:\\d*d\\d+|damage)\\b";
+const ROLL_REQUEST_RE = new RegExp(`\\broll\\s+${ROLL_DICE_FRAG}[^.!?\\n]*[.!?]?`, "i");
+const ROLL_MENTION_RE = new RegExp(`\\broll\\s+${ROLL_DICE_FRAG}`, "i");
+
+/** True when `text` contains a dice-roll request (any die count, or a damage ask). */
+export function looksLikeRollRequest(text: string): boolean {
+  return ROLL_MENTION_RE.test(text);
+}
 
 /**
- * Returns the substring of `text` up to AND INCLUDING the first "roll a dN"
- * request, or the whole `text` if there is none. The DM is told to stop at the
- * roll request but sometimes writes past it; narrating this slice lets the player
- * HEAR "Shmang, roll a d20." while the text the DM wrongly added after it is
- * dropped from speech (and the display is truncated to match).
+ * True when a roll request is for DAMAGE rather than an attack/check/save. Damage
+ * rolls use damage dice (any multi-die roll like 2d6, or any single non-d20 die),
+ * or mention "damage". A lone d20 is an attack/check/save — never damage.
+ */
+export function isDamageRollRequest(text: string): boolean {
+  if (/\bdamage\b/i.test(text)) return true;
+  const m = /\broll\s+(?:(?:a|an|your|the|for)\s+)?(\d*)d(\d+)\b/i.exec(text);
+  if (!m) return false;
+  const count = m[1] ? parseInt(m[1], 10) : 1;
+  const sides = parseInt(m[2], 10);
+  return count > 1 || sides !== 20;
+}
+
+/**
+ * Returns the substring of `text` up to AND INCLUDING the first roll request,
+ * or the whole `text` if there is none. The DM is told to stop at the roll
+ * request but sometimes writes past it; narrating this slice lets the player
+ * HEAR "Shmang, roll a d20." / "Roll 2d6." while the text the DM wrongly added
+ * after it is dropped from speech (and the display is truncated to match).
  */
 export function sliceThroughRollRequest(text: string): string {
   const m = ROLL_REQUEST_RE.exec(text);
@@ -102,27 +126,59 @@ export function sliceThroughRollRequest(text: string): string {
 }
 
 /**
- * A bare, short roll request like "Roll a d20." (11 chars) is below the TTS
- * engine's minimum prosody window — it gets rejected/garbled, so the player
- * never hears the call to roll. Expand ONLY a short, essentially-bare roll
- * request into a fuller natural utterance so it's spoken clearly. Longer or
- * named requests ("Shmang, roll a d20." = 19 chars) already clear the threshold
- * and are returned unchanged.
+ * Prepare a roll request for clean speech.
  *
- * The die comes FIRST, followed by a throwaway trailing beat ("— go ahead."):
- * TTS engines clip the final fraction of short clips, so we make that clipped
- * tail land on "go ahead" instead of the die — the player always hears the full
- * "roll a dN".
+ * DAMAGE rolls are ALWAYS voiced as "Roll <dice> for damage." so the player
+ * hears WHY they're rolling — this covers single-die ("Roll a d6"), multi-die
+ * ("Roll 2d6", "Roll 3d8 + 2"), and longer lines that END on a damage roll
+ * ("The axe bites deep. Roll 2d6." → "…Roll 2d6 for damage."). A die-less
+ * "roll your damage" already names the reason and is left intact.
+ *
+ * Non-damage (d20) requests keep the prior behavior: a bare, short request like
+ * "Roll a d20." (11 chars) is below the TTS engine's prosody floor and gets
+ * garbled, so it's expanded with a throwaway trailing beat ("— go ahead.") so
+ * the clipped tail lands there instead of on the die. Longer requests are
+ * returned unchanged.
  */
 export function expandRollRequestForSpeech(text: string): string {
   const t = text.trim();
-  if (t.length >= 16) return t; // already long enough for clean prosody
-  const m = /^(?:[A-Za-z][\w'-]*,?\s*)?roll\s+(?:a|an)\s+d(\d+)\b[^.!?]*[.!?]?$/i.exec(t);
-  if (!m) return t;
-  return `Roll a d${m[1]} — go ahead.`;
-}
 
-const ROLL_MENTION_RE = /\broll\s+(?:a|an)\s+d\d+\b/i;
+  // Whole-string roll request with an explicit die (optionally name-prefixed).
+  const m = /^(?:[A-Za-z][\w'-]*,?\s*)?roll\s+(?:(?:a|an|your|the|for)\s+)?(\d*)d(\d+)\b([^.!?]*)[.!?]?$/i.exec(t);
+  if (m) {
+    const count = m[1] ? parseInt(m[1], 10) : 1;
+    const sides = parseInt(m[2], 10);
+    if (count > 1 || sides !== 20) {
+      const dice    = count > 1 ? `${count}d${sides}` : `a d${sides}`;
+      const mod     = (m[3] || "").trim();
+      const modPart = /^[+\-]\s*\d+/.test(mod) ? ` ${mod.replace(/\s+/g, " ")}` : "";
+      return `Roll ${dice}${modPart} for damage.`;
+    }
+    // d20 attack/check/save — expand only when too short for clean prosody.
+    return t.length >= 16 ? t : `Roll a d${sides} — go ahead.`;
+  }
+
+  // Die-less damage request as the whole string ("roll your damage").
+  if (/^(?:[A-Za-z][\w'-]*,?\s*)?roll\s+(?:your\s+|the\s+|for\s+)?damage\b/i.test(t)) {
+    return t.length >= 16 ? t : "Roll your damage — go ahead.";
+  }
+
+  // Longer chunk that ENDS on a damage roll — append "for damage" so the reason
+  // is always voiced (unless the line already says "damage").
+  if (!/\bdamage\b/i.test(t)) {
+    const tail = /\broll\s+(?:(?:a|an|your|the|for)\s+)?(\d*)d(\d+)(?:\s*[+\-]\s*\d+)?\s*([.!?]?)\s*$/i.exec(t);
+    if (tail) {
+      const count = tail[1] ? parseInt(tail[1], 10) : 1;
+      const sides = parseInt(tail[2], 10);
+      if (count > 1 || sides !== 20) {
+        const end = tail[3] || ".";
+        return `${t.replace(/\s*[.!?]?\s*$/, "")} for damage${end}`;
+      }
+    }
+  }
+
+  return t;
+}
 
 /**
  * Decide whether a TRAILING narration chunk (the short tail left after streaming —

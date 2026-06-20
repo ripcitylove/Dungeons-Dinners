@@ -4,6 +4,14 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Qualifying Questions Before Changes (Non-Negotiable)
+
+When the user asks for an update or change to something, and you have any questions or need more context to do the job well, ask exactly **3 qualifying questions** before starting the work. These questions should be the ones whose answers most improve the result — scope, intent, edge cases, affected surfaces, or trade-offs.
+
+- If you genuinely understand the ask and have no real questions, do NOT manufacture questions — just complete the work.
+- Only ask when the questions are real and would change what you build. Don't ask about things you can verify yourself in the codebase or resolve with a sensible default.
+- This applies to change/update requests. It does not require interrogating trivial or fully-specified asks.
+
 # Real-Time Value Accuracy (Non-Negotiable)
 
 All values that change during gameplay — HP, gold, XP, level, spell slots, status effects, inventory — must be calculated correctly and reflected in the UI immediately when they change. This applies to every player's view, not just the acting player.

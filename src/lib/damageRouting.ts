@@ -29,7 +29,7 @@ const ATTACK = "deal|deals|dealing|dealt|strike|strikes|striking|struck|hit|hits
 // ("Aria takes 9", "the goblin suffers 5").
 const RECEIVER = "takes?|took|taking|suffers?|suffered|suffering|loses?|lost|losing|drops?|dropped|dropping|absorbs?|absorbed|absorbing|recoils?|recoiled|recoiling|reels?|reeled|reeling|crumples?|crumpled|crumpling|staggers?|staggered|staggering|collapses?|collapsed|collapsing|buckles?|buckled|winces?|winced|heals?|healed|healing|regains?|regained|regaining|recovers?|recovered|recovering";
 // Verbs an ENEMY uses to attack the player ("the orc smashes Aria").
-const ENEMY_ATTACK = "hits?|strikes?|catches|caught|cuts?|stabs?|attacks?|claws?|fangs?|bites?|smashes?|crushes?|grabs?|seizes?|wraps?|grapples?|lashes?|lashed|lashing|whips?|whipped|whipping|impales?|impaled|impaling|gores?|gored|goring|rakes?|raked|raking|slams?|slammed|slamming|connects?|connected|connecting|drains?|drained|draining|burns?|burned|scorches?|scorched|freezes?|froze|shocks?|shocked|zaps?|zapped|pummels?|pummeled|pounds?|pounded|mauls?|mauled|skewers?|skewered|gashes?|gashed|batters?|battered|hammers?|hammered|blasts?|blasted";
+const ENEMY_ATTACK = "hits?|strikes?|catches|caught|cuts?|stabs?|attacks?|claws?|fangs?|bites?|smashes?|crushes?|grabs?|seizes?|wraps?|grapples?|lashes?|lashed|lashing|whips?|whipped|whipping|impales?|impaled|impaling|gores?|gored|goring|rakes?|raked|raking|slams?|slammed|slamming|connects?|connected|connecting|drains?|drained|draining|burns?|burned|scorches?|scorched|freezes?|froze|shocks?|shocked|zaps?|zapped|pummels?|pummeled|pounds?|pounded|mauls?|mauled|skewers?|skewered|gashes?|gashed|batters?|battered|hammers?|hammered|blasts?|blasted|slashes?|slashed|slashing|swings?|swung|swipes?|swiped|thrusts?|hacks?|hacked|cleaves?|cleaved|rends?|rent|chops?|chopped|jabs?|jabbed|punches?|punched|kicks?|kicked|bashes?|bashed|whacks?|whacked|pierces?|pierced|tears?|tore|rips?|ripped|hews?|hewed|carves?|carved|clobbers?|clobbered|smites?|smote|hurls?|hurled|gouges?|gouged|rams?|rammed";
 // Past-participles/adjectives that, after a copula, mean the player got hit
 // ("Aria is hit", "Tiegan was struck down", "she gets knocked back").
 const PASSIVE_HIT = "hit|struck|caught|cut|stabbed|smashed|crushed|hammered|battered|wounded|injured|slammed|clawed|bitten|gored|impaled|knocked|hurt|slashed|pierced|mauled|downed|dropped|felled|blasted|burned|scorched|seared|frozen|shocked|electrocuted|poisoned|drained|grazed|gashed|bloodied|skewered|pummeled|thrown|sent|flung";
@@ -72,9 +72,14 @@ export function damageTagShouldBeSuppressed(text: string, firstName: string, del
   }
 
   // ── 2) Is the player plainly the ATTACKER? Then suppress the misrouted tag. ──
+  // First strip the DM's roll-resolution artifact ("…, hits AC 14" / "misses AC 12").
+  // That phrase reports an attack ROLL vs a target's AC — NOT the named player
+  // attacking — and otherwise false-positives on enemy attacks written as
+  // "Watcher slashes at Rando — 16, hits AC 12" (the "hits" reads as Rando's).
+  const attackerText = text.replace(/\b(?:hits?|strikes?|miss|misses|lands?|connects?)\s+ac\s*\d+/gi, " ");
   const playerAttacker       = new RegExp(`\\b${n}\\b[^.!?\\n]{0,30}\\b(?:${ATTACK})\\b`, "i");
   const playerWeaponAttacker = new RegExp(`\\b${n}'?s\\s+[\\w'-]+\\s+(?:${ATTACK})\\b`, "i");
-  if (playerAttacker.test(text) || playerWeaponAttacker.test(text)) return true;
+  if (playerAttacker.test(attackerText) || playerWeaponAttacker.test(attackerText)) return true;
 
   // ── 3) Unsure → apply (don't nullify possibly-real damage). ──
   return false;

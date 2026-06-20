@@ -270,6 +270,22 @@ const MUSIC_BALANCE_RATIOS: Record<string, number> = {
   desert:   0.85,
 };
 
+// Snapshot of the music/ambiance UI state, published so the campaign page can
+// render the same controls inside its consolidated (collapsible) audio menu.
+export type DndAudioSnapshot = {
+  playing: boolean;
+  volume: number;
+  musicMuted: boolean;
+  ambianceReady: boolean;
+  ambianceVol: number;
+  ambianceMuted: boolean;
+  poolLabel: string;
+  recommended: string | null;
+  activeMetaKey: string;
+  isOnDashboard: boolean;
+  pools: { key: string; icon: string; label: string; desc: string }[];
+};
+
 declare global {
   interface Window {
     __dndMusicPlay?: () => void;
@@ -277,6 +293,18 @@ declare global {
     __dndSetAmbiance?: (url: string | null) => void;
     __dndSetAmbianceScene?: (scene: string, sceneType?: string, mods?: string[], mood?: string) => void;
     __dndDuckAudio?: (duck: boolean) => void;
+    // Consolidated-menu bridge (campaign page renders the controls; engine lives here).
+    __dndAudio?: DndAudioSnapshot;
+    __dndAudioControls?: {
+      toggleMusic: () => void;
+      skip: () => void;
+      setMusicVol: (v: number) => void;
+      toggleMusicMute: () => void;
+      setAmbianceVol: (v: number) => void;
+      toggleAmbianceMute: () => void;
+      selectPool: (key: string) => void;
+      matchScene: () => void;
+    };
   }
 }
 
@@ -767,6 +795,32 @@ export function MusicPlayer() {
   // Normalize current active key for comparison (tavern aliases to social in POOL_META)
   const activeMetaKey = activePool === "tavern" ? "social" : activePool;
 
+  // ── Consolidated-menu bridge ──────────────────────────────────────────────
+  // Publish a snapshot of the audio UI state (and fire an event) whenever it
+  // changes, so the campaign page can mirror these controls inside its single
+  // collapsible audio menu. Purely additive — the engine logic is untouched.
+  useEffect(() => {
+    window.__dndAudio = {
+      playing, volume, musicMuted, ambianceReady, ambianceVol, ambianceMuted,
+      poolLabel, recommended, activeMetaKey, isOnDashboard, pools: POOL_META,
+    };
+    window.dispatchEvent(new Event("dndaudiochange"));
+  }, [playing, volume, musicMuted, ambianceReady, ambianceVol, ambianceMuted, poolLabel, recommended, activeMetaKey, isOnDashboard]);
+
+  useEffect(() => {
+    window.__dndAudioControls = {
+      toggleMusic: () => toggle(),
+      skip: () => skip(),
+      setMusicVol: (v: number) => { if (musicMuted && v > 0) setMusicMuted(false); if (v > 0) setVolume(v); else setMusicMuted(true); },
+      toggleMusicMute: () => setMusicMuted(m => !m),
+      setAmbianceVol: (v: number) => { if (ambianceMuted && v > 0) setAmbianceMuted(false); if (v > 0) setAmbianceVol(v); else setAmbianceMuted(true); },
+      toggleAmbianceMute: () => setAmbianceMuted(m => !m),
+      selectPool: (k: string) => selectPool(k),
+      matchScene: () => matchScene(),
+    };
+    return () => { delete window.__dndAudioControls; };
+  }, [toggle, skip, selectPool, matchScene, musicMuted, ambianceMuted]);
+
   if (isOnLanding || pathname === "/auth") return null;
 
   return (
@@ -804,6 +858,11 @@ export function MusicPlayer() {
         }}
       />
 
+      {/* On campaign pages the floating pill is hidden — its controls live in the
+          campaign's single collapsible audio menu (driven via the window bridge
+          above). The <audio> engine elements stay mounted so playback continues. */}
+      {!isOnCampaign && (
+      <>
       {/* Click-away backdrop */}
       {pickerOpen && (
         <div
@@ -1022,6 +1081,8 @@ export function MusicPlayer() {
           )}
         </div>
       </div>
+      </>
+      )}
     </>
   );
 }

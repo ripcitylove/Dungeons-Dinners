@@ -445,6 +445,39 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(ch); };
   }, [userId]);
 
+  // Auto-heal missing portraits — if creation-time generation failed (e.g. a
+  // transient rate-limit), any roster character without a portrait gets one
+  // generated here on the dashboard. Sequential to respect the image API's
+  // per-minute cap; the realtime subscription above also catches the DB write.
+  const portraitHealedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (loading) return;
+    const missing = characters.filter(c => !c.portrait_url && !portraitHealedRef.current.has(c.id));
+    if (missing.length === 0) return;
+    missing.forEach(c => portraitHealedRef.current.add(c.id));
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth: Record<string, string> = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      for (const c of missing) {
+        if (cancelled) break;
+        try {
+          const res = await fetch("/api/generate-portrait", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...auth },
+            body: JSON.stringify({ race: c.race, cls: c.class, sex: c.sex ?? "male", charId: c.id }),
+          });
+          const json = await res.json().catch(() => ({} as { url?: string }));
+          if (json.url && !cancelled) {
+            setCharacters(prev => prev.map(x => x.id === c.id ? { ...x, portrait_url: json.url as string } : x));
+          }
+        } catch { /* leave it for the next dashboard visit */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, characters]);
+
   const deleteCampaign = (id: string, title: string) => setConfirmDelete({ id, title });
 
   // Escape (and Xbox controller B) on the dashboard while the delete-confirm
@@ -620,6 +653,28 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── Whimsy welcome strip — featured for returning adventurers (the
+            first-timer banner below already features the chef pose). Uses a
+            static, browser-cached mascot asset; no API call. ── */}
+        {!loading && (characters.length > 0 || campaigns.length > 0) && (
+          <div className="animate-fade-in" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", flexWrap: "wrap", marginBottom: "clamp(28px, 4vw, 44px)" }}>
+            <img
+              src="/mascot/dragon-welcome.png"
+              alt="Whimsy, the Dungeons & Dinner Legends cooking-dragon mascot"
+              draggable={false}
+              width={120}
+              height={128}
+              style={{ flexShrink: 0, width: "clamp(92px, 10vw, 128px)", height: "auto", filter: "drop-shadow(0 8px 18px rgba(0,0,0,0.45))" }}
+            />
+            <div style={{ position: "relative", background: "var(--card-bg)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: "16px", padding: "16px 22px", maxWidth: "560px", boxShadow: "0 8px 28px rgba(0,0,0,0.35)" }}>
+              <div style={{ fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8b7bb8", marginBottom: "5px" }}>Whimsy</div>
+              <div style={{ color: "var(--text-on-canvas)", fontSize: "clamp(1rem, 1.6vw, 1.2rem)", lineHeight: 1.5 }}>
+                Welcome back, <strong style={{ color: "var(--accent-strong)" }}>{displayName}</strong>! Choose a hero below or leap into a campaign — your next adventure awaits.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── First-time welcome banner ── */}
         {!loading && characters.length === 0 && campaigns.length === 0 && (

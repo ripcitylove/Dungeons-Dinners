@@ -6,7 +6,8 @@
 // this renders one step's content and reports edits via `patch`. Ability-score
 // roll animation + hover state are internal.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, type CSSProperties } from "react";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
   getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, computeAC, type SpellEntry,
@@ -155,7 +156,21 @@ const CLASS_EMOJI: Record<string, string> = {
   Paladin: "🛡️", Ranger: "🏹", Bard: "🎵", Warlock: "💀",
   Barbarian: "🪓", Druid: "🌿", Monk: "👊", Sorcerer: "🌀",
 };
-function classPortraitPath(cls: string): string { return `/classes/${cls.toLowerCase()}.png`; }
+// Glyph icons for the 18 D&D skill proficiencies + the proficiency categories.
+const SKILL_ICONS: Record<string, string> = {
+  Acrobatics: "🤸", "Animal Handling": "🐎", Arcana: "🔮", Athletics: "💪",
+  Deception: "🎭", History: "📜", Insight: "👁️", Intimidation: "😠",
+  Investigation: "🔎", Medicine: "⚕️", Nature: "🌿", Perception: "👀",
+  Performance: "🎶", Persuasion: "💬", Religion: "🕯️", "Sleight of Hand": "🤚",
+  Stealth: "🥷", Survival: "🧭",
+};
+const PROF_CAT_ICONS = { saves: "🎲", armor: "🛡️", weapons: "⚔️" };
+// Class step shows ornate emblem ICONS; race step shows sex-aware example PORTRAITS.
+function classIconPath(cls: string): string { return `/classes/${cls.toLowerCase()}_icon.png`; }
+const SEX_FILE_KEY: Record<string, string> = { male: "male", female: "female", "non-binary": "nb" };
+function racePortraitPath(race: string, sex: string): string {
+  return `/races/${race.toLowerCase().replace(/-/g, "_")}_${SEX_FILE_KEY[sex] ?? "male"}.png`;
+}
 const ALIGNMENT_COLORS: Record<string, string> = {
   "Lawful Good": "#f59e0b", "Neutral Good": "#fbbf24", "Chaotic Good": "#22c55e",
   "Lawful Neutral": "#8b5cf6", "True Neutral": "var(--muted)", "Chaotic Neutral": "#f97316",
@@ -252,6 +267,200 @@ export const STAT_LEGEND: { code: typeof STAT_LABELS[number]; line: string; colo
   { code: "CHA", line: "Presence, Bard/Sorcerer/Warlock",   color: "#ec4899" },
 ];
 
+// ── Whimsy's creation guide ─────────────────────────────────────────────────────
+// A first-run coachmark tour: Whimsy (the mascot) spotlights each mandatory field
+// in order, explains what it does + how the AI DM uses it, and auto-advances as
+// you complete it — scrolling toward the Next Step button. Anchored to fields via
+// [data-guide="…"] attributes so it works wherever CharacterSteps is rendered.
+const WHIMSY_SRC = "/mascot/dragon-chef.png";
+
+type GuideStop = { key: string; title: string; body: string; done: boolean };
+
+function buildGuideStops(step: number, form: CharForm, profRequired: number, spellCounts: { cantrips: number; spells: number }): GuideStop[] {
+  switch (step) {
+    case 1: return [
+      { key: "g-name",  title: "Name your hero",      body: "Type your character's name. Your AI Dungeon Master will call you this throughout the whole adventure.", done: form.name.trim().length > 0 },
+      { key: "g-race",  title: "Choose your race",    body: "Your ancestry sets stat bonuses and special traits — and the DM weaves it into how the world sees and reacts to you.", done: !!form.race },
+      { key: "g-sex",   title: "Pick your pronouns",  body: "This sets the pronouns (he / she / they) the DM uses when narrating your character's actions.", done: !!form.sex },
+    ];
+    case 2: return [
+      { key: "g-class",  title: "Choose your class",  body: "Your class is your role in the party — it decides your abilities, hit die, and what the DM lets you attempt.", done: !!form.class },
+      { key: "g-skills", title: "Pick skill proficiencies", body: "The DM adds these bonuses whenever you roll for things like Stealth, Perception, or Persuasion.", done: profRequired > 0 && form.skillProficiencies.length >= profRequired },
+    ];
+    case 3: return [
+      { key: "g-stats", title: "Set your ability scores", body: "These six stats power every roll. Roll them, take the standard array, or point-buy — then assign them across your stats.", done: !isRollUnrolled(form) },
+    ];
+    case 4: return [
+      { key: "g-weapon", title: "Choose a weapon", body: "Your starting weapon — the DM uses its damage and properties to resolve every attack you make in combat.", done: !!form.weapon },
+    ];
+    case 5: return [
+      { key: "g-background", title: "Add a background (optional)", body: "A sentence or two the DM reads to tailor the story, NPCs, and your portrait to your past. You can skip this and discover your character in play.", done: true },
+    ];
+    case 6: return [
+      { key: "g-spells", title: "Choose your spells", body: "Pick your cantrips and prepared spells. The DM tracks your spell slots and resolves exactly what each spell does.", done: (spellCounts.cantrips === 0 || form.cantrips.length === spellCounts.cantrips) && (spellCounts.spells === 0 || form.spells.length === spellCounts.spells) },
+    ];
+    default: return [];
+  }
+}
+
+type GuideRect = { left: number; top: number; width: number; height: number };
+
+function CreationGuide({ step, form, profRequired, spellCounts, onGuideRestart }: {
+  step: number; form: CharForm; profRequired: number; spellCounts: { cantrips: number; spells: number };
+  onGuideRestart?: () => void;
+}) {
+  const [guideOn, setGuideOn] = useState(false);
+  const [guideIdx, setGuideIdx] = useState(0);
+  const [rect, setRect] = useState<GuideRect | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // The walkthrough DEFAULTS ON every time the wizard starts — players can Skip.
+  // Also mark mounted so we can portal to <body> (the guide MUST render at the
+  // document root — a transformed/filtered ancestor would otherwise trap its
+  // position:fixed layers).
+  useEffect(() => {
+    setMounted(true);
+    setGuideOn(true);
+  }, []);
+
+  const stops = buildGuideStops(step, form, profRequired, spellCounts);
+  const totalSteps = totalStepsForForm(form);
+  const isLast = step >= totalSteps;
+  const terminal: GuideStop = {
+    key: "g-next",
+    title: isLast ? "Ready to finish!" : "On to the next step",
+    body: isLast
+      ? "Everything's set — click Complete Character to bring your hero into the world!"
+      : "Nice work — click Next Step to keep building your hero.",
+    done: false,
+  };
+  const active = guideIdx < stops.length ? stops[guideIdx] : terminal;
+
+  // Reset the tour position whenever the step changes.
+  useEffect(() => { setGuideIdx(0); doneRef.current = null; }, [step]);
+
+  // Auto-advance only when the active field transitions from not-done → done
+  // (so already-satisfied stops like a defaulted sex are still shown until the
+  // player clicks "Got it", but completing a field moves Whimsy along).
+  const doneRef = useRef<{ key: string; done: boolean } | null>(null);
+  useEffect(() => {
+    const prev = doneRef.current;
+    if (prev && prev.key === active.key && !prev.done && active.done) {
+      setGuideIdx(i => i + 1);
+    }
+    doneRef.current = { key: active.key, done: active.done };
+  }, [active.key, active.done]);
+
+  // Scroll the active target into view each time Whimsy moves.
+  useEffect(() => {
+    if (!guideOn) return;
+    const el = document.querySelector(`[data-guide="${active.key}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [active.key, guideOn]);
+
+  // Pop sound each time Whimsy hops to a new field (and on appear). Autoplay may be
+  // blocked before the first user gesture — that's fine, it stays silent then.
+  const popRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    if (!guideOn) return;
+    try {
+      if (!popRef.current) { popRef.current = new Audio("/sounds/pop_bubble.mp3"); popRef.current.volume = 0.5; }
+      popRef.current.currentTime = 0;
+      popRef.current.play().catch(() => {});
+    } catch { /* ignore */ }
+  }, [active.key, guideOn]);
+
+  // Keep the spotlight glued to the target every frame while the tour is active.
+  const activeKeyRef = useRef(active.key);
+  activeKeyRef.current = active.key;
+  useEffect(() => {
+    if (!guideOn) return;
+    let raf = 0;
+    const tick = () => {
+      const el = document.querySelector(`[data-guide="${activeKeyRef.current}"]`) as HTMLElement | null;
+      const r = el?.getBoundingClientRect();
+      setRect(prev => {
+        if (!r) return null;
+        if (prev && Math.abs(prev.top - r.top) < 0.5 && Math.abs(prev.left - r.left) < 0.5 && Math.abs(prev.width - r.width) < 0.5 && Math.abs(prev.height - r.height) < 0.5) return prev;
+        return { left: r.left, top: r.top, width: r.width, height: r.height };
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [guideOn]);
+
+  const finish = () => { setGuideOn(false); };
+  const advance = () => { if (guideIdx < stops.length) setGuideIdx(i => i + 1); else finish(); };
+  // Replaying ALWAYS wipes every selected field and restarts the tour from the
+  // very first field (step 1). onGuideRestart resets the parent-owned form + step.
+  const replay = () => { onGuideRestart?.(); setGuideIdx(0); doneRef.current = null; setGuideOn(true); };
+
+  // The guide renders into <body> via a portal — never inside the page subtree —
+  // so a transformed/filtered ancestor (e.g. create-campaign's animate-fade-in
+  // wrapper) can't hijack its position:fixed coordinates. This keeps the button
+  // anchor + spotlight identical across create-character and create-campaign.
+  if (!mounted) return null;
+
+  // Replay handle — Whimsy button, top-left (where site settings live), shown when
+  // the tour is off.
+  if (!guideOn) {
+    return createPortal(
+      <button onClick={replay} title="Wipe all fields and let Whimsy walk you through creation from the start"
+        style={{ position: "fixed", left: "70px", top: "16px", zIndex: 1100, display: "flex", alignItems: "center", gap: "8px", height: "44px", padding: "0 16px 0 7px", borderRadius: "999px", border: "1px solid rgba(139,92,246,0.5)", background: "rgba(20,14,38,0.92)", backdropFilter: "blur(8px)", color: "#c4b5fd", cursor: "pointer", fontWeight: 700, fontSize: "0.85rem", boxShadow: "0 6px 20px rgba(0,0,0,0.5)" }}>
+        <img src={WHIMSY_SRC} alt="Whimsy" width={30} height={30} style={{ borderRadius: "50%" }} />
+        Guide me
+      </button>,
+      document.body,
+    );
+  }
+
+  // Bubble placement around the spotlight.
+  const W = 320;
+  let pos: { left: number; top: number };
+  if (rect) {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    let left: number, top: number;
+    if (rect.left + rect.width + W + 28 < vw) { left = rect.left + rect.width + 18; top = rect.top; }
+    else if (rect.left - W - 28 > 0) { left = rect.left - W - 18; top = rect.top; }
+    else { left = Math.min(Math.max(rect.left, 12), vw - W - 12); top = rect.top + rect.height + 14; }
+    top = Math.min(Math.max(top, 12), vh - 240);
+    pos = { left, top };
+  } else {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
+    pos = { left: Math.max(12, vw / 2 - W / 2), top: 80 };
+  }
+
+  return createPortal(
+    <>
+      {/* Dimmed spotlight on the active field (click-through). */}
+      {rect && (
+        <div style={{ position: "fixed", left: rect.left - 6, top: rect.top - 6, width: rect.width + 12, height: rect.height + 12, borderRadius: "14px", boxShadow: "0 0 0 9999px rgba(3,2,12,0.62)", border: "2px solid rgba(139,92,246,0.9)", pointerEvents: "none", transition: "left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease", zIndex: 1099 }} />
+      )}
+      {/* Whimsy + speech bubble. */}
+      <div className="animate-fade-in" style={{ position: "fixed", left: pos.left, top: pos.top, width: W, zIndex: 1101, display: "flex", gap: "10px", alignItems: "flex-start", pointerEvents: "auto" }}>
+        <img src={WHIMSY_SRC} alt="Whimsy" width={64} height={64} style={{ flexShrink: 0, filter: "drop-shadow(0 4px 12px rgba(139,92,246,0.5))" }} />
+        <div style={{ flex: 1, background: "linear-gradient(180deg, rgba(28,20,48,0.98), rgba(18,13,32,0.98))", border: "1px solid rgba(139,92,246,0.5)", borderRadius: "14px", padding: "12px 14px", boxShadow: "0 10px 34px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+            <span style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8b7bb8" }}>Whimsy · Step {step}</span>
+            <button onClick={finish} title="Dismiss the guide" style={{ background: "none", border: "none", color: "#8b7bb8", cursor: "pointer", fontSize: "0.95rem", lineHeight: 1, padding: 0 }}>✕</button>
+          </div>
+          <div style={{ fontSize: "0.92rem", fontWeight: 700, color: "#e9e2ff", marginBottom: "4px" }}>{active.title}</div>
+          <div style={{ fontSize: "0.8rem", color: "#c9c0e0", lineHeight: 1.5 }}>{active.body}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+            <button onClick={finish} style={{ background: "none", border: "none", color: "#6f6690", cursor: "pointer", fontSize: "0.72rem", padding: 0 }}>Skip guide</button>
+            <button onClick={advance} className="btn-primary" style={{ padding: "6px 14px", fontSize: "0.78rem", borderRadius: "8px" }}>
+              {active.key === "g-next" ? "Got it!" : "Got it →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 // ── The controlled component ────────────────────────────────────────────────────
 export interface CharacterStepsProps {
   step: number;                              // 1-6
@@ -261,9 +470,10 @@ export interface CharacterStepsProps {
   hideTooltip: () => void;
   nameError: string;
   setNameError: (s: string) => void;
+  onGuideRestart?: () => void;             // wipe all fields + restart Whimsy's tour
 }
 
-export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, nameError, setNameError }: CharacterStepsProps) {
+export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, nameError, setNameError, onGuideRestart }: CharacterStepsProps) {
   const [hoveredRace, setHoveredRace]   = useState<string | null>(null);
   const [hoveredClass, setHoveredClass] = useState<string | null>(null);
   const [hoveredAlign, setHoveredAlign] = useState<string | null>(null);
@@ -460,7 +670,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
       {step === 1 && (
         <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
           <div style={{ display: "flex", gap: "14px" }}>
-            <div style={{ flex: 2 }}>
+            <div style={{ flex: 2 }} data-guide="g-name">
               <label style={{ display: "block", marginBottom: "10px", color: "var(--foreground)", fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
                 onMouseEnter={e => showTooltip(tipBox("Character Name", "What your hero is called in the world. The DM and other players will use this name throughout your adventure.", "#c4b5fd"), e)}
                 onMouseLeave={hideTooltip}>Character Name</label>
@@ -485,20 +695,20 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
             <label style={{ display: "block", marginBottom: "14px", color: "var(--foreground)", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
               onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
               onMouseLeave={hideTooltip}>Race</label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(150px, 18vw, 220px), 1fr))", gap: "clamp(12px, 1.3vw, 18px)" }}>
+            <div data-guide="g-race" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(108px, 11vw, 140px), 1fr))", gap: "clamp(8px, 0.9vw, 12px)" }}>
               {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
                 <div key={race}
                   onClick={() => patch({ race })}
                   onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
                   onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
-                  style={{ padding: "22px 14px 18px", borderRadius: "14px", border: `2px solid ${form.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.55)" : "var(--border)"}`, background: form.race === race ? "rgba(139,92,246,0.22)" : hoveredRace === race ? "rgba(139,92,246,0.1)" : "var(--inset-bg)", cursor: "pointer", textAlign: "center", transition: "all 0.2s", transform: form.race === race ? "translateY(-4px)" : hoveredRace === race ? "translateY(-2px)" : "none", boxShadow: form.race === race ? "0 10px 30px rgba(139,92,246,0.45), 0 0 0 1px rgba(139,92,246,0.5) inset" : "none" }}>
-                  <div style={{ position: "relative", width: "96px", height: "96px", margin: "0 auto 12px", borderRadius: "50%", overflow: "hidden", background: "var(--inset-bg)", border: `2px solid ${form.race === race ? "rgba(196,181,253,0.7)" : "rgba(148,163,184,0.2)"}`, boxShadow: form.race === race ? "0 0 22px rgba(139,92,246,0.55)" : "none" }}>
-                    <img src={`/races/${race.toLowerCase().replace("-", "_")}.png`} alt={`${race} emblem`}
+                  style={{ padding: "10px 8px 9px", borderRadius: "12px", border: `2px solid ${form.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.55)" : "var(--border)"}`, background: form.race === race ? "rgba(139,92,246,0.22)" : hoveredRace === race ? "rgba(139,92,246,0.1)" : "var(--inset-bg)", cursor: "pointer", textAlign: "center", transition: "all 0.2s", transform: form.race === race ? "translateY(-3px)" : hoveredRace === race ? "translateY(-2px)" : "none", boxShadow: form.race === race ? "0 8px 24px rgba(139,92,246,0.45), 0 0 0 1px rgba(139,92,246,0.5) inset" : "none" }}>
+                  <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", margin: "0 auto 7px", borderRadius: "10px", overflow: "hidden", background: "var(--inset-bg)", border: `2px solid ${form.race === race ? "rgba(196,181,253,0.7)" : "rgba(148,163,184,0.2)"}`, boxShadow: form.race === race ? "0 0 18px rgba(139,92,246,0.55)" : "none" }}>
+                    <img src={racePortraitPath(race, form.sex)} alt={`${race} example portrait`}
                       onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "2.6rem", position: "absolute", inset: 0 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
+                      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
+                    <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "2.2rem", position: "absolute", inset: 0 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
                   </div>
-                  <div style={{ fontSize: "1.15rem", fontWeight: form.race === race ? 700 : 600, color: form.race === race ? "var(--accent-strong)" : "var(--foreground)", letterSpacing: "0.02em" }}>{race}</div>
+                  <div style={{ fontSize: "0.95rem", fontWeight: form.race === race ? 700 : 600, color: form.race === race ? "var(--accent-strong)" : "var(--foreground)", letterSpacing: "0.02em" }}>{race}</div>
                 </div>
               ))}
             </div>
@@ -508,7 +718,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
             <label style={{ display: "block", marginBottom: "14px", color: "var(--foreground)", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
               onMouseEnter={e => showTooltip(tipBox("Sex / Pronouns", "Sets the pronouns the DM uses when narrating your character's actions — he/him, she/her, or they/them.", "#c4b5fd"), e)}
               onMouseLeave={hideTooltip}>Sex</label>
-            <div style={{ display: "flex", gap: "14px" }}>
+            <div data-guide="g-sex" style={{ display: "flex", gap: "14px" }}>
               {(["male", "female", "non-binary"] as const).map(s => {
                 const pronounMap = { male: "he/him", female: "she/her", "non-binary": "they/them" };
                 return (
@@ -549,7 +759,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
         <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <div>
             <label style={{ display: "block", marginBottom: "10px", color: "var(--subtle)", fontSize: "1rem" }}>Class</label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(130px, 14vw, 180px), 1fr))", gap: "clamp(10px, 1.2vw, 16px)" }}>
+            <div data-guide="g-class" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(130px, 14vw, 180px), 1fr))", gap: "clamp(10px, 1.2vw, 16px)" }}>
               {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => {
                 const ct = CLASS_TIPS[cls];
                 const clsColor = CLASS_COLORS[cls] ?? "#8b5cf6";
@@ -558,10 +768,10 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
                     onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(tipBoxNode(ct.title, <><div style={{ color: "var(--muted)", fontSize: "0.9em", marginBottom: "4px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div><div style={{ color: "var(--subtle)" }}>{ct.body}</div></>, clsColor), e); }}
                     onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
                     style={{ padding: "14px 8px 10px", borderRadius: "12px", border: `1px solid ${form.class === cls ? clsColor : hoveredClass === cls ? clsColor + "77" : "var(--border)"}`, background: form.class === cls ? clsColor + "22" : hoveredClass === cls ? clsColor + "11" : "var(--inset-bg)", cursor: "pointer", textAlign: "center", transition: "all 0.2s", transform: form.class === cls ? "translateY(-3px)" : hoveredClass === cls ? "translateY(-1px)" : "none", boxShadow: form.class === cls ? `0 6px 22px ${clsColor}44` : "none" }}>
-                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", marginBottom: "8px", borderRadius: "8px", overflow: "hidden", background: "var(--inset-bg)", border: `1px solid ${form.class === cls ? clsColor + "88" : "rgba(148,163,184,0.15)"}` }}>
-                      <img src={classPortraitPath(cls)} alt={`${cls} example portrait`}
+                    <div style={{ position: "relative", width: "82px", height: "82px", margin: "0 auto 8px", borderRadius: "50%", overflow: "hidden", background: "var(--inset-bg)", border: `2px solid ${form.class === cls ? clsColor : "rgba(148,163,184,0.2)"}`, boxShadow: form.class === cls ? `0 0 18px ${clsColor}66` : "none" }}>
+                      <img src={classIconPath(cls)} alt={`${cls} emblem`}
                         onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
-                        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "2rem", position: "absolute", inset: 0 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
                     </div>
                     <div style={{ fontSize: "0.92rem", fontWeight: form.class === cls ? 700 : 400, color: form.class === cls ? clsColor : "var(--foreground)" }}>{cls}</div>
@@ -575,18 +785,18 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
           {profData && (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.8rem", color: "var(--subtle)", lineHeight: 1.7, display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                <span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.saves.title, PROF_TIPS.saves.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
+                <span><span aria-hidden style={{ marginRight: "5px" }}>{PROF_CAT_ICONS.saves}</span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.saves.title, PROF_TIPS.saves.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
                 <span style={{ color: "var(--muted)" }}>|</span>
-                <span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.armor.title, PROF_TIPS.armor.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Armor:</strong> {profData.armorProficiencies}</span>
+                <span><span aria-hidden style={{ marginRight: "5px" }}>{PROF_CAT_ICONS.armor}</span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.armor.title, PROF_TIPS.armor.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Armor:</strong> {profData.armorProficiencies}</span>
                 <span style={{ color: "var(--muted)" }}>|</span>
-                <span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.weapons.title, PROF_TIPS.weapons.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Weapons:</strong> {profData.weaponProficiencies}</span>
+                <span><span aria-hidden style={{ marginRight: "5px" }}>{PROF_CAT_ICONS.weapons}</span><strong style={{ color: "var(--accent-strong)", cursor: "help" }} onMouseEnter={e => showTooltip(tipBox(PROF_TIPS.weapons.title, PROF_TIPS.weapons.body, "#c4b5fd"), e)} onMouseLeave={hideTooltip}>Weapons:</strong> {profData.weaponProficiencies}</span>
               </div>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                   <label style={{ color: "var(--subtle)", fontSize: "0.9rem" }}>Choose <strong style={{ color: "var(--foreground)" }}>{profData.skillChoices.count}</strong> Skill Proficiencies</label>
                   <span style={{ fontSize: "0.78rem", fontWeight: "bold", color: form.skillProficiencies.length === profRequired ? "#16a34a" : "#8b5cf6" }}>{form.skillProficiencies.length} / {profRequired}</span>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                <div data-guide="g-skills" style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                   {profData.skillChoices.skills.map(skill => {
                     const selected = form.skillProficiencies.includes(skill);
                     const disabled = !selected && form.skillProficiencies.length >= profRequired;
@@ -594,8 +804,10 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
                       <div key={skill} onClick={() => toggleSkillProf(skill)}
                         onMouseEnter={e => { const st = SKILL_TIPS[skill]; if (st) showTooltip(tipBox(st.title, st.body), e); }}
                         onMouseLeave={hideTooltip}
-                        style={{ padding: "6px 14px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer", border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`, background: selected ? "rgba(139,92,246,0.25)" : "transparent", color: selected ? "var(--foreground)" : disabled ? "var(--muted)" : "var(--subtle)", fontSize: "0.82rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s" }}>
-                        {selected && <span style={{ marginRight: "4px", fontSize: "0.65rem" }}>✓</span>}{skill}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 14px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer", border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`, background: selected ? "rgba(139,92,246,0.25)" : "transparent", color: selected ? "var(--foreground)" : disabled ? "var(--muted)" : "var(--subtle)", fontSize: "0.82rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s" }}>
+                        {selected && <span style={{ fontSize: "0.65rem" }}>✓</span>}
+                        <span style={{ fontSize: "0.95rem", lineHeight: 1 }} aria-hidden>{SKILL_ICONS[skill] ?? "•"}</span>
+                        {skill}
                       </div>
                     );
                   })}
@@ -608,7 +820,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
 
       {/* ── Step 3: Ability Scores ── */}
       {step === 3 && (
-        <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div className="animate-fade-in" data-guide="g-stats" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           <div style={{ display: "flex", gap: "12px", paddingBottom: "20px", borderBottom: "1px solid var(--border)" }}>
             {(["roll", "array", "pointbuy"] as const).map(method => (
               <button key={method} onClick={() => handleStatMethodChange(method)}
@@ -675,7 +887,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
           {/* Primary Weapon — curated to this class's proficiencies */}
           <div>
             <label style={{ display: "block", marginBottom: "10px", color: "var(--subtle)", fontSize: "1rem" }}>Primary Weapon <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>· {form.class} proficiencies</span></label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px" }}>
+            <div data-guide="g-weapon" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px" }}>
               {weaponOptions.map(w => {
                 const sel = form.weapon === w.name;
                 return (
@@ -781,7 +993,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
 
       {/* ── Step 5: Background ── */}
       {step === 5 && (
-        <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div className="animate-fade-in" data-guide="g-background" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           <div style={{ padding: "14px 18px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.82rem", color: "var(--subtle)", lineHeight: 1.7 }}>
             <strong style={{ color: "var(--accent-strong)", display: "block", marginBottom: "6px" }}>Optional — skip if you prefer to discover your character in play.</strong>
             Your background gives the DM and portrait artist context. It can be one sentence or a full paragraph — the AI weaves it into your story, encounters, and portrait.
@@ -821,7 +1033,7 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
 
       {/* ── Step 6: Spells ── */}
       {step === 6 && isSpellcaster && (
-        <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div className="animate-fade-in" data-guide="g-spells" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <div style={{ padding: "12px 16px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.82rem", color: "var(--accent-strong)", lineHeight: 1.5 }}>
             As a Level 1 <strong>{form.class}</strong>, you start with no spells readied. Select your spells below — these are what you carry into the world.
             {SPELL_LIMITS[form.class]?.spellFormula && <span> Your prepared count is determined by your ability modifier.</span>}
@@ -854,6 +1066,8 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
           )}
         </div>
       )}
+
+      <CreationGuide step={step} form={form} profRequired={profRequired} spellCounts={spellCounts} onGuideRestart={onGuideRestart} />
     </>
   );
 }

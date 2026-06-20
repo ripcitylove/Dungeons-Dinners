@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
     const avgLevel  = Math.round(party.reduce((s, c) => s + c.level, 0) / party.length);
     const partySize = party.length;
     const partyDesc = party.map(c => `${c.name} the Lvl ${c.level} ${c.race} ${c.class}`).join(", ");
-    const maxEnemies = Math.max(2, Math.ceil(partySize * 1.5));
+    // Encounter size scales with the party (which ranges 1–10). Keep a real floor so
+    // a big party never faces a lone foe, and a ceiling of 10 so it stays balanced
+    // and the scene's enemy cards still fit on screen.
+    const maxEnemies = Math.min(10, Math.max(2, Math.ceil(partySize * 1.5)));
+    const minEnemies = Math.min(maxEnemies, Math.max(1, Math.round(partySize * 0.75)));
     const crMin = Math.max(0.125, avgLevel - 2);
     const crMax = avgLevel + 1;
 
@@ -50,7 +54,7 @@ export async function POST(req: NextRequest) {
 Party (${partySize} adventurers, avg level ${avgLevel}): ${partyDesc}
 Combat context: ${context.slice(0, 500)}
 
-Generate 1–${maxEnemies} enemies. Requirements:
+Generate ${minEnemies}–${maxEnemies} enemies — SCALE THE COUNT to a party of ${partySize}. A solo or duo party should face few foes; a large party of 6–10 should face a sizable group (or a boss with minions) so the fight feels earned. Requirements:
 - CR range: ${crMin}–${crMax}
 - For parties of 5+: use a boss (higher CR) flanked by minions, or more enemies of moderate CR
 - XP must match D&D 5e values: ${xpRef}

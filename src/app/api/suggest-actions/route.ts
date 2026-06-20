@@ -125,10 +125,17 @@ CRITICAL — PARTY AWARENESS:
 - NEVER suggest asking whether a party member who is currently alive and standing might be dead, missing, or "still out there." If the PARTY block says Aria is at 9/9 HP and alive, do NOT suggest "Ask if Aria is still alive." The DM's flowery prose may speak of a character in past or mystical tense — the PARTY block is authoritative.
 - Only suggest mourning, searching for, or asking about the fate of party members who are actually DEAD or absent. If a member is Unconscious, "stabilize / heal / revive" suggestions are fine.
 
+CRITICAL — NO ENEMIES = NO ATTACKING (this is a top source of bad suggestions):
+- If there is no "ACTIVE ENEMIES" line below, there are NO hostiles in the scene. You MUST NOT suggest attacking, casting an offensive/targeted spell at, shooting, or otherwise striking "an enemy", "a foe", "the creature", "the nearest enemy", or any hostile — there is nothing to fight. Do not invent a foe from the DM's atmospheric prose (a "wrong" sound, darkness, a held note). Suggest only exploration, social, movement, perception/investigation, or preparation actions.
+- Only suggest combat actions when the ACTIVE ENEMIES line is present and non-empty.
+
+CRITICAL — DOABLE THIS TURN:
+- Every suggestion must be completable on the acting character's CURRENT turn — one action (optionally with movement). Never suggest multi-turn plans, things that require another character to act first, or actions that depend on something not present in the scene.
+
 CRITICAL — SCENE-FIT:
-- COMBAT: suggest attacks, tactical moves, spell use, helping allies, or escape. Do not suggest peaceful dialogue or idle exploration.
-- SOCIAL/ROLEPLAY: suggest questions, persuasion, investigation, roleplay, or reading the situation. Do not suggest drawing weapons unless clearly warranted.
-- EXPLORATION: suggest investigating the scene, interacting with objects, using skills, or preparing for danger.
+- COMBAT (enemies present): suggest attacks, tactical moves, spell use, helping allies, or escape. Do not suggest peaceful dialogue or idle exploration.
+- SOCIAL/ROLEPLAY: suggest questions, persuasion, investigation, roleplay, or reading the situation. Do not suggest drawing weapons or attacking unless clearly warranted.
+- EXPLORATION: suggest investigating the scene, interacting with objects, using skills, or preparing for danger. Never suggest attacking when nothing hostile is present.
 - Never suggest something the DM just narrated as already done. Be specific to this scene, not generic.
 - If HP is below 40%, include at least one option focused on survival or healing.
 
@@ -145,6 +152,8 @@ CRITICAL — STAY INSIDE THE ACTING CHARACTER'S KIT (this is the #1 source of ba
 - The DM's prose frequently narrates what OTHER characters just did — e.g. "Randiezel's staff hums, ready" describes Randiezel casting Shillelagh, NOT the acting character. NEVER suggest the acting character use a spell, cantrip, weapon, or feature that belongs to another character or is merely mentioned in the prose. Judge ONLY by the acting character's own listed Cantrips/Prepared spells/Weapons.
 - Match every option to the character's CLASS. A Wizard cannot cast druid/cleric spells (no Entangle, no Shillelagh, no Cure Wounds) unless those exact names appear in THIS character's lists. A Fighter/Monk/Rogue with no spell lists gets ZERO spell suggestions. If an ability is not in this character's own lists, it does not exist for them.
 - When in doubt, prefer a safe universal action (move, attack with a listed weapon, use a known cantrip, talk, investigate, take cover) over guessing at an ability they may not have.
+
+CRITICAL WEAPON RULE: Only suggest attacking with a weapon that appears verbatim in THIS character's Weapons list. NEVER invent a weapon they don't carry (no "hand crossbow", "longbow", etc. unless it is listed). If the Weapons list is empty, suggest an unarmed strike, an improvised action, or a non-weapon action — never a named weapon.
 
 CRITICAL SPELL RULE: Only suggest spells/cantrips that appear verbatim in THIS character's Cantrips or Prepared spells list above. Non-spellcasters get zero spell suggestions.
 
@@ -169,10 +178,81 @@ CRITICAL SPELL-SLOT RULE: "Prepared spells" are LEVELED — each one costs a spe
     }
 
     const clean = suggestions
-      .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
-      .slice(0, 4);
+      .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
 
-    return Response.json({ suggestions: clean });
+    // ── Deterministic validity filter ────────────────────────────────────────
+    // The model is told all of the above, but still occasionally proposes the
+    // impossible (attacking with no enemies present, casting a spell the
+    // character doesn't have, swinging a weapon they don't carry). Hard-drop
+    // those here so an impossible action can never reach the player.
+    const aliveEnemies = (enemies ?? []).filter(e => !e.is_defeated);
+    const inCombat     = aliveEnemies.length > 0;
+
+    const allowedSpells = new Set(
+      [...(character?.cantrips_known ?? []), ...(character?.spells_prepared ?? [])]
+        .map(s => s.toLowerCase().trim()).filter(Boolean),
+    );
+    const cantripSet = new Set((character?.cantrips_known ?? []).map(s => s.toLowerCase().trim()));
+    const allowedWeapons = new Set(
+      (character?.inventory?.weapons ?? [])
+        .map(w => (typeof w === "string" ? w : w.name).toLowerCase().trim()).filter(Boolean),
+    );
+
+    // Spell-slot economy: a leveled (prepared, non-cantrip) spell needs a slot.
+    const maxSlots = character?.class ? getSpellSlots(character.class, character.level ?? 1) : {};
+    const usedSlots = character?.spell_slots_used ?? {};
+    let slotsLeft = 0;
+    for (const [lvl, n] of Object.entries(maxSlots)) slotsLeft += Math.max(0, (n as number) - (Number(usedSlots[lvl]) || 0));
+
+    // Common 5e weapon nouns — used only to catch a NAMED weapon the character
+    // doesn't carry. Generic nouns last so specific names match first.
+    const WEAPON_WORDS = [
+      "hand crossbow", "heavy crossbow", "light crossbow", "crossbow",
+      "greatsword", "shortsword", "longsword", "greataxe", "battleaxe", "handaxe", "hand axe",
+      "greatclub", "warhammer", "morningstar", "quarterstaff", "longbow", "shortbow", "blowgun",
+      "scimitar", "rapier", "javelin", "halberd", "glaive", "trident", "war pick", "sickle",
+      "dagger", "mace", "club", "spear", "flail", "lance", "maul", "pike", "whip", "sling",
+      "dart", "net", "bow", "axe", "sword", "hammer", "staff",
+    ];
+
+    const isValid = (raw: string): boolean => {
+      const t = raw.toLowerCase();
+      // 1. No enemies → nothing to attack/target.
+      if (!inCombat) {
+        if (/\b(enem(?:y|ies)|foe|foes|hostile|monster|creature|attacker|the beast|nearest)\b/.test(t)) return false;
+        if (/\b(attack|strike|stab|slash|shoot|swing|lunge|charge|fire at|loose|impale|cleave)\b/.test(t)) return false;
+      }
+      // 2. Casting must name a spell the character actually has, with a slot.
+      if (/\bcast(?:s|ing)?\b/.test(t)) {
+        if (allowedSpells.size === 0) return false; // non-caster can't cast
+        const named = [...allowedSpells].find(name => t.includes(name));
+        if (!named) return false;                   // names a spell not in the kit
+        if (!cantripSet.has(named) && slotsLeft <= 0) return false; // leveled spell, no slot
+      }
+      // 3. A NAMED weapon must be one the character carries.
+      const mentioned = WEAPON_WORDS.find(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(t));
+      if (mentioned) {
+        const carries = [...allowedWeapons].some(w => w.includes(mentioned) || mentioned.includes(w));
+        if (!carries) return false;
+      }
+      return true;
+    };
+
+    let valid = clean.filter(isValid).slice(0, 4);
+
+    // Backfill so the player is never left with an empty/sparse panel. The
+    // fallbacks are universal actions that are always possible in their context.
+    if (valid.length < 3) {
+      const fallback = inCombat
+        ? ["Size up the enemy and pick a target.", "Move to better cover.", "Ready yourself and brace for the next blow."]
+        : ["Look around carefully for anything useful.", "Move ahead cautiously.", "Listen for any sound or movement."];
+      for (const f of fallback) {
+        if (valid.length >= 3) break;
+        if (!valid.some(v => v.toLowerCase() === f.toLowerCase())) valid.push(f);
+      }
+    }
+
+    return Response.json({ suggestions: valid });
   } catch {
     return Response.json({ suggestions: [] });
   }

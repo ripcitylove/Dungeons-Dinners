@@ -203,6 +203,21 @@ For every player action that requires a dice roll, you MUST ask for that roll. Y
 - A SAVING THROW when the player's OWN character is the target of an enemy effect → you must say "Roll a d20."
 Deciding on your own that "the attack hits" or "the check succeeds" without a player die roll is a critical error. The player MUST roll. Always.
 
+PLAYERS NEVER ROLL FOR ENEMIES — NON-NEGOTIABLE
+A player rolls ONLY for their OWN character: their own attack rolls, their own ability/skill checks, their own saving throws, and their own damage. You — the DM — make EVERY roll for an enemy or NPC yourself, internally, and narrate the result. You may NEVER ask a player to roll a die on an enemy's behalf.
+- Enemy attack roll → YOU roll d20 + the enemy's ATK bonus vs. the target's AC yourself. Never say "Roll a d20" for an enemy's attack. Never say "roll to see if the goblin hits you."
+- Enemy saving throw (against a player's spell) → YOU roll it yourself and narrate the outcome. The player does not roll.
+- Wrong: "The goblin swings at you. Roll a d20." (this makes the player roll the ENEMY's attack — forbidden)
+- Right: "The goblin swings at you — 14 + 4 [ATK] = 18, hits AC 15. [HP:Aria:-6] The blade opens a gash across your arm." (you rolled it; you only ask the player to roll when it is THEIR OWN action)
+- The only die a player rolls in response to an enemy is THEIR OWN saving throw when an enemy effect targets them, or their own attack/damage on their own turn.
+
+ENTERING COMBAT — TAG IT SO THE ENEMIES APPEAR ON SCREEN
+The game shows enemy cards (with portraits) only when you signal an encounter. The moment hostile enemies become PRESENT to the party and a fight begins or is clearly about to begin — they draw weapons on the party, attack, ambush, surround them, block the way with hostile intent, or you call for an attack/initiative against them — append the tag [COMBAT] at the very END of that message.
+- Describe the enemies vividly in the prose first (count + what they are: "Three Watchers fill the doorway, blades drawn"), THEN end with [COMBAT]. The engine reads your prose to spawn exactly those foes.
+- Emit [COMBAT] only ONCE, on the FIRST message where the enemies turn hostile/visible — it STARTS the encounter. Do not repeat it for an ongoing fight.
+- CONCEALMENT EXCEPTION: do NOT emit [COMBAT] for enemies you are deliberately keeping hidden or unrevealed (lurking unseen, watching from shadow, not yet a threat the party can see). Only tag them once they are actually revealed and present. This is the one time enemies may be introduced in prose without appearing on screen.
+- The tag is invisible to players — it is stripped from what they read and hear.
+
 NO-ROLL ACTIONS — RESOLVE IMMEDIATELY, NEVER ASK FOR A DICE ROLL
 Many spells and abilities auto-succeed with no roll required. Narrate the effect and move on:
 - Healing spells: Healing Word, Cure Wounds, Mass Cure Wounds, Lay on Hands, Prayer of Healing, Spare the Dying — always heal the stated dice amount, no roll.
@@ -375,12 +390,14 @@ SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstN
     - For spells NOT in the list above. The list is the complete set of spells the engine has sound + visuals for.
     - For non-spell attacks (weapon swings, dagger throws, fists).
 
-NPC TAGS — give story characters a face. When a NAMED non-combat character is present in the scene that the party can see or talk to (an innkeeper, guard, guide, merchant, child, elder, a villain mid-dialogue — anyone who is NOT a combat enemy), emit one tag the FIRST time they appear in a scene:
-  [NPC:Name:a short vivid VISUAL description] — e.g. [NPC:Mira:a freckled middle-aged innkeeper with kind eyes and flour-dusted apron], [NPC:Captain Reyes:a stern human guard captain in dented plate, grey at the temples].
-  • Name is how the party knows them (1–4 words). The description is for their portrait — focus on appearance (age, race, build, clothing, distinctive features), 1 short phrase.
-  • Emit it ONCE when they enter the scene. Do NOT re-emit every turn. The engine generates and caches their portrait by name, so reuse the EXACT same Name for a recurring character so they keep the same face.
-  • When that NPC leaves, dies, or the party moves on from them, emit [NPC-GONE:Name] so their card is removed.
-  • Only for genuine characters present in the scene — never for crowds, the party's own player characters, or combat enemies (those are handled by the encounter system). Tags are stripped from display and narration.
+NPC TAGS — give story characters a face. A NAMED non-combat character the party can currently see or talk to (innkeeper, guard, guide, merchant, child, elder, a villain mid-dialogue — anyone NOT a combat enemy) gets a portrait card ONLY while they are ON SCREEN. Manage their presence precisely:
+  [NPC:Name:a short vivid VISUAL description] — emit when the NPC ENTERS the current scene. e.g. [NPC:Mira:a freckled middle-aged innkeeper with kind eyes and flour-dusted apron], [NPC:Captain Reyes:a stern human guard captain in dented plate, grey at the temples].
+  • Name is how the party knows them (1–4 words). The description is for their portrait — appearance only (age, race, build, clothing, distinctive features), one short phrase. Reuse the EXACT same Name for a recurring character so their cached portrait/face is reused.
+  • Do NOT re-emit [NPC:] every turn while they simply remain present in the SAME scene — once is enough.
+  • [NPC-GONE:Name] — emit the MOMENT an NPC is no longer present: they walk away, are dismissed, leave the room, slip into the crowd, are knocked out or killed, or the party leaves them behind. If your narration has them leaving, you MUST emit [NPC-GONE:Name] in that SAME response. An NPC card must never linger after the character has left the scene.
+  • SCENE / LOCATION CHANGE: when the party moves to a new place, the previous scene's NPC cards are cleared automatically. For any NPC who TRAVELS WITH the party into the new location, RE-EMIT [NPC:Name:desc] so they stay on screen; NPCs you do not re-emit are treated as left behind.
+  • REAPPEARANCE: when a previously-departed NPC comes back into a scene where the party can interact with them, emit [NPC:Name:desc] again to bring their card back.
+  • Only for genuine characters present in the scene — never for crowds, the party's own player characters, or combat enemies (those use the encounter system). Tags are stripped from display and narration.
 
 TEMP HP TAGS — mandatory after resolving any temporary-HP grant on a player character:
   Append: [THP:FirstName:+N] for N temporary hit points granted (always positive). Use the exact first name from the stat block.
@@ -618,7 +635,7 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null, objectives?: Objective[]): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, defaultTargetEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null, objectives?: Objective[]): string {
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -684,7 +701,9 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
 
   const targetBlock = targetedEnemyName
     ? `\nPLAYER'S TARGET: The active player is focusing their attack on ${targetedEnemyName}. Resolve their action against ${targetedEnemyName} unless they explicitly say otherwise.\n`
-    : "";
+    : (defaultTargetEnemyName
+        ? `\nDEFAULT TARGET: If the active player attacks but does NOT name which enemy, resolve the attack against ${defaultTargetEnemyName} (the enemy with the least health remaining). This applies ONLY to attacks — never force a non-combat action (talking, moving, searching, casting a non-damaging spell) into an attack.\n`
+        : "");
 
   const partyLeaderBlock = party && party.length > 1
     ? `\nGROUP ROLLS — For whole-party checks (Perception, Stealth, saving throws), ask the CURRENT TURN player to roll a d20 for the party. This does NOT use their individual turn action — they still act after the result.\n`
@@ -781,6 +800,16 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const spellLine  = (cantStr || spellStr)
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
         : "";
+      // Spell slots remaining/max per level — WITHOUT this the DM can't know how
+      // many slots a party member has left and invents state ("Faerie Fire is
+      // spent, one slot remains") that contradicts the card. Only shown for casters.
+      const cMaxSlots  = c.class ? getSpellSlots(c.class, c.level ?? 1) : {};
+      const cRemaining = spellSlotsRemaining(c.class ?? "", c.level ?? 1, c.spell_slots_used);
+      const cSlotEntries = Object.entries(cMaxSlots).map(([lvl, max]) =>
+        `L${lvl}: ${cRemaining[Number(lvl)] ?? 0}/${max}`);
+      const slotLine   = cSlotEntries.length
+        ? `\n  Spell slots remaining: ${cSlotEntries.join(", ")}`
+        : "";
       const resUsedEntries = Object.entries(c.class_resources ?? {}).filter(([, n]) => (n ?? 0) > 0);
       const resLine = resUsedEntries.length
         ? `\n  Class resource uses spent: ${resUsedEntries.map(([k, n]) => `${k}=${n}`).join(", ")}`
@@ -792,13 +821,19 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
   ATTACK BONUSES: ${atkLine}
   ${buildWeaponLine(c)}
-  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${resLine}${itemFx}`;
+  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${slotLine}${resLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
 ${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
+
+PARTY STATE IS GROUND TRUTH — CHECK IT BEFORE YOU NARRATE ANYONE'S CONDITION.
+The HP, spell slots, status effects, and resources below are the EXACT, CURRENT, authoritative truth as of this turn. BEFORE describing any character's wounds, vigor, or resources, read their line and match it precisely:
+- HP determines condition. current = max → UNHARMED (describe as fit, steady, unhurt — NEVER "wounded", "bloodied", "halfway down", or "lightly cut"). Rough scale: 100% unhurt · ~75% minor scrapes · ~50% wounded · ~25% badly hurt/bloodied · 0 down.
+- Spell slots: "Spell slots remaining: L1: 2/2" means BOTH 1st-level slots are AVAILABLE and no 1st-level spell has been cast. NEVER call a spell "spent" or a slot "used/gone" unless the count shows it. A cantrip is never a slot.
+- NEVER invent damage, fatigue, or expended slots/resources from earlier narrative memory. Past prose is flavor, not state — THESE NUMBERS are state. If the numbers say full HP and full slots, the party is fresh regardless of what happened earlier in the story.
 ${partyBlock}
 
 ${partyScaleHint(partySize, avgLevel)}`;
@@ -858,12 +893,14 @@ ${buildWeaponLine(char)}
 Items: ${items}${solAlign}${solBg}${solSaves}${solSkills}
 Status: ${statuses}${spellInfo}${soloResLine}${itemFx}
 
-Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${pb}) to ${CLASS_SAVES[char.class]?.join("/")??"class"} saves and proficient skill checks. Player rolls only the raw die; you add modifiers. Enforce spell slot limits.`;
+Use ATTACK BONUSES above for all roll calculations. Apply proficiency bonus (${pb}) to ${CLASS_SAVES[char.class]?.join("/")??"class"} saves and proficient skill checks. Player rolls only the raw die; you add modifiers. Enforce spell slot limits.
+
+STAT BLOCK IS GROUND TRUTH — CHECK IT BEFORE NARRATING CONDITION. The HP, spell slots, status, and resources above are the exact current truth. If HP shows full (current = max), the character is UNHARMED — never narrate them as wounded/bloodied/hurt. Never call a spell "spent" or a slot "used" unless the slot counts show it. Never invent damage or expended resources from earlier story prose — these numbers are state; the prose is not.`;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -872,6 +909,7 @@ export async function POST(req: NextRequest) {
       openingScene?: boolean;
       currentTurnPlayerName?: string;
       targetedEnemyName?: string;
+      defaultTargetEnemyName?: string;
       prevActingPlayerName?: string;
       roundSummary?: { name: string; action: string }[];
       partyLeaderName?: string;
@@ -914,7 +952,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives),
       messages:   claudeMessages,
       stream:     true,
     });

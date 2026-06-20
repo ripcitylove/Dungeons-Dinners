@@ -216,16 +216,36 @@ export async function POST(req: NextRequest) {
 
     const prompt = `Fantasy RPG character portrait. A ${genderWord} who is a ${raceBase}${titlePart}.${physPart} Class appearance: ${classDesc}.${alignPart}${bgPart} Dark fantasy painterly style, dramatic side lighting, highly detailed face, head-and-shoulders composition. Cinematic epic fantasy art. No text, no watermarks, no logos.`;
 
-    const imgResponse = await openai.images.generate({
-      model:   "gpt-image-1",
-      prompt,
-      size:    "1024x1024",
-      quality: "medium",
-      n:       1,
-    });
-
-    const b64 = imgResponse.data?.[0]?.b64_json;
-    if (!b64) throw new Error("No image data returned from OpenAI");
+    // Retry transient failures (the #1 cause of "the portrait didn't generate"):
+    // the image API's per-minute rate limit (429) and intermittent 5xx/timeouts.
+    // Backoff honors the API's "try again in Ns" hint when present.
+    let b64: string | undefined;
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const imgResponse = await openai.images.generate({
+          model:   "gpt-image-1",
+          prompt,
+          size:    "1024x1024",
+          quality: "medium",
+          n:       1,
+        });
+        b64 = imgResponse.data?.[0]?.b64_json;
+        if (b64) break;
+        lastErr = new Error("No image data returned from OpenAI");
+      } catch (e: unknown) {
+        lastErr = e;
+        const err = e as { status?: number; message?: string };
+        const status = err?.status ?? 0;
+        const msg = err?.message ?? "";
+        const transient = status === 429 || (status >= 500 && status < 600) || /rate limit|timeout|timed out|ECONNRESET|fetch failed|network/i.test(msg);
+        if (!transient || attempt === 4) throw e;
+        const hint = /try again in ([\d.]+)s/i.exec(msg);
+        const waitMs = Math.min(20000, Math.ceil(((hint ? parseFloat(hint[1]) : 2 * attempt) + 1) * 1000));
+        await new Promise(r => setTimeout(r, waitMs));
+      }
+    }
+    if (!b64) throw lastErr instanceof Error ? lastErr : new Error("No image data returned from OpenAI");
     const imgBuffer = Buffer.from(b64, "base64");
 
     const supabase = makeSupabase(authHeader);

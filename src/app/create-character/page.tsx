@@ -239,16 +239,17 @@ export default function CreateCharacter() {
 
           {/* Shared step content — single source of truth (see components/CharacterSteps.tsx) */}
           <div style={{ minHeight: '340px' }}>
-            <CharacterSteps step={step} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={nameError} setNameError={setNameError} />
+            <CharacterSteps step={step} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={nameError} setNameError={setNameError}
+              onGuideRestart={() => { setForm(emptyForm()); setStep(1); setNameError(''); }} />
           </div>
 
           {/* Footer Navigation */}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
             <button className="btn-secondary" onClick={step === 1 ? () => router.push('/dashboard') : prevStep}>{step === 1 ? 'Cancel' : 'Back'}</button>
             {step < totalSteps ? (
-              <button className="btn-primary" onClick={nextStep} disabled={!canProceed}>Next Step</button>
+              <button className="btn-primary" data-guide="g-next" onClick={nextStep} disabled={!canProceed}>Next Step</button>
             ) : (
-              <button className="btn-primary" onClick={handleFinish} disabled={saving || portraitGenerating || (isSpellcaster && !spellsReady)} style={{ background: 'var(--accent)' }}>{saving ? 'Creating…' : 'Complete Character'}</button>
+              <button className="btn-primary" data-guide="g-next" onClick={handleFinish} disabled={saving || portraitGenerating || (isSpellcaster && !spellsReady)} style={{ background: 'var(--accent)' }}>{saving ? 'Creating…' : 'Complete Character'}</button>
             )}
           </div>
 

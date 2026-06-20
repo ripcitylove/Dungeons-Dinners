@@ -35,7 +35,7 @@ import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
-import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks } from "../../../lib/narration";
+import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks, looksLikeRollRequest } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
 type Message  = { role: MsgRole; content: string; sender?: string; imageUrl?: string };
@@ -254,9 +254,9 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   },
   {
     icon: "📋",
-    title: "Sheet, Party, Log & Combat",
-    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spell slots, inventory, HP, and every proficiency bonus. PARTY shows everyone's live stats and gold; pick any member to view their full spells, proficiencies, and gear. STORY LOG is the full transcript. COMBAT appears when enemies are present. Hurt and not sure why? The Character tab's \"🩸 What happened to me?\" button shows a running log of every wound and heal — and its cause.",
-    tip: "When enemies or story NPCs appear, their portraits stack down the LEFT of the scene — click an enemy (or its combat card) to target it.",
+    title: "Sheet, Party & Log",
+    body: "The right sidebar has three tabs. CHARACTER is your sheet — stats, spell slots, inventory, HP, and every proficiency bonus. PARTY shows everyone's live stats and gold; pick any member to view their full spells, proficiencies, and gear. STORY LOG is the full transcript. Hurt and not sure why? The Character tab's \"🩸 What happened to me?\" button shows a running log of every wound and heal — and its cause.",
+    tip: "Friendly NPCs appear down the LEFT of the scene; enemies appear as cards along the BOTTOM — click an enemy to target it.",
     diagram: "sheet" as const,
   },
   {
@@ -872,7 +872,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [turnSkipBanner,   setTurnSkipBanner]    = useState<string | null>(null);
   const [userId,           setUserId]            = useState<string | null>(null);
   const [partyChangePending, setPartyChangePending] = useState(false);
-  const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log" | "combat">("party");
+  const [sidebarTab,       setSidebarTab]        = useState<"party" | "sheet" | "log">("party");
   const [openSpellLevels,  setOpenSpellLevels]   = useState<number[]>([]); // expanded higher-level spell sections in the sheet
   const [enemies,          setEnemies]           = useState<CampaignEnemy[]>([]);
   const [combatActive,     setCombatActive]      = useState(false);
@@ -886,6 +886,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [testingVoice,     setTestingVoice]      = useState<string | null>(null);
   const [narVolume,        setNarVolume]         = useState<number>(() => { try { const v = parseFloat(localStorage.getItem("dnd_nar_volume") ?? "1"); return isNaN(v) ? 1 : v; } catch { return 1; } });
   const [narMuted,         setNarMuted]          = useState<boolean>(() => { try { return localStorage.getItem("dnd_nar_muted") === "1"; } catch { return false; } });
+  // Live mirror of the global MusicPlayer's UI state, so the consolidated audio
+  // menu can drive music + ambiance from inside the campaign page.
+  const [audioSnap, setAudioSnap] = useState<import("../../../components/MusicPlayer").DndAudioSnapshot | null>(null);
+  useEffect(() => {
+    const sync = () => setAudioSnap(window.__dndAudio ?? null);
+    sync();
+    window.addEventListener("dndaudiochange", sync);
+    return () => window.removeEventListener("dndaudiochange", sync);
+  }, []);
   // Collapsed state for the Suggested Actions panel. Default to expanded.
   // Persisted to localStorage and hydrated client-side (the SSR-safe pattern —
   // reading localStorage inside the initializer would cause hydration mismatches).
@@ -1016,10 +1025,25 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "npcs_sync", payload: { senderId: userId, npcs: next } });
   }, [params.id, userId]);
-  const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true) => {
+  const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
     const { entered, gone } = parseNpcTags(narrative);
+    const prev = npcsRef.current;
+    if (sceneReset) {
+      // The scene/location just changed: the on-screen roster is now AUTHORITATIVE —
+      // exactly the NPCs the DM re-affirmed this turn. Anyone not re-emitted was left
+      // behind in the old scene, so their card is dropped. Persisting NPCs keep their
+      // cached portrait by reusing the existing entry for the same name.
+      const next = entered.slice(-6).map(e => {
+        const existing = prev.find(n => n.name.toLowerCase() === e.name.toLowerCase());
+        return existing ? { ...existing, desc: e.desc || existing.desc } : { name: e.name, desc: e.desc };
+      });
+      const sameSet = next.length === prev.length
+        && next.every(n => prev.some(p => p.name.toLowerCase() === n.name.toLowerCase()));
+      if (!sameSet) commitNpcs(next, broadcast);
+      return;
+    }
     if (entered.length === 0 && gone.length === 0) return;
-    let next = [...npcsRef.current];
+    let next = [...prev];
     if (gone.length) {
       const goneSet = new Set(gone.map(g => g.toLowerCase()));
       next = next.filter(n => !goneSet.has(n.name.toLowerCase()));
@@ -2258,7 +2282,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setIsTyping(false); setStreamingContent("");
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: makeLogId("rt"), timestamp: new Date(), role: "dm", content: payload.content }]);
-        const dmDieType  = detectRequiredDiceType(payload.content as string);
+        // Suppress entirely if the DM's roll is for an enemy (players never roll those).
+        const dmDieType  = rollIsForEnemy(payload.content as string) ? null : detectRequiredDiceType(payload.content as string);
         const rollTarget = dmDieType !== null ? detectDiceRollTarget(payload.content as string) : null;
         const dmRollMode = rollTarget ? detectRollMode(payload.content as string) : "normal";
         setDiceRollTarget(rollTarget);
@@ -2525,7 +2550,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setEnemies(spawned);
         enemiesRef.current = spawned;
         setCombatActive(true);
-        setSidebarTab("combat");
       })
       .on("broadcast", { event: "enemies_updated" }, ({ payload }) => {
         const { changes, combat_ended } = payload as {
@@ -2830,15 +2854,45 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diceRollTarget]);
 
-  // Open dice panel only after ALL narration (including in-flight TTS fetches) has finished.
-  // narrating covers active playback; the slot counter covers sentences queued but not yet playing.
+  // Open the dice panel only AFTER the narrator finishes reading — the roll
+  // request ("Roll a d20 for the Intimidation.") is always the LAST sentence
+  // narrated, so we wait until narration is fully idle before showing the dice.
+  // This keeps the dice from popping up mid-read on a long, multi-paragraph turn.
+  //
+  // To still guarantee the panel always appears (the earlier "sometimes it never
+  // opens" bug), we use a STALL WATCHDOG rather than a fixed deadline: we only
+  // force the dice open if narration stops making progress for a sustained window
+  // (a stuck/failed TTS slot). A long but healthy narration is never cut off —
+  // every advancing slot resets the watchdog, so we wait exactly as long as the
+  // narrator is still talking.
   useEffect(() => {
     if (!pendingDiceShow || isTyping) return;
-    const narrationInFlight = narrating || narPlaySlotRef.current < narSlotCounterRef.current;
-    if (!narrationInFlight) {
+    let done = false;
+    const open = () => {
+      if (done) return;
+      done = true;
       setPendingDiceShow(false);
       setShowDice(true);
-    }
+    };
+    const narrationIdle = () => !(narrating || narPlaySlotRef.current < narSlotCounterRef.current);
+    if (narrationIdle()) { open(); return; }
+    const STALL_MS = 8000;
+    let lastPlayed   = narPlaySlotRef.current;
+    let lastProgress = performance.now();
+    const id = setInterval(() => {
+      if (narrationIdle()) { clearInterval(id); open(); return; }
+      // Progress = audio actively playing, or a new narration slot has started.
+      if (narrating || narPlaySlotRef.current !== lastPlayed) {
+        lastPlayed   = narPlaySlotRef.current;
+        lastProgress = performance.now();
+      } else if (performance.now() - lastProgress > STALL_MS) {
+        // Narration made no progress for the stall window — assume the TTS slot
+        // is stuck and open anyway so the player is never trapped waiting.
+        clearInterval(id);
+        open();
+      }
+    }, 200);
+    return () => clearInterval(id);
   }, [pendingDiceShow, narrating, isTyping]);
 
   // ── State changes (HP, gold, items, XP) ──────────────────────────────────────
@@ -3970,8 +4024,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [charWrite]);
 
   // ── Combat: enemy generation and state tracking ───────────────────────────────
+  // The DM signals an encounter primarily with the explicit [COMBAT] tag (see the
+  // ENTERING COMBAT prompt rule) — that's the authoritative trigger and lets the
+  // DM withhold it to keep enemies concealed. detectCombatStart is the heuristic
+  // safety net for when the model narrates an obvious fight starting but forgets
+  // the tag: initiative calls, plus unambiguous "weapons drawn / they attack /
+  // ambush / surround the party" onset cues.
+  const COMBAT_TAG_RE = /\[COMBAT\b[^\]]*\]/i;
   const detectCombatStart = (text: string): boolean =>
-    /\b(roll(?:s)? (?:for )?initiative|initiative (?:order|is rolled|begins)|combat begins?|battle begins?|fights? break(?:s)? out)\b/i.test(text);
+    /\b(roll(?:s)? (?:for )?initiative|initiative (?:order|is rolled|begins)|combat begins?|battle begins?|fights? break(?:s)? out)\b/i.test(text)
+    || /\b(?:blades?|weapons?|swords?|axes?|spears?|daggers?|bows?)\s+(?:are\s+)?drawn\b/i.test(text)
+    || /\b(?:draws?|drawing|unsheathe[sd]?|raise[sd]?|level[sd]?)\s+(?:their|its|his|her)\s+(?:blades?|swords?|weapons?|axes?|spears?|daggers?|bows?)\b/i.test(text)
+    || /\b(?:lunges?|charges?|rushes?|descend[s]?|closes?\s+in|sets?\s+upon|falls?\s+upon|attacks?|swings?\s+at)\s+(?:at\s+|toward\s+|on\s+|upon\s+)?(?:you|the\s+party|the\s+group)\b/i.test(text)
+    || /\b(?:ambush(?:es|ed)?|surround(?:s|ed)?\s+(?:you|the\s+party)|spring(?:s)?\s+(?:the\s+)?(?:trap|ambush)|block(?:s|ing)?\s+the\s+(?:door|doorway|exit|path)[^.!?]*\bdrawn\b)\b/i.test(text);
 
   const spawnEnemies = useCallback(async (context: string) => {
     const party = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class, level: c.level }));
@@ -3986,7 +4051,6 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setEnemies(spawned);
       enemiesRef.current = spawned;
       setCombatActive(true);
-      setSidebarTab("combat");
       channelRef.current?.send({ type: "broadcast", event: "enemies_spawned", payload: { enemies: spawned } });
       // Immediately switch to combat music without waiting for scene image generation
       const combatSceneName = currentSceneRef.current.replace(/_combat$/, "") + "_combat";
@@ -4062,6 +4126,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
       .replace(/\[NPC:[^\]]*\]/gi, "")
       .replace(/\[NPC-GONE:[^\]]*\]/gi, "")
+      .replace(/\[COMBAT\b[^\]]*\]/gi, "")
       .replace(/^ALL PLAYERS HAVE ACTED[^\n]*/gim, "")
       .replace(/^DO NOT CALL NEXT TURN[^\n]*/gim, "")
       .replace(/^ROLL RESTRICTION:[^\n]*/gim, "")
@@ -4112,6 +4177,33 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
 
     return null;
+  }, []);
+
+  // ── Enemy-roll guard ─────────────────────────────────────────────────────────
+  // Players NEVER roll for an enemy's attack/save — that is the DM's job. This
+  // suppresses the dice screen when the DM's roll text is clearly resolving an
+  // ENEMY's roll (enemy as the subject of "rolls", or a roll whose purpose is to
+  // hit a player). Deliberately conservative: it must never swallow a legitimate
+  // player roll, so it only fires on unambiguous enemy-as-roller phrasings.
+  const rollIsForEnemy = useCallback((narrative: string): boolean => {
+    const enemyNames = enemiesRef.current.filter(e => !e.is_defeated).map(e => e.name).filter(Boolean);
+    // Scope to the sentence(s) that actually contain the roll, so unrelated prose
+    // mentioning an enemy can't trip the guard.
+    const sentences = narrative.split(/(?<=[.!?\n])\s*/);
+    const rollSents = sentences.filter(s => /\broll/i.test(s) && /\b(?:hit|attack|save|saving throw|damage|d\d+)\b/i.test(s));
+    const scope = rollSents.length ? rollSents.join(" ") : "";
+    if (!scope) return false;
+    // Enemy is the one rolling: "Goblin #1 rolls…", "the creature rolls a d20".
+    // Requires the 3rd-person "rolls" (enemy as subject) — a player request is the
+    // imperative "roll", so "you swing at the Goblin — roll a d20" is NOT matched.
+    for (const name of enemyNames) {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`\\b${esc}\\b\\s+(?:[\\w,'’-]+\\s+){0,3}rolls\\b`, "i").test(scope)) return true;
+    }
+    if (/\b(?:the\s+)?(?:enemy|enemies|monster|creature|foe|beast|it|they)\s+(?:[\w,'’-]+\s+){0,3}rolls\b/i.test(scope)) return true;
+    // A roll whose stated purpose is to strike a PLAYER → it's the enemy's roll.
+    if (/\brolls?\b[^.!?]{0,40}\bto\s+(?:hit|attack|strike)\s+(?:you|your|the\s+(?:party|group))\b/i.test(scope)) return true;
+    return false;
   }, []);
 
   // ── Roll mode detection (advantage / disadvantage) ───────────────────────────
@@ -4252,6 +4344,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             ?? character?.name);
       const prevActorName  = opts?.prevPlayerName ?? null;
       const targetedEnemy  = targetedEnemyId ? enemiesRef.current.find(e => e.id === targetedEnemyId && !e.is_defeated) : null;
+      // Default attack target when the player hasn't explicitly picked one: the
+      // enemy with the least health remaining (lowest condition rank), ties broken
+      // randomly among the weakest. Passed as a SOFT hint the DM applies only to
+      // attacks that don't name a target — non-combat actions are unaffected.
+      const defaultTargetEnemy = !targetedEnemy ? (() => {
+        const active = enemiesRef.current.filter(e => !e.is_defeated);
+        if (!active.length) return null;
+        const RANK: Record<EnemyCondition, number> = { critical: 0, bloodied: 1, wounded: 2, healthy: 3, defeated: 99 };
+        let low = Infinity;
+        for (const e of active) low = Math.min(low, RANK[e.condition] ?? 3);
+        const weakest = active.filter(e => (RANK[e.condition] ?? 3) === low);
+        return weakest[Math.floor(Math.random() * weakest.length)] ?? null;
+      })() : null;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4263,6 +4368,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(nextPromptName && { currentTurnPlayerName: nextPromptName }),
           ...(prevActorName && nextPromptName && prevActorName !== nextPromptName && { prevActingPlayerName: prevActorName }),
           ...(targetedEnemy && { targetedEnemyName: targetedEnemy.name }),
+          ...(defaultTargetEnemy && { defaultTargetEnemyName: defaultTargetEnemy.name }),
           ...(opts?.suggestedCheck && { suggestedCheck: opts.suggestedCheck }),
           ...(objectivesRef.current.length && { objectives: objectivesRef.current }),
           ...(opts?.roundSummary?.length && { roundSummary: opts.roundSummary }),
@@ -4310,9 +4416,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const { chunks: sents, remaining } = pullNarrationChunks(narBuf, false);
           for (const s of sents) {
             // At a roll request, narrate UP TO AND INCLUDING it (the player must hear
-            // "X, roll a dN.") then stop — any text the DM wrote after the roll is
-            // truncated from the display, so we don't narrate that part.
-            if (/\broll\s+a\s+d\d+\b/i.test(s)) {
+            // "X, roll a dN." / "Roll 2d6 for damage.") then stop — any text the DM
+            // wrote after the roll is truncated from the display, so we don't narrate
+            // that part. Covers all phrasings incl. multi-die and "roll your damage".
+            if (looksLikeRollRequest(s)) {
               const rollClean = expandRollRequestForSpeech(stripSystemLeaks(sliceThroughRollRequest(s)));
               if (rollClean && !(opts?.suppressTurnPromptNarration && isTurnPromptSentence(rollClean))) enqueueNarration(rollClean);
               narBuf = ""; narDone = true; break;
@@ -4447,8 +4554,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // Detect which character the DM is asking to roll, and what die type.
       // If DM asks a different character than the current turn, rewind the turn to that character
       // so they can roll before the game advances to the next player.
-      const rollTarget      = detectDiceRollTarget(full);
-      const detectedDieType = detectRequiredDiceType(full);
+      // Players never roll for an enemy's attack/save — if the roll text is the
+      // DM resolving an enemy's roll, treat it as NO player roll request at all.
+      const enemyRoll       = rollIsForEnemy(full);
+      const rollTarget      = enemyRoll ? null : detectDiceRollTarget(full);
+      const detectedDieType = enemyRoll ? null : detectRequiredDiceType(full);
       let targetChar        = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
 
       // Unnamed roll request (DM says "Roll a DEX save" without naming anyone):
@@ -4692,7 +4802,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
       if (activeEnemies.length > 0) {
         updateEnemyStates(full);
-      } else if (detectCombatStart(full)) {
+      } else if (COMBAT_TAG_RE.test(full) || detectCombatStart(full)) {
         spawnEnemies(full);
       }
 
@@ -5106,6 +5216,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           .then(r => r.json())
           .then(({ sceneName, imageUrl, momentImageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; momentImageUrl?: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
             if (sceneRequestIdRef.current !== sceneReqId) return; // superseded by a newer request
+            const prevScene = currentSceneRef.current;
             // Narrative-driven ambiance: an unnatural scene-wide silence mutes the
             // environmental ambiance so it never contradicts the prose (e.g. "the
             // harbor goes completely silent" while harbor chatter plays).
@@ -5113,6 +5224,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             // Update background when server decided a change is warranted
             if (imageUrl) {
               currentSceneRef.current = sceneName;
+              // Location changed → clear NPCs left behind in the old scene; keep only
+              // those the DM re-affirmed in this narration (a guide who travelled along).
+              if (sceneName && sceneName.toLowerCase() !== (prevScene ?? "").toLowerCase()) {
+                applyNpcTagsFromNarrative(full, true, true);
+              }
               setCurrentSceneUrl(imageUrl);
               if (campaignLoadingRef.current) setLoadSceneDone(true);
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
@@ -5984,7 +6100,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           if (d === "sheet") return (
             <div style={base}>
               <div style={{ display: "flex", gap: "2px", marginBottom: "10px" }}>
-                {(["Party", "Sheet", "Log", "⚔ Combat"] as const).map(tab => (
+                {(["Party", "Sheet", "Log"] as const).map(tab => (
                   <div key={tab} style={{ flex: 1, padding: "6px 2px", borderRadius: "6px", textAlign: "center", fontSize: "0.65rem", background: tab === "Sheet" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.04)", border: tab === "Sheet" ? "1px solid rgba(139,92,246,0.6)" : "1px solid rgba(255,255,255,0.06)", color: tab === "Sheet" ? "#c4b5fd" : "#64748b", fontWeight: tab === "Sheet" ? "bold" : "normal" }}>{tab}</div>
                 ))}
               </div>
@@ -6327,28 +6443,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <span style={{ animation: "blink 1s step-end infinite" }}>✦</span> Generating scene…
           </div>
         )}
-        {/* ── NPC + Enemy portrait cards — left edge of the scene for immersion.
-              NPCs (gold, story characters) sit above enemies (red, combat). Portraits
-              are AI-generated once per name/type and cached in storage so they're
-              reused instead of re-calling the model. Click an enemy to target it. ── */}
-        {(npcs.length > 0 || enemies.some(e => !e.is_defeated)) && (
-          <div style={{ position: "absolute", top: "50%", left: "14px", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: "12px", zIndex: 6, maxHeight: "calc(100% - 40px)", overflowY: "auto", paddingRight: "2px" }}>
-            {npcs.map(n => (
+        {/* ── Friendly NPC portrait cards — LEFT edge of the scene for immersion.
+              Story characters only (gold). Hostiles/enemies live along the bottom.
+              Portraits are AI-generated once per name and cached. ── */}
+        {(() => {
+          // Only show NPCs whose portrait has actually generated — never a placeholder.
+          const visNpcs = npcs.filter(n => n.portrait_url);
+          if (visNpcs.length === 0) return null;
+          // Shrink the cards as more NPCs share the left column so they all fit.
+          const npcW = visNpcs.length >= 5 ? "82px" : visNpcs.length >= 3 ? "102px" : "min(122px, 17vw)";
+          return (
+          <div style={{ position: "absolute", top: "50%", left: "14px", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: "10px", zIndex: 6, maxHeight: "calc(100% - 40px)", overflowY: "auto", paddingRight: "2px" }}>
+            {visNpcs.map(n => (
               <div key={`npc-${n.name}`} className="animate-fade-in"
                 onMouseEnter={ev => showTooltip(tipBox(n.name, n.desc || "An NPC in your story.", "#d4a96a"), ev)}
                 onMouseLeave={hideTooltip}
-                style={{ width: "min(122px, 17vw)", flexShrink: 0, background: "rgba(14,11,6,0.62)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "2px solid rgba(212,169,106,0.45)", borderRadius: "12px", padding: "8px", boxShadow: "0 6px 22px rgba(0,0,0,0.55), 0 0 14px rgba(212,169,106,0.12)" }}>
-                <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(212,169,106,0.25)", marginBottom: "6px", position: "relative" }}>
-                  {n.portrait_url
-                    ? <img src={n.portrait_url} alt={n.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.4rem" }}>🧑</div>}
-                  {!n.portrait_url && <div title="Conjuring portrait…" style={{ position: "absolute", bottom: "4px", right: "4px", width: "7px", height: "7px", borderRadius: "50%", background: "#d4a96a", animation: "blink 1s step-end infinite" }} />}
+                style={{ width: npcW, flexShrink: 0, background: "rgba(14,11,6,0.62)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: "2px solid rgba(212,169,106,0.45)", borderRadius: "12px", padding: "8px", boxShadow: "0 6px 22px rgba(0,0,0,0.55), 0 0 14px rgba(212,169,106,0.12)" }}>
+                <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(212,169,106,0.25)", marginBottom: "6px" }}>
+                  <img src={n.portrait_url!} alt={n.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#e6c78a", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{n.name}</div>
                 <div style={{ fontSize: "0.52rem", color: "#cbb89a", textAlign: "center", letterSpacing: "0.04em", textTransform: "uppercase", marginTop: "1px" }}>NPC</div>
               </div>
             ))}
-            {enemies.filter(e => !e.is_defeated).map(e => {
+          </div>
+          );
+        })()}
+        {/* ── Enemy / hostile cards — lifted off the BOTTOM of the scene. Click to target.
+              Only enemies whose portrait has generated are shown (never a placeholder),
+              and the cards shrink as more enemies appear so a full party's worth fits. ── */}
+        {(() => {
+          const visEnemies = enemies.filter(e => !e.is_defeated && e.portrait_url);
+          if (visEnemies.length === 0) return null;
+          const cnt = visEnemies.length;
+          // Shrink card width as the enemy count climbs (dynamic 1–10 encounters).
+          const enemyW = cnt <= 3 ? "min(118px, 15vw)"
+            : cnt <= 5 ? "min(102px, 12.5vw)"
+            : cnt <= 7 ? "min(88px, 10vw)"
+            : "min(74px, 8.5vw)";
+          return (
+          <div style={{ position: "absolute", bottom: "60px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: cnt >= 6 ? "7px" : "10px", zIndex: 6, maxWidth: "calc(100% - 28px)", overflowX: "auto", overflowY: "hidden", padding: "4px 4px 6px", justifyContent: "center" }}>
+            {visEnemies.map(e => {
               const isTargeted = targetedEnemyId === e.id;
               const cond       = e.condition ?? "healthy";
               const condColor  = CONDITION_COLORS[cond];
@@ -6356,16 +6491,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               return (
                 <div key={e.id} className="animate-fade-in"
                   onClick={() => setTargetedEnemyId(prev => prev === e.id ? null : e.id)}
-                  onMouseEnter={ev => { const condLabel = CONDITION_LABELS[cond]; const condDesc = ENEMY_CONDITION_TIPS[condLabel]; showTooltip(tipBox(e.name, `${condLabel}${condDesc ? " — " + condDesc : ""}\n${e.enemy_type} · CR ${e.cr} · AC ${e.ac} · ATK +${e.attack_bonus}`, condColor), ev); }}
+                  onMouseEnter={ev => { const condLabel = CONDITION_LABELS[cond]; const condDesc = ENEMY_CONDITION_TIPS[condLabel]; showTooltip(tipBox(e.name, `${condLabel}${condDesc ? " — " + condDesc : ""}\n${e.enemy_type} · CR ${e.cr} · AC ${e.ac} · ATK +${e.attack_bonus} · ${e.damage_dice}`, condColor), ev); }}
                   onMouseLeave={hideTooltip}
-                  style={{ width: "min(122px, 17vw)", cursor: "pointer", flexShrink: 0, background: "rgba(12,8,10,0.62)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: `2px solid ${isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`, borderRadius: "12px", padding: "8px", boxShadow: isTargeted ? "0 0 24px rgba(239,68,68,0.5)" : "0 6px 22px rgba(0,0,0,0.55)", animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : undefined, transition: "border-color 0.25s, box-shadow 0.25s" }}>
-                  <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.07)", marginBottom: "6px", position: "relative" }}>
-                    {e.portrait_url
-                      ? <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>{e.portrait_emoji}</div>}
-                    {!e.portrait_url && <div title="Conjuring portrait…" style={{ position: "absolute", bottom: "4px", right: "4px", width: "7px", height: "7px", borderRadius: "50%", background: "#8b5cf6", animation: "blink 1s step-end infinite" }} />}
+                  style={{ width: enemyW, cursor: "pointer", flexShrink: 0, background: "rgba(12,8,10,0.66)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: `2px solid ${isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`, borderRadius: "12px", padding: cnt >= 6 ? "6px" : "8px", boxShadow: isTargeted ? "0 0 24px rgba(239,68,68,0.5)" : "0 6px 22px rgba(0,0,0,0.55)", animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : undefined, transition: "border-color 0.25s, box-shadow 0.25s" }}>
+                  <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.07)", marginBottom: "6px" }}>
+                    <img src={e.portrait_url!} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   </div>
-                  <div style={{ fontSize: "0.72rem", fontWeight: 700, color: isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{e.name}</div>
+                  <div style={{ fontSize: cnt >= 6 ? "0.62rem" : "0.72rem", fontWeight: 700, color: isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{e.name}</div>
                   <div style={{ fontSize: "0.55rem", color: "#d8b4b4", textAlign: "center", marginBottom: "5px", letterSpacing: "0.02em" }}>CR {e.cr} · AC {e.ac}</div>
                   <div style={{ width: "100%", height: "4px", background: "rgba(0,0,0,0.5)", borderRadius: "2px", overflow: "hidden" }}>
                     <div style={{ width: `${condPct}%`, height: "100%", background: condColor, transition: "width 0.5s ease, background 0.4s ease" }} />
@@ -6377,7 +6509,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               );
             })}
           </div>
-        )}
+          );
+        })()}
         {/* ── Objectives Tracker (quest spine) — top-right of the scene, transparent + collapsible ── */}
         {(() => {
           const visObjectives = visibleObjectives(objectives);
@@ -6479,7 +6612,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {narrationEnabled && (
             <button
               onClick={() => setNarMuted(m => !m)}
-              title={narMuted ? "Unmute narrator" : "Mute narrator"}
+              onMouseEnter={e => showTooltip(tipBox(
+                narMuted ? "Unmute Narrator" : "Mute Narrator",
+                "Mutes the DM's AI voice narration ONLY — music and ambience keep playing. To control music, ambience, narration volume, and the DM's voice, open the Audio menu (🎚 Audio) to the right.",
+                "#8b5cf6",
+              ), e)}
+              onMouseLeave={hideTooltip}
               style={{ background: narMuted ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${narMuted ? "rgba(239,68,68,0.4)" : "var(--border)"}`, borderRadius: "8px", width: "36px", height: "36px", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: narMuted ? "#f87171" : "#94a3b8", flexShrink: 0, transition: "all 0.2s" }}
             >
               {narMuted ? "🔇" : "🔈"}
@@ -6488,14 +6626,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {/* Voice/narration picker */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <button
-              onClick={() => { if (!narrationEnabled) { setNarrationEnabled(true); setVoicePickerOpen(true); } else { setVoicePickerOpen(v => !v); } }}
-              title={narrationEnabled ? "Change DM voice" : "Enable AI narration"}
-              style={{ background: narrationEnabled ? "rgba(139,92,246,0.2)" : "transparent", border: `1px solid ${narrationEnabled ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: "8px", padding: "7px 13px", minHeight: "36px", cursor: "pointer", fontSize: "1rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "6px", transition: "all 0.2s", color: narrationEnabled ? "#c4b5fd" : "#94a3b8" }}>
-              {narrating ? <span style={{ animation: "blink 0.8s step-end infinite" }}>🔊</span> : narrationEnabled ? "🔊" : "🔇"}
-              {narrationEnabled && chatPaneWidth > 310 && <span style={{ fontSize: "0.78rem", whiteSpace: "nowrap", fontWeight: 600 }}>{VOICES.find(v => v.id === selectedVoice)?.label ?? "Voice"} ▾</span>}
+              onClick={() => setVoicePickerOpen(v => !v)}
+              title="Audio settings — narration, music & ambience"
+              style={{ background: voicePickerOpen ? "rgba(139,92,246,0.28)" : narrationEnabled ? "rgba(139,92,246,0.2)" : "rgba(255,255,255,0.04)", border: `1px solid ${narrationEnabled || voicePickerOpen ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: "8px", padding: "7px 13px", minHeight: "36px", cursor: "pointer", fontSize: "1rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "6px", transition: "all 0.2s", color: narrationEnabled || voicePickerOpen ? "#c4b5fd" : "#94a3b8" }}>
+              {narrating ? <span style={{ animation: "blink 0.8s step-end infinite" }}>🔊</span> : "🎚"}
+              {chatPaneWidth > 310 && <span style={{ fontSize: "0.78rem", whiteSpace: "nowrap", fontWeight: 600 }}>Audio ▾</span>}
             </button>
             {voicePickerOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "210px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999, background: "rgba(10,7,24,0.97)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: "10px", padding: "6px", minWidth: "250px", maxWidth: "288px", maxHeight: "70vh", overflowY: "auto", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+                <div style={{ fontSize: "0.6rem", color: "#8b7bb8", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, padding: "4px 8px 6px" }}>DM Narration Voice</div>
                 {VOICES.map(v => (
                   <div key={v.id} style={{ display: "flex", alignItems: "center", gap: "4px", borderRadius: "7px", background: selectedVoice === v.id ? "rgba(139,92,246,0.25)" : "transparent", transition: "background 0.15s" }}
                     onMouseEnter={e => { if (selectedVoice !== v.id) (e.currentTarget as HTMLDivElement).style.background = "rgba(139,92,246,0.12)"; }}
@@ -6516,6 +6655,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       setNarRevealIntervalMs(null);
                       setNarRevealPaused(true);
                       setSelectedVoice(v.id);
+                      setNarrationEnabled(true);
                       setVoicePickerOpen(false);
                       // Stop any preview playing
                       if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current.src = ""; }
@@ -6537,6 +6677,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </button>
                   </div>
                 ))}
+                {narrationEnabled && (
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", padding: "8px 10px 4px" }}>
                   {/* Narrator volume slider */}
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
@@ -6564,6 +6705,95 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     Turn off narration
                   </button>
                 </div>
+                )}
+                {/* ── Music & Ambience — same controls as the global pill, consolidated here ── */}
+                {audioSnap && (
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "4px", padding: "8px 8px 4px" }}>
+                    <div style={{ fontSize: "0.6rem", color: "#8b7bb8", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, padding: "0 2px 7px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span>Background Music</span>
+                      <span style={{ color: "#64748b", textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>{audioSnap.poolLabel}</span>
+                    </div>
+                    {/* Play / pause + skip + music volume */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px" }}>
+                      <button
+                        onClick={() => window.__dndAudioControls?.toggleMusic()}
+                        title={audioSnap.playing ? "Pause music" : "Play music"}
+                        style={{ flexShrink: 0, width: "22px", fontSize: "0.9rem", background: "none", border: "none", cursor: "pointer", color: audioSnap.playing ? "#c4b5fd" : "#94a3b8", padding: 0, lineHeight: 1 }}
+                      >
+                        {audioSnap.playing ? "⏸" : "♪"}
+                      </button>
+                      <button
+                        onClick={() => window.__dndAudioControls?.toggleMusicMute()}
+                        title={audioSnap.musicMuted ? "Unmute music" : "Mute music"}
+                        style={{ flexShrink: 0, width: "20px", fontSize: "0.85rem", background: "none", border: "none", cursor: "pointer", color: audioSnap.musicMuted ? "#f87171" : "#94a3b8", padding: 0, lineHeight: 1 }}
+                      >
+                        {audioSnap.musicMuted ? "🔇" : audioSnap.volume < 0.35 ? "🔈" : "🔊"}
+                      </button>
+                      <input
+                        type="range" min={0} max={1} step={0.05}
+                        value={audioSnap.musicMuted ? 0 : audioSnap.volume}
+                        onChange={e => window.__dndAudioControls?.setMusicVol(parseFloat(e.target.value))}
+                        title="Music volume"
+                        style={{ flex: 1, accentColor: "#8b5cf6", cursor: "pointer", height: "4px" }}
+                      />
+                      {audioSnap.playing && !audioSnap.isOnDashboard && (
+                        <button onClick={() => window.__dndAudioControls?.skip()} title="Skip track"
+                          style={{ flexShrink: 0, width: "20px", fontSize: "0.85rem", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: 0, lineHeight: 1 }}>⏭</button>
+                      )}
+                    </div>
+                    {/* Mood picker — not on the dashboard (locked to one track).
+                        Match Scene on its own full-width row; pools in a tidy grid. */}
+                    {!audioSnap.isOnDashboard && (
+                      <div style={{ marginBottom: "2px" }}>
+                        {audioSnap.recommended && (
+                          <button onClick={() => window.__dndAudioControls?.matchScene()}
+                            title="Match the music to the current scene"
+                            style={{ display: "block", width: "100%", textAlign: "center", fontSize: "0.64rem", padding: "6px 8px", marginBottom: "5px", borderRadius: "7px", border: "1px solid rgba(139,92,246,0.4)", background: "rgba(139,92,246,0.14)", color: "#c4b5fd", cursor: "pointer", fontWeight: 700, letterSpacing: "0.02em" }}>
+                            ✦ Match Scene
+                          </button>
+                        )}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "5px" }}>
+                          {audioSnap.pools.map(p => {
+                            const isActive = p.key === audioSnap.activeMetaKey;
+                            return (
+                              <button key={p.key} onClick={() => window.__dndAudioControls?.selectPool(p.key)}
+                                title={p.desc}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "3px", width: "100%", fontSize: "0.62rem", padding: "6px 4px", borderRadius: "7px", border: `1px solid ${isActive ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.1)"}`, background: isActive ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.02)", color: isActive ? "#c4b5fd" : "#94a3b8", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background 0.15s, border-color 0.15s" }}>
+                                <span style={{ flexShrink: 0 }}>{p.icon}</span>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {/* Ambience — only once an ambient bed is loaded for the scene */}
+                    {audioSnap.ambianceReady && (
+                      <>
+                        <div style={{ fontSize: "0.6rem", color: "#8b7bb8", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, padding: "8px 2px 6px" }}>Ambience</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                          <button
+                            onClick={() => window.__dndAudioControls?.toggleAmbianceMute()}
+                            title={audioSnap.ambianceMuted ? "Unmute ambience" : "Mute ambience"}
+                            style={{ flexShrink: 0, width: "22px", fontSize: "0.85rem", background: "none", border: "none", cursor: "pointer", color: audioSnap.ambianceMuted ? "#f87171" : "#94a3b8", padding: 0, lineHeight: 1 }}
+                          >
+                            {audioSnap.ambianceMuted ? "🔇" : "🌫"}
+                          </button>
+                          <input
+                            type="range" min={0} max={1} step={0.05}
+                            value={audioSnap.ambianceMuted ? 0 : audioSnap.ambianceVol}
+                            onChange={e => window.__dndAudioControls?.setAmbianceVol(parseFloat(e.target.value))}
+                            title="Ambience volume"
+                            style={{ flex: 1, accentColor: "#64748b", cursor: "pointer", height: "4px" }}
+                          />
+                          <span style={{ fontSize: "0.65rem", color: "#64748b", minWidth: "28px", textAlign: "right" }}>
+                            {audioSnap.ambianceMuted ? "Off" : `${Math.round(audioSnap.ambianceVol * 100)}%`}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -6592,77 +6822,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         )}
 
-        {/* ── Combat enemy strip ── */}
-        {combatActive && enemies.some(e => !e.is_defeated) && (
-          <div className="animate-fade-in" style={{ borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(30,0,0,0.55)", padding: "10px 14px 12px" }}>
-            <div style={{ fontSize: "0.62rem", color: "rgba(239,68,68,0.7)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "8px", fontWeight: "bold" }}>
-              ⚔ {enemies.filter(e => !e.is_defeated).length} {enemies.filter(e => !e.is_defeated).length === 1 ? "Enemy" : "Enemies"} — click to target
-            </div>
-            <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
-              {enemies.map(e => {
-                const isTargeted = !e.is_defeated && targetedEnemyId === e.id;
-                const cond       = e.condition ?? "healthy";
-                const condColor  = CONDITION_COLORS[cond];
-                const condPct    = CONDITION_PCT[cond];
-                return (
-                  <div
-                    key={e.id}
-                    onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
-                    onMouseEnter={ev => { const condLabel = e.is_defeated ? "Defeated" : CONDITION_LABELS[cond]; const condDesc = ENEMY_CONDITION_TIPS[condLabel]; showTooltip(tipBox(e.name, `${condLabel}${condDesc ? ' — ' + condDesc : ''}\n${e.enemy_type} · CR ${e.cr} · AC ${e.ac}`, condColor), ev); }}
-                    onMouseLeave={hideTooltip}
-                    style={{
-                      flexShrink: 0, width: "clamp(72px, 5.5rem, 104px)",
-                      background: e.is_defeated ? "rgba(0,0,0,0.2)" : isTargeted ? "rgba(120,0,0,0.7)" : "rgba(60,0,0,0.55)",
-                      border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`,
-                      borderRadius: "10px", padding: "8px 8px 7px",
-                      cursor: e.is_defeated ? "default" : "pointer",
-                      opacity: e.is_defeated ? 0.4 : 1,
-                      transition: "all 0.3s ease",
-                      animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : "none",
-                      position: "relative",
-                    }}
-                  >
-                    {/* Portrait */}
-                    <div style={{ width: "100%", aspectRatio: "1", borderRadius: "7px", overflow: "hidden", marginBottom: "6px", background: "rgba(0,0,0,0.5)", border: `1.5px solid ${isTargeted ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.06)"}`, position: "relative" }}>
-                      {e.portrait_url ? (
-                        <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover", filter: e.is_defeated ? "grayscale(1)" : "none" }} />
-                      ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>
-                          {e.portrait_emoji}
-                        </div>
-                      )}
-                      {/* Generating indicator */}
-                      {!e.portrait_url && !e.is_defeated && (
-                        <div style={{ position: "absolute", bottom: "3px", right: "3px", width: "6px", height: "6px", borderRadius: "50%", background: "#8b5cf6", animation: "blink 1s step-end infinite" }} />
-                      )}
-                    </div>
-                    {/* Name */}
-                    <div style={{ fontSize: "0.62rem", fontWeight: "bold", color: e.is_defeated ? "#6b7280" : isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: "5px", textDecoration: e.is_defeated ? "line-through" : "none" }}>
-                      {e.name}
-                    </div>
-                    {/* Condition bar */}
-                    {!e.is_defeated && (
-                      <div style={{ width: "100%", height: "3px", background: "#1f2937", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{ width: `${condPct}%`, height: "100%", background: condColor, transition: "width 0.5s ease, background 0.4s ease" }} />
-                      </div>
-                    )}
-                    {/* Target badge */}
-                    {isTargeted && (
-                      <div style={{ position: "absolute", top: "-8px", left: "50%", transform: "translateX(-50%)", fontSize: "0.5rem", background: "#ef4444", color: "white", borderRadius: "3px", padding: "1px 5px", fontWeight: "bold", letterSpacing: "0.04em", whiteSpace: "nowrap", cursor: "help" }}
-                        onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.TARGET_ENEMY.title, MECHANIC_TIPS.TARGET_ENEMY.body, "#ef4444"), ev)}
-                        onMouseLeave={hideTooltip}>
-                        ⚔ TARGET
-                      </div>
-                    )}
-                    {e.is_defeated && (
-                      <div style={{ textAlign: "center", fontSize: "0.52rem", color: "#6b7280", fontWeight: "bold" }}>DEFEATED</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {/* Combat enemies are shown only in the scene pane (bottom row) to keep the
+            narration window clean. The old in-narration enemy strip was removed. */}
 
         {/* Messages — the bottom padding scales up when the Suggested Actions panel is
             present so the last narration line is never visually flush with (or covered by)
@@ -6946,22 +7107,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               </button>
             );
           })}
-          {enemies.length > 0 && (
-            <button onClick={() => setSidebarTab("combat")}
-              style={{ flex: 1, padding: "12px 4px", fontSize: fs(0.68), fontWeight: "bold", position: "relative",
-                background: sidebarTab === "combat" ? "rgba(239,68,68,0.15)" : "transparent",
-                borderTop: "none", borderLeft: "none", borderRight: "none",
-                borderBottom: sidebarTab === "combat" ? "2px solid #ef4444" : "2px solid transparent",
-                color: sidebarTab === "combat" ? "#ef4444" : "var(--text-on-canvas-faint)",
-                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-              <span>⚔ Combat</span>
-              <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "var(--text-on-canvas-faint)", lineHeight: 1 }}>Click enemies to target</span>
-              {combatActive && enemies.some(e => !e.is_defeated) && (
-                <span style={{ position: "absolute", top: "6px", right: "4px", width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", animation: "blink 1s step-end infinite" }} />
-              )}
-            </button>
-          )}
+          {/* Combat tab removed — enemies now appear as cards along the bottom of the scene. */}
         </div>
 
         {/* Dim sidebar while DM is busy; only block pointer events while actively typing (not narrating, so tooltips still work) */}
@@ -8538,103 +8684,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         )}
 
-        {/* ── Combat tab ── */}
-        {sidebarTab === "combat" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-              <h3 style={{ fontSize: "0.85rem", fontWeight: "bold", color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                ⚔ Enemies {combatActive && enemies.some(e => !e.is_defeated) ? `(${enemies.filter(e => !e.is_defeated).length} active)` : "(combat ended)"}
-              </h3>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {enemies.map(e => {
-                const cond      = e.condition ?? "healthy";
-                const color     = CONDITION_COLORS[cond];
-                const pct       = CONDITION_PCT[cond];
-                const label     = CONDITION_LABELS[cond];
-                const isTargeted = !e.is_defeated && targetedEnemyId === e.id;
-                return (
-                  <div key={e.id}
-                    onClick={() => { if (!e.is_defeated) setTargetedEnemyId(prev => prev === e.id ? null : e.id); }}
-                    style={{
-                      padding: "12px 14px", borderRadius: "10px",
-                      background: e.is_defeated ? "rgba(0,0,0,0.15)" : isTargeted ? "rgba(120,0,0,0.55)" : "rgba(60,0,0,0.45)",
-                      border: `1.5px solid ${e.is_defeated ? "rgba(255,255,255,0.05)" : isTargeted ? "rgba(239,68,68,0.85)" : "rgba(239,68,68,0.35)"}`,
-                      opacity: e.is_defeated ? 0.45 : 1, transition: "all 0.4s ease",
-                      cursor: e.is_defeated ? "default" : "pointer",
-                      animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : "none",
-                    }}>
-                    <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
-                      {e.portrait_url ? (
-                        <div style={{ width: "48px", height: "48px", borderRadius: "8px", overflow: "hidden", flexShrink: 0, filter: e.is_defeated ? "grayscale(1)" : "none", border: isTargeted ? "2px solid rgba(239,68,68,0.7)" : "2px solid transparent", transition: "border-color 0.3s" }}>
-                          <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: "1.7rem", lineHeight: 1, filter: e.is_defeated ? "grayscale(1)" : "none" }}>
-                          {e.portrait_emoji}
-                        </span>
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: "bold", fontSize: "0.88rem", color: e.is_defeated ? "#6b7280" : "#fca5a5", textDecoration: e.is_defeated ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {e.name}
-                        </div>
-                        <div style={{ fontSize: "0.68rem", color: "#94a3b8" }}>
-                          {e.enemy_type} · <span style={{ cursor: "help" }}
-                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.CR.title, MECHANIC_TIPS.CR.body, "#f59e0b"), ev)}
-                            onMouseLeave={hideTooltip}>CR {e.cr}</span> · <span style={{ cursor: "help" }}
-                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.AC.title, MECHANIC_TIPS.AC.body, "#94a3b8"), ev)}
-                            onMouseLeave={hideTooltip}>AC {e.ac}</span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end", flexShrink: 0 }}>
-                        {e.is_defeated
-                          ? <span style={{ fontSize: "0.6rem", background: "#1f2937", color: "#6b7280", borderRadius: "4px", padding: "2px 6px", cursor: "help" }}
-                              onMouseEnter={ev => showTooltip(tipBox("Defeated", ENEMY_CONDITION_TIPS.Defeated, "#6b7280"), ev)}
-                              onMouseLeave={hideTooltip}>DEFEATED</span>
-                          : <span style={{ fontSize: "0.6rem", background: `${color}22`, color, borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", cursor: "help" }}
-                              onMouseEnter={ev => { const desc = ENEMY_CONDITION_TIPS[label]; showTooltip(tipBox(label, desc ?? "", color), ev); }}
-                              onMouseLeave={hideTooltip}>{label}</span>
-                        }
-                        {isTargeted && (
-                          <span style={{ fontSize: "0.58rem", background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: "4px", padding: "2px 6px", fontWeight: "bold", letterSpacing: "0.04em", cursor: "help" }}
-                            onMouseEnter={ev => showTooltip(tipBox(MECHANIC_TIPS.TARGET_ENEMY.title, MECHANIC_TIPS.TARGET_ENEMY.body, "#ef4444"), ev)}
-                            onMouseLeave={hideTooltip}>⚔ TARGET</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Condition bar — shows health state, not exact HP */}
-                    {!e.is_defeated && (
-                      <>
-                        <div style={{ width: "100%", height: "5px", background: "#1f2937", borderRadius: "3px", overflow: "hidden", marginBottom: "5px" }}>
-                          <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: "3px", transition: "width 0.6s ease, background 0.4s ease" }} />
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "0.65rem", color: "#64748b", cursor: "help" }}
-                          onMouseEnter={ev => showTooltip(tipBox("Attack & Damage", `ATK +${e.attack_bonus} is added to a d20 roll to hit. On a hit, ${e.damage_dice} is rolled for damage dealt to HP.`, "#ef4444"), ev)}
-                          onMouseLeave={hideTooltip}>ATK +{e.attack_bonus} · {e.damage_dice}</span>
-                          {e.status_effects.length > 0 && (
-                            <span style={{ fontSize: "0.62rem", color: "#f59e0b" }}>{e.status_effects.join(", ")}</span>
-                          )}
-                        </div>
-                        {e.abilities.length > 0 && (
-                          <div style={{ marginTop: "5px", fontSize: "0.65rem", color: "#475569" }}>
-                            ⚡ {e.abilities.join(" · ")}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-              {enemies.length === 0 && (
-                <p style={{ color: "#475569", fontSize: "0.85rem", textAlign: "center", marginTop: "40px" }}>
-                  No enemies in the area.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Combat tab removed — enemies render as cards along the bottom of the scene. */}
         </div>{/* end dmBusy lock wrapper */}
       </div>
 

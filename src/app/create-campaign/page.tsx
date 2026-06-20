@@ -711,7 +711,7 @@ export default function CreateCampaignWizard() {
               {charStep === 1 ? (
                 <div style={{ display: "flex", gap: "clamp(16px, 2vw, 28px)", alignItems: "flex-start", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 480px", minWidth: 0 }}>
-                    <CharacterSteps step={1} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} />
+                    <CharacterSteps step={1} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} onGuideRestart={resetCurrentChar} />
                   </div>
                   {/* Roster import — create-campaign-specific chrome around the shared identity step */}
                   {(rosterLoading || availableRoster.length > 0) && (
@@ -757,7 +757,7 @@ export default function CreateCampaignWizard() {
                   )}
                 </div>
               ) : (
-                <CharacterSteps step={charStep} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} />
+                <CharacterSteps step={charStep} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} onGuideRestart={resetCurrentChar} />
               )}
             </div>
           )}
