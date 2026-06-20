@@ -5,6 +5,8 @@ import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
+import { getTheme, onThemeChange } from "../../../lib/theme";
+import { D20Icon as BrandD20 } from "../../../components/D20Icon";
 import "../../globals.css";
 import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
@@ -224,10 +226,10 @@ const VOICES = [
 
 const CAMPAIGN_TUTORIAL_STEPS = [
   {
-    icon: "🐉",
-    title: "Welcome to DnD Legends",
-    body: "Your Dungeon Master is an AI. It writes the world, voices every NPC, runs enemy turns, hands out loot, and remembers what your party has done. There's no human DM — every player at the table plays a character.",
-    tip: "You don't need to know D&D 5e rules. The DM handles all the math, dice modifiers, and rule lookups automatically.",
+    icon: "👋",
+    title: "Welcome — I'm Whimsy!",
+    body: "I'll be your guide. In Dungeons & Dinner Legends, the Dungeon Master is an AI — it writes the world, voices every NPC, runs enemy turns, hands out loot, and remembers everything your party does. There's no human DM; everyone at the table plays a hero.",
+    tip: "You don't need to know any D&D 5e rules. The DM handles all the math, dice modifiers, and rule lookups for you.",
   },
   {
     icon: "💬",
@@ -239,8 +241,8 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   {
     icon: "⚔️",
     title: "Turns & The Party Panel",
-    body: "In multiplayer, everyone takes turns. The party cards in the right-hand panel show every adventurer — the one with the glowing \"Acting\" badge (its card lifts off and shuffles to the back as turns pass) is whose turn it is. Active buffs, debuffs, and conditions appear as glowing icons right on each card. Click any party card to open that character's full sheet.",
-    tip: "Solo? Your input is always active. The DM scales encounters to your party size automatically.",
+    body: "Everyone at the table takes turns. The party cards in the right-hand panel show every adventurer — the one with the glowing \"Acting\" badge (its card lifts off and shuffles to the back as turns pass) is up now. Active buffs, debuffs, and conditions appear as glowing icons right on each card. Click any party card to open that hero's full sheet.",
+    tip: "Playing solo? Your input is always active. The DM scales every encounter to your party's size and level automatically.",
     diagram: "party" as const,
   },
   {
@@ -253,22 +255,22 @@ const CAMPAIGN_TUTORIAL_STEPS = [
   {
     icon: "📋",
     title: "Sheet, Party, Log & Combat",
-    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spell slots, inventory, HP, and every proficiency bonus. PARTY shows everyone's live stats and gold. STORY LOG is the full transcript. COMBAT appears when enemies are present. When you're hurt and can't recall why, the Character tab's \"🩸 What happened to me?\" button shows a running log of every wound and heal — and what caused it.",
-    tip: "When enemies appear, their portraits stack down the LEFT of the scene — click one (or a combat card) to target it. Party leaders also get an \"⊕ Invite Players\" panel at the bottom of the Party tab when out of combat.",
+    body: "The right sidebar has four tabs. CHARACTER is your sheet — stats, spell slots, inventory, HP, and every proficiency bonus. PARTY shows everyone's live stats and gold; pick any member to view their full spells, proficiencies, and gear. STORY LOG is the full transcript. COMBAT appears when enemies are present. Hurt and not sure why? The Character tab's \"🩸 What happened to me?\" button shows a running log of every wound and heal — and its cause.",
+    tip: "When enemies or story NPCs appear, their portraits stack down the LEFT of the scene — click an enemy (or its combat card) to target it.",
     diagram: "sheet" as const,
   },
   {
     icon: "🔊",
     title: "Narration & Atmosphere",
-    body: "Toggle the 🔊 button at the top of the chat to enable AI voice narration — the DM speaks the story aloud in the voice you pick. The ☀️/🌙 button beside it switches between light and dark themes. Your current objectives glow in a tracker at the top-right of the scene. The music player at bottom-right swaps between exploration, combat, and tavern tracks.",
+    body: "Toggle the 🔊 button at the top of the chat for AI voice narration — the DM reads the story aloud in the voice you pick. The ⚙ Tools menu (top-left) is your one-stop settings: flip between the dark dungeon and warm light parchment themes right there. Objectives glow in a tracker at the top-right, and the music player at the bottom-right shifts between exploration, combat, and tavern tracks.",
     tip: "Playing on Xbox via MS Edge? Use the D-pad to navigate — focused buttons show a gold ring so you always know where you are.",
     diagram: "audio" as const,
   },
   {
     icon: "✨",
     title: "Your Adventure Begins",
-    body: "Your characters keep their level, XP, gold, and gear across every campaign they join — they grow with the story. The DM remembers what you've done and calls back to it. Type your first action and the world responds.",
-    tip: "Re-open this guide anytime with the ? button in the header.",
+    body: "Your heroes keep their level, XP, gold, and gear across every campaign — they grow with the story. The DM remembers what you've done and calls back to it. Type your first action and the world responds.",
+    tip: "Re-open this guide anytime with the ? button in the header. Now go — your dinner's getting cold!",
   },
 ] as const;
 
@@ -1185,15 +1187,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return 0.9;
   });
 
-  // Light / dark theme — persisted, applied (scoped) to the campaign <main> below.
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("dnd_theme");
-      if (saved === "light" || saved === "dark") return saved;
-    }
-    return "dark";
-  });
-  useEffect(() => { try { localStorage.setItem("dnd_theme", theme); } catch { /* ignore */ } }, [theme]);
+  // Light / dark theme — owned by the single global settings menu (Tools, top-left);
+  // we read it and react to changes, applying it (scoped) to the campaign <main>.
+  // SSR-stable default first (avoids the data-theme hydration mismatch), then
+  // apply the saved theme on mount so the global toggle flips in one click.
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => { setTheme(getTheme()); return onThemeChange(setTheme); }, []);
 
   // Resizable pane widths — persisted across sessions
   const [chatPaneWidth,    setChatPaneWidth]    = useState<number>(380);
@@ -1406,6 +1405,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Party management
   const [userRoster,       setUserRoster]         = useState<Character[]>([]);
   const [managePartyOpen,  setManagePartyOpen]    = useState(false);
+  // Set to the character whose removal would empty (and thus delete) the campaign,
+  // so we can warn before the last adventurer leaves.
+  const [confirmFinalLeave, setConfirmFinalLeave] = useState<{ id: string; name: string } | null>(null);
   const [claimLeaderOpen,  setClaimLeaderOpen]    = useState(false);
   const [claimingLeaderId, setClaimingLeaderId]   = useState<string | null>(null);
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
@@ -5707,16 +5709,38 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     }
   }, [params.id, claimingLeaderId]);
 
+  // A campaign with zero seated characters is useless — wipe it and its story, then
+  // send the (now character-less) user back to the dashboard.
+  const deleteEmptyCampaign = useCallback(async () => {
+    try {
+      await Promise.allSettled([
+        supabase.from("campaign_messages").delete().eq("campaign_id", params.id),
+        supabase.from("campaign_enemies").delete().eq("campaign_id", params.id),
+        supabase.from("campaign_characters").delete().eq("campaign_id", params.id),
+      ]);
+      await supabase.from("campaigns").delete().eq("id", params.id);
+    } catch (e) {
+      console.error("[delete empty campaign]", e);
+    }
+    router.push("/dashboard");
+  }, [params.id, router]);
+
   const leaveParty = useCallback(async (charId: string) => {
     const char = campaignPartyRef.current.find(c => c.id === charId);
     if (!char) return;
     // Combat lock — never allow party removals while any enemy is undefeated.
     if (enemiesRef.current.some(e => !e.is_defeated)) return;
+    const wasLastMember = campaignPartyRef.current.length <= 1;
     // Persist the removal — clear campaign_id so they don't appear on future loads
     await supabase.from("characters").update({ campaign_id: null }).eq("id", charId);
     const newParty = campaignPartyRef.current.filter(c => c.id !== charId);
     setCampaignParty(newParty);
     campaignPartyRef.current = newParty;
+    // Last adventurer left → the campaign is empty, so delete it and bail out.
+    if (wasLastMember || newParty.length === 0) {
+      await deleteEmptyCampaign();
+      return;
+    }
     if (characterRef.current?.id === charId) {
       const next = newParty[0] ?? null;
       setCharacter(next); characterRef.current = next;
@@ -5734,7 +5758,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       { party: newParty, campaignContext, partyLeaderName },
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fireDmPartyResponse, campaignTitle, partyLeaderId]);
+  }, [fireDmPartyResponse, campaignTitle, partyLeaderId, deleteEmptyCampaign]);
 
   const handleDiceResult = (result: number, diceType: number, description?: string) => {
     // Stop any in-flight narration immediately — roll submission takes priority
@@ -5814,7 +5838,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main data-theme={theme} style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
+    <main className="campaign-root" data-theme={theme} style={{ height: "100vh", display: "flex", flexDirection: "row", overflow: "hidden" }}>
       {/* ── Empty-party reclaim modal ──
           Fires when a campaign loads with zero seated characters. Owner picks
           one of their roster characters to seat as the new party leader. */}
@@ -5928,7 +5952,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           );
           if (d === "party") return (
             <div style={{ ...base, display: "flex", gap: "8px" }}>
-              <div style={{ flex: 1, padding: "10px", borderRadius: "8px", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ flex: 1, padding: "10px", borderRadius: "8px", background: "var(--pane-card)", border: "1px solid rgba(255,255,255,0.08)" }}>
                 <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "6px" }}>
                   <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>⚔</div>
                   <div><div style={{ color: "white", fontSize: "0.8rem", fontWeight: "bold" }}>Thorin</div><div style={{ color: "#64748b", fontSize: "0.65rem" }}>Dwarf Fighter</div></div>
@@ -5950,7 +5974,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <div style={{ ...base, textAlign: "center" }}>
               <div style={{ display: "flex", justifyContent: "center", gap: "12px", alignItems: "center" }}>
                 <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>← Tavern</div>
-                <div style={{ flex: 1, padding: "6px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", color: "#64748b", fontSize: "0.78rem" }}>My Campaign</div>
+                <div style={{ flex: 1, padding: "6px 12px", background: "var(--pane-card)", borderRadius: "8px", color: "#64748b", fontSize: "0.78rem" }}>My Campaign</div>
                 <div style={{ padding: "8px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "8px", color: "#94a3b8", fontSize: "0.8rem" }}>🔇</div>
                 <div style={{ padding: "8px 14px", background: "rgba(251,191,36,0.2)", border: "1.5px solid rgba(251,191,36,0.7)", borderRadius: "8px", color: "#fbbf24", display:"inline-flex", alignItems:"center", boxShadow: "0 0 12px rgba(251,191,36,0.3)" }}><D20Icon size={22} color="#fbbf24"/></div>
               </div>
@@ -5966,7 +5990,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px" }}>
                 {[["Strength","16","+3"],["Dexterity","12","+1"],["Constitution","14","+2"],["Intelligence","10","+0"],["Wisdom","13","+1"],["Charisma","8","-1"]].map(([name, score, mod]) => (
-                  <div key={name} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "6px", padding: "5px 2px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div key={name} style={{ background: "var(--pane-card)", borderRadius: "6px", padding: "5px 2px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" }}>
                     <div style={{ fontSize: "0.5rem", color: "#64748b", marginBottom: "1px" }}>{name}</div>
                     <div style={{ fontSize: "0.82rem", fontWeight: "bold" }}>{score}</div>
                     <div style={{ fontSize: "0.6rem", color: "#22c55e" }}>{mod}</div>
@@ -6006,8 +6030,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 ))}
               </div>
 
-              {/* Icon */}
-              <div style={{ textAlign: "center", fontSize: "2.8rem", marginBottom: "12px", lineHeight: 1 }}>{step.icon}</div>
+              {/* Whimsy the mascot guides the tutorial — the per-step emoji rides as a badge */}
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
+                <div style={{ position: "relative", width: "88px", height: "88px" }}>
+                  <div style={{ width: "88px", height: "88px", borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(139,92,246,0.55)", background: "radial-gradient(circle at 50% 35%, rgba(139,92,246,0.22), rgba(0,0,0,0.35))", boxShadow: "0 0 24px rgba(139,92,246,0.30), inset 0 0 18px rgba(0,0,0,0.4)" }}>
+                    <img src="/mascot/dragon-chef.png" alt="Whimsy, your guide" draggable={false} style={{ width: "126%", height: "126%", objectFit: "cover", objectPosition: "50% 20%", marginLeft: "-13%", marginTop: "-4%", userSelect: "none" }} />
+                  </div>
+                  <div style={{ position: "absolute", bottom: "-2px", right: "-4px", width: "34px", height: "34px", borderRadius: "50%", background: "#16121f", border: "1px solid rgba(212,175,55,0.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", lineHeight: 1, boxShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>{step.icon}</div>
+                </div>
+              </div>
 
               {/* Title */}
               <h2 style={{ textAlign: "center", fontSize: "1.2rem", fontWeight: "bold", marginBottom: "12px" }}>{step.title}</h2>
@@ -6091,7 +6122,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {campaignLoading ? (
             <div className="animate-fade-in" style={{ textAlign: "center", maxWidth: "420px", padding: "40px" }}>
               <div style={{ width: "88px", height: "88px", borderRadius: "50%", border: "1px solid rgba(139,92,246,0.35)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 36px", animation: "dmOrbPulse 2.8s ease-in-out infinite" }}>
-                <span style={{ fontSize: "2.8rem", display: "inline-block", animation: "dmOrbSpin 10s linear infinite" }}>⬡</span>
+                <BrandD20 size="2.8rem" style={{ animation: "dmOrbSpin 10s linear infinite" }} />
               </div>
               <h1 style={{ fontSize: "1.55rem", fontWeight: "bold", marginBottom: "10px", color: "#e2e8f0", letterSpacing: "0.02em" }}>DM is creating your world…</h1>
               <p style={{ color: "#3f4f62", fontSize: "0.82rem", marginBottom: "44px", lineHeight: 1.6 }}>Weaving the threads of fate</p>
@@ -6443,16 +6474,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A+</button>
           </div>
-          {/* Light / dark theme toggle */}
-          <button
-            onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: "8px", width: "36px", height: "36px", cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", flexShrink: 0, transition: "all 0.2s" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#94a3b8"; }}
-          >
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
+          {/* Theme toggle moved to the single global settings menu (Tools, top-left). */}
           {/* Narrator mute button — shown only when narration is on */}
           {narrationEnabled && (
             <button
@@ -6549,20 +6571,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* Turn indicator / roll request banner */}
         {(turnOrder.length > 1 || rollRequestedUserId) && (
-          <div style={{ padding: "7px 16px", background: rollRequestedUserId ? "rgba(251,191,36,0.08)" : "rgba(139,92,246,0.08)", borderBottom: `1px solid ${rollRequestedUserId ? "rgba(251,191,36,0.25)" : "rgba(139,92,246,0.15)"}`, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ padding: "7px 16px", background: theme === "light" ? (rollRequestedUserId ? "rgba(52,40,16,0.92)" : "rgba(38,30,58,0.92)") : (rollRequestedUserId ? "rgba(251,191,36,0.08)" : "rgba(139,92,246,0.08)"), borderBottom: `1px solid ${rollRequestedUserId ? "rgba(251,191,36,0.25)" : "rgba(139,92,246,0.15)"}`, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "6px" }}>
             {isTyping ? (
               <span style={{ color: "#8b5cf6" }}>⏳ DM is responding…</span>
             ) : rollRequestedUserId ? (
               <>
                 <span style={{ animation: "blink 1s step-end infinite", display:"inline-flex",alignItems:"center" }}><D20Icon size={16} color="#fbbf24"/></span>
-                <span style={{ color: isMyTurn ? "#fbbf24" : "#94a3b8", fontWeight: "bold" }}>
+                <span style={{ color: isMyTurn ? "#fbbf24" : "var(--on-pane-dim)", fontWeight: "bold" }}>
                   {isMyTurn ? "Your roll!" : `${campaignParty.find(c => c.user_id === rollRequestedUserId)?.name ?? "A player"} is rolling…`}
                 </span>
               </>
             ) : (
               <>
-                <span style={{ color: "#475569" }}>Turn {currentTurnIndex + 1} of {turnOrder.length}:</span>
-                <span style={{ color: isMyTurn ? "#c4b5fd" : "white", fontWeight: "bold" }}>
+                <span style={{ color: "var(--on-pane-faint)" }}>Turn {currentTurnIndex + 1} of {turnOrder.length}:</span>
+                <span style={{ color: isMyTurn ? "#c4b5fd" : "var(--on-pane)", fontWeight: "bold" }}>
                   {isMyTurn ? "Your turn" : `${campaignParty.find(c => c.id === currentTurnPlayerId)?.name ?? "Waiting"}…`}
                 </span>
               </>
@@ -6654,13 +6676,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             : messages
           ).map((msg, idx) => (
             <div key={idx} className="animate-fade-in" style={{ alignSelf: msg.role === "player" ? "flex-end" : "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: msg.role === "player" ? "flex-end" : "flex-start" }}>
-              {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
-              {msg.role === "dm"     && <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>}
+              {msg.role === "player" && <span style={{ fontSize: "0.72rem", color: "var(--text-on-canvas-dim)", marginBottom: "3px" }}>{msg.sender ?? "You"}</span>}
+              {msg.role === "dm"     && <span style={{ fontSize: "0.72rem", color: "var(--dm-name)", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>}
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, whiteSpace: "pre-wrap",
-                background: msg.role === "dm" ? "rgba(139,92,246,0.15)" : msg.role === "system" ? "transparent" : "var(--card-bg)",
-                border:     msg.role === "dm" ? "1px solid rgba(139,92,246,0.3)" : msg.role === "system" ? "none" : "1px solid var(--border)",
+                background: msg.role === "dm" ? "var(--pane-bubble)" : msg.role === "system" ? "transparent" : "var(--card-bg)",
+                border:     msg.role === "dm" ? "1px solid var(--pane-bubble-border)" : msg.role === "system" ? "none" : "1px solid var(--border)",
                 fontStyle:  msg.role === "system" ? "italic" : "normal",
-                color:      msg.role === "system" ? "#94a3b8" : "white",
+                color:      msg.role === "system" ? "var(--on-pane-dim)" : "var(--on-pane)",
                 textAlign:  msg.role === "system" ? "center" : "left",
               }}>
                 {msg.role === "dm" ? <ColorizedText text={stripSystemLeaks(msg.content)} playerColors={playerColorMap} knownItems={knownItemsForNarrative} onShowTooltip={showTooltip} onHideTooltip={hideTooltip} /> : msg.content}
@@ -6695,8 +6717,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {/* Opening narration reveal — slow character-by-character after loading screen */}
           {openingRevealText && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-              <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
+              <span style={{ fontSize: "0.72rem", color: "var(--dm-name)", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "var(--pane-bubble)", border: "1px solid var(--pane-bubble-border)", color: "var(--on-pane)" }}>
                 <RevealText
                   text={stripSystemLeaks(openingRevealText)}
                   onComplete={() => {
@@ -6712,8 +6734,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {/* Narration-synced reveal — only shown once audio interval is known (narrator is speaking) */}
           {narRevealText && narRevealIntervalMs !== null && (
             <div className="animate-fade-in" style={{ alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-              <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
-              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)" }}>
+              <span style={{ fontSize: "0.72rem", color: "var(--dm-name)", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
+              <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "var(--pane-bubble)", border: "1px solid var(--pane-bubble-border)", color: "var(--on-pane)" }}>
                 <RevealText
                   text={stripSystemLeaks(narRevealText)}
                   intervalMs={narRevealIntervalMs}
@@ -6774,12 +6796,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               style={{
                 width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
                 background: "none", border: "none", padding: "0", margin: suggestionsCollapsed ? "0" : "0 0 8px 0",
-                color: "#475569", cursor: "pointer", textAlign: "left",
+                color: "var(--text-on-canvas-faint)", cursor: "pointer", textAlign: "left",
                 fontSize: `${(chatFontSize * 0.72).toFixed(2)}rem`,
                 textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
               }}
-              onMouseEnter={e => { e.currentTarget.style.color = "#94a3b8"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = "#475569"; }}
+              onMouseEnter={e => { e.currentTarget.style.color = "var(--text-on-canvas-dim)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--text-on-canvas-faint)"; }}
             >
               <span>
                 Suggested actions
@@ -6797,9 +6819,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 {suggestions.map((s, i) => (
                   <button key={i} onClick={() => handleSend(s)} disabled={narrating}
-                    style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: `${(chatFontSize * 0.91).toFixed(2)}rem`, border: "1px solid rgba(139,92,246,0.25)", background: "rgba(139,92,246,0.06)", color: "#cbd5e1", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
-                    onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.55)"; e.currentTarget.style.color = "white"; } }}
-                    onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "rgba(139,92,246,0.06)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#cbd5e1"; } }}>
+                    style={{ width: "100%", textAlign: "left", padding: "8px 12px", borderRadius: "8px", fontSize: `${(chatFontSize * 0.91).toFixed(2)}rem`, border: "1px solid var(--suggestion-border)", background: "var(--suggestion-bg)", color: "var(--suggestion-text)", cursor: narrating ? "not-allowed" : "pointer", opacity: narrating ? 0.5 : 1, transition: "all 0.15s", lineHeight: 1.4 }}
+                    onMouseEnter={e => { if (!narrating) { e.currentTarget.style.background = "var(--suggestion-bg-hover)"; e.currentTarget.style.borderColor = "var(--suggestion-border)"; e.currentTarget.style.color = "var(--on-pane)"; } }}
+                    onMouseLeave={e => { if (!narrating) { e.currentTarget.style.background = "var(--suggestion-bg)"; e.currentTarget.style.borderColor = "var(--suggestion-border)"; e.currentTarget.style.color = "var(--suggestion-text)"; } }}>
                     {s}
                   </button>
                 ))}
@@ -6810,7 +6832,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* First-time chat hint */}
         {showChatHint && (
-          <div ref={chatHintRef} className="chat-hint-glow" style={{ padding: "11px 14px", borderTop: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)", display: "flex", alignItems: "center", gap: "12px", position: "relative" }}>
+          <div ref={chatHintRef} className="chat-hint-glow" style={{ padding: "11px 14px", borderTop: "1px solid rgba(139,92,246,0.2)", background: theme === "light" ? "rgba(34,28,52,0.96)" : "rgba(139,92,246,0.07)", display: "flex", alignItems: "center", gap: "12px", position: "relative" }}>
             <span style={{ fontSize: "0.95rem", flexShrink: 0 }}>💬</span>
             <p style={{ fontSize: "0.75rem", color: "#a78bfa", lineHeight: 1.55, flex: 1, margin: 0 }}>
               <strong>Type what your character says or does</strong> — the AI Dungeon Master responds instantly.
@@ -6869,7 +6891,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 : "Describe your action…"
               }
               style={{
-                flex: 1, minWidth: 0, background: "rgba(0,0,0,0.5)", borderRadius: "8px", color: "white",
+                flex: 1, minWidth: 0, background: "var(--pane-input)", borderRadius: "8px", color: "var(--on-pane)",
                 padding: "14px 18px", fontSize: "1.25rem",
                 opacity: (isTyping || narrating || !isMyTurn || showDice || pendingDiceShow) ? 0.6 : 1,
                 border: (isMyTurn && !isTyping && !narrating && !showDice && !pendingDiceShow)
@@ -6916,11 +6938,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   background: sidebarTab === tab ? "rgba(139,92,246,0.15)" : "transparent",
                   borderTop: "none", borderLeft: "none", borderRight: "none",
                   borderBottom: sidebarTab === tab ? "2px solid var(--primary)" : "2px solid transparent",
-                  color: sidebarTab === tab ? "var(--primary)" : "#64748b",
+                  color: sidebarTab === tab ? "var(--primary)" : "var(--text-on-canvas-faint)",
                   cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                 <span>{label}</span>
-                <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === tab ? "rgba(139,92,246,0.75)" : "#3f3f46", lineHeight: 1 }}>{sub}</span>
+                <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === tab ? "rgba(139,92,246,0.75)" : "var(--text-on-canvas-faint)", lineHeight: 1 }}>{sub}</span>
               </button>
             );
           })}
@@ -6930,11 +6952,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 background: sidebarTab === "combat" ? "rgba(239,68,68,0.15)" : "transparent",
                 borderTop: "none", borderLeft: "none", borderRight: "none",
                 borderBottom: sidebarTab === "combat" ? "2px solid #ef4444" : "2px solid transparent",
-                color: sidebarTab === "combat" ? "#ef4444" : "#64748b",
+                color: sidebarTab === "combat" ? "#ef4444" : "var(--text-on-canvas-faint)",
                 cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
               <span>⚔ Combat</span>
-              <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "#3f3f46", lineHeight: 1 }}>Click enemies to target</span>
+              <span style={{ fontSize: fs(0.55), fontWeight: 400, letterSpacing: "0.03em", textTransform: "none", color: sidebarTab === "combat" ? "rgba(239,68,68,0.75)" : "var(--text-on-canvas-faint)", lineHeight: 1 }}>Click enemies to target</span>
               {combatActive && enemies.some(e => !e.is_defeated) && (
                 <span style={{ position: "absolute", top: "6px", right: "4px", width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", animation: "blink 1s step-end infinite" }} />
               )}
@@ -6981,18 +7003,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 style={{
                   flex: 1, padding: "8px", borderRadius: "7px", fontSize: "0.75rem", fontWeight: "bold",
                   border: `1px solid ${restDisabled ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.4)"}`,
-                  background: restDisabled ? "rgba(245,158,11,0.04)" : "rgba(245,158,11,0.1)",
+                  background: theme === "light" ? (restDisabled ? "rgba(38,32,24,0.6)" : "rgba(58,44,18,0.92)") : (restDisabled ? "rgba(245,158,11,0.04)" : "rgba(245,158,11,0.1)"),
                   color: restDisabled ? "rgba(245,158,11,0.45)" : "#f59e0b",
                   cursor: restDisabled ? "not-allowed" : "pointer",
                   opacity: restDisabled ? 0.65 : 1,
                   transition: "all 0.15s",
                 }}
                 onMouseEnter={e => {
-                  if (!restDisabled) e.currentTarget.style.background = "rgba(245,158,11,0.22)";
+                  if (!restDisabled) e.currentTarget.style.background = theme === "light" ? "rgba(74,56,22,0.97)" : "rgba(245,158,11,0.22)";
                   showTooltip(tipBox(shortRestTip.title, shortRestTip.body, "#f59e0b"), e);
                 }}
                 onMouseLeave={e => {
-                  if (!restDisabled) e.currentTarget.style.background = "rgba(245,158,11,0.1)";
+                  if (!restDisabled) e.currentTarget.style.background = theme === "light" ? "rgba(58,44,18,0.92)" : "rgba(245,158,11,0.1)";
                   hideTooltip();
                 }}
               >
@@ -7004,18 +7026,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 style={{
                   flex: 1, padding: "8px", borderRadius: "7px", fontSize: "0.75rem", fontWeight: "bold",
                   border: `1px solid ${restDisabled ? "rgba(99,102,241,0.18)" : "rgba(99,102,241,0.4)"}`,
-                  background: restDisabled ? "rgba(99,102,241,0.04)" : "rgba(99,102,241,0.1)",
+                  background: theme === "light" ? (restDisabled ? "rgba(34,34,52,0.6)" : "rgba(44,46,82,0.92)") : (restDisabled ? "rgba(99,102,241,0.04)" : "rgba(99,102,241,0.1)"),
                   color: restDisabled ? "rgba(129,140,248,0.45)" : "#818cf8",
                   cursor: restDisabled ? "not-allowed" : "pointer",
                   opacity: restDisabled ? 0.65 : 1,
                   transition: "all 0.15s",
                 }}
                 onMouseEnter={e => {
-                  if (!restDisabled) e.currentTarget.style.background = "rgba(99,102,241,0.22)";
+                  if (!restDisabled) e.currentTarget.style.background = theme === "light" ? "rgba(58,60,104,0.97)" : "rgba(99,102,241,0.22)";
                   showTooltip(tipBox(longRestTip.title, longRestTip.body, "#818cf8"), e);
                 }}
                 onMouseLeave={e => {
-                  if (!restDisabled) e.currentTarget.style.background = "rgba(99,102,241,0.1)";
+                  if (!restDisabled) e.currentTarget.style.background = theme === "light" ? "rgba(44,46,82,0.92)" : "rgba(99,102,241,0.1)";
                   hideTooltip();
                 }}
               >
@@ -7058,7 +7080,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 const classHex     = CLASS_COLORS[char.class] ?? "#8b5cf6";
                 const classRgb     = hexToRgb(classHex);
                 const borderColor  = isDiceTarget ? "rgba(251,191,36,0.9)" : isCurrentTurn ? `rgba(${classRgb},0.9)` : dominantEff ? dominantEff.badgeColor : "var(--border)";
-                const bgColor      = isDiceTarget ? "rgba(251,191,36,0.08)" : isCurrentTurn ? `rgba(${classRgb},0.16)` : "rgba(0,0,0,0.3)";
+                const bgColor      = isDiceTarget
+                  ? `linear-gradient(rgba(251,191,36,0.12), rgba(251,191,36,0.12)), var(--pane-card)`
+                  : isCurrentTurn
+                  ? `linear-gradient(rgba(${classRgb},0.20), rgba(${classRgb},0.20)), var(--pane-card)`
+                  : "var(--pane-card)";
                 const cardAnim     = isDiceTarget ? "diceCardRise 1.4s ease-in-out infinite" : isCurrentTurn ? "activePlayerRise 2s ease-in-out infinite" : "none";
                 const cardShadow   = isDiceTarget || isCurrentTurn ? undefined : (effectGlow ?? undefined);
                 const isTurnEnding = turnEndCardId === char.id;
@@ -7164,10 +7190,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               const cur = parseFloat(getComputedStyle(el).fontSize);
                               el.style.fontSize = `${Math.max(9, cur * (avail / el.scrollWidth) * 0.96)}px`;
                             }}
-                            style={{ fontSize: fs(0.95), fontWeight: "bold", whiteSpace: "nowrap", overflow: "hidden", color: CLASS_COLORS[char.class] ?? "white", display: "block", width: "100%" }}
+                            style={{ fontSize: fs(0.95), fontWeight: "bold", whiteSpace: "nowrap", overflow: "hidden", color: CLASS_COLORS[char.class] ?? "var(--on-pane)", display: "block", width: "100%" }}
                           >{char.name}</span>
                         </div>
-                        <div style={{ fontSize: fs(0.76), color: "#94a3b8" }}>
+                        <div style={{ fontSize: fs(0.76), color: "var(--on-pane-dim)" }}>
                           {char.race} {char.class} · <span style={{ cursor: "help" }}
                             onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.LEVEL.title, MECHANIC_TIPS.LEVEL.body, "#f59e0b"), e)}
                             onMouseLeave={hideTooltip}>Lvl {char.level}</span>
@@ -7209,7 +7235,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                           <span style={{ display:"inline-flex",alignItems:"center",gap:"3px",color:"#fbbf24",fontWeight:"bold",fontSize:fs(0.62),animation:"blink 1s step-end infinite" }}><D20Icon size={13} color="#fbbf24"/> Roll!</span>
                         )}
                         {campaignParty.length > 1 && !isDiceTarget && (
-                          <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isActive ? "#c4b5fd" : "#3f3f46", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
+                          <span style={{ fontSize: fs(0.65), fontWeight: "bold", color: isActive ? "#c4b5fd" : "var(--on-pane-faint)", background: isActive ? "rgba(139,92,246,0.2)" : "transparent", borderRadius: "4px", padding: isActive ? "2px 7px" : "0" }}>
                             {isActive ? "Acting" : "Waiting"}
                           </span>
                         )}
@@ -7230,7 +7256,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                               onMouseEnter={e => showTooltip(tipBox(MECHANIC_TIPS.XP.title, MECHANIC_TIPS.XP.body, "#7c3aed"), e)}
                               onMouseLeave={hideTooltip}
                             >XP</span>
-                            <span style={{ color: "#64748b" }}>{char.level >= 10 ? "MAX LEVEL" : `${curXp} / ${xpMax}`}</span>
+                            <span style={{ color: "var(--on-pane-faint)" }}>{char.level >= 10 ? "MAX LEVEL" : `${curXp} / ${xpMax}`}</span>
                           </div>
                         </div>
                       );
@@ -7251,12 +7277,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             const avail = Math.max(0, max - used);
                             return (
                               <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                                <span style={{ fontSize: fs(0.58), color: "#94a3b8", marginRight: "2px", fontWeight: 700 }}>L{lvl}</span>
+                                <span style={{ fontSize: fs(0.58), color: "var(--on-pane-dim)", marginRight: "2px", fontWeight: 700 }}>L{lvl}</span>
                                 {max <= 8 ? Array.from({ length: max }, (_, i) => (
                                   <div key={i} style={{
                                     width: "13px", height: "13px", borderRadius: "50%",
                                     background: i < avail ? "#8b5cf6" : "transparent",
-                                    border: `2px solid ${i < avail ? "#8b5cf6" : "#3f3f46"}`,
+                                    border: `2px solid ${i < avail ? "#8b5cf6" : "var(--on-pane-faint)"}`,
                                     transition: "all 0.2s",
                                     boxShadow: i < avail ? "0 0 6px rgba(139,92,246,0.75)" : "none",
                                   }} />
@@ -7357,7 +7383,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                 onClick={() => setManagePartyOpen(o => !o)}
                 style={{
                   width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                  background: "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 60%), rgba(139,92,246,0.12)",
+                  background: theme === "light"
+                    ? "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 60%), rgba(34,28,52,0.92)"
+                    : "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 60%), rgba(139,92,246,0.12)",
                   border: "1px solid rgba(212,169,106,0.45)", borderRadius: "8px",
                   padding: "9px 12px", cursor: "pointer", fontSize: fs(0.78),
                   color: "#fde68a", fontWeight: 700, letterSpacing: "0.03em",
@@ -7406,9 +7434,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                         {inParty ? (
                           <button
-                            onClick={() => leaveParty(char.id)}
+                            onClick={() => { if (campaignParty.length <= 1) setConfirmFinalLeave(char); else leaveParty(char.id); }}
                             disabled={inCombatNow}
-                            title={inCombatNow ? "Cannot leave the party during combat — wait until the encounter ends." : undefined}
+                            title={inCombatNow ? "Cannot leave the party during combat — wait until the encounter ends." : campaignParty.length <= 1 ? "This is the last adventurer — removing them deletes the campaign." : undefined}
                             style={{ fontSize: fs(0.68), padding: "3px 8px", borderRadius: "5px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: inCombatNow ? "#7f1d1d" : "#f87171", cursor: inCombatNow ? "not-allowed" : "pointer", opacity: inCombatNow ? 0.45 : 1, flexShrink: 0, transition: "all 0.15s" }}
                             onMouseEnter={e => { if (!inCombatNow) e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
                             onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
@@ -7450,7 +7478,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     const poolItemTip = ITEM_TIPS[item.name];
                     return (
                     <div key={item.id}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)" }}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "var(--pane-card)", border: "1px solid var(--border)" }}
                       onMouseEnter={e => {
                         if (poolCatalog) {
                           const rc = RARITY_COLORS[poolCatalog.rarity];
@@ -7488,7 +7516,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* ── Character Sheet tab ── */}
         {sidebarTab === "sheet" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: theme === "light" ? "linear-gradient(180deg, rgba(22,18,34,0.985), rgba(13,11,22,0.99))" : "transparent" }}>
             {campaignParty[activeCharIdx] && campaignParty[activeCharIdx].id !== character?.id ? (
               (() => {
                 const vc = campaignParty[activeCharIdx];
@@ -7573,7 +7601,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
                       {([["STR", vc.strength], ["DEX", vc.dexterity], ["CON", vc.constitution], ["INT", vc.intelligence], ["WIS", vc.wisdom], ["CHA", vc.charisma]] as [string, number][]).map(([lbl, val]) => (
-                        <div key={lbl} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "8px 6px", textAlign: "center", border: "1px solid var(--border)" }}>
+                        <div key={lbl} style={{ background: "var(--pane-card)", borderRadius: "8px", padding: "8px 6px", textAlign: "center", border: "1px solid var(--border)" }}>
                           <div style={{ fontSize: fs(0.65), color: "#64748b", letterSpacing: "0.05em", marginBottom: "2px" }}>{lbl}</div>
                           <div style={{ fontSize: fs(1), fontWeight: "bold", color: "white" }}>{val}</div>
                           <div style={{ fontSize: fs(0.7), color: "#8b5cf6" }}>{getMod(val)}</div>
@@ -7581,11 +7609,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       ))}
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
+                      <div style={{ flex: 1, background: "var(--pane-card)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
                         <div style={{ fontSize: fs(0.65), color: "#64748b", marginBottom: "3px", letterSpacing: "0.04em" }}>GOLD</div>
                         <div style={{ fontSize: fs(0.95), fontWeight: "bold", color: "#f59e0b" }}>{vc.inventory?.gold ?? 0} gp</div>
                       </div>
-                      <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
+                      <div style={{ flex: 1, background: "var(--pane-card)", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid var(--border)" }}>
                         <div style={{ fontSize: fs(0.65), color: "#64748b", marginBottom: "3px", letterSpacing: "0.04em" }}>XP</div>
                         <div style={{ fontSize: fs(0.95), fontWeight: "bold", color: "#8b5cf6" }}>{vc.xp ?? 0}</div>
                       </div>
@@ -7698,7 +7726,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                             const vcItemTip = ITEM_TIPS[item];
                             return (
                             <div key={i}
-                              style={{ padding: "5px 8px", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", fontSize: fs(0.75), color: "#e2e8f0", cursor: vcCatalog || vcWepTip || vcItemTip ? "help" : "default" }}
+                              style={{ padding: "5px 8px", borderRadius: "6px", background: "var(--pane-card)", border: "1px solid var(--border)", fontSize: fs(0.75), color: "#e2e8f0", cursor: vcCatalog || vcWepTip || vcItemTip ? "help" : "default" }}
                               onMouseEnter={e => {
                                 if (vcCatalog) {
                                   const rc = RARITY_COLORS[vcCatalog.rarity];
@@ -7867,7 +7895,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                     return (
                       <div
                         key={label}
-                        style={{ position: "relative", background: "rgba(0,0,0,0.3)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
+                        style={{ position: "relative", background: "var(--pane-card)", border: `1px solid ${tierStyle ? tierStyle.color + "55" : "var(--border)"}`, padding: "10px 4px 8px", borderRadius: "8px", textAlign: "center", cursor: "help", transition: "border-color 0.2s" }}
                         onMouseEnter={e => { setHoveredStat(label); showTooltip(tipBoxNode(`${STAT_FULL[label]} (${label})`,
                           <>
                             <div style={{ color: "#94a3b8", marginBottom: (hasItemBuf || guide) ? "6px" : 0, paddingBottom: (hasItemBuf || guide) ? "6px" : 0, borderBottom: (hasItemBuf || guide) ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
@@ -7986,7 +8014,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 {slotLevels.map(lvl => {
                                   const avail = Math.max(0, (maxSlots[lvl] ?? 0) - (usedSlots[lvl] ?? 0));
                                   return (
-                                    <span key={lvl} style={{ fontSize: fs(0.58), background: avail > 0 ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.3)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600, cursor: "help" }}
+                                    <span key={lvl} style={{ fontSize: fs(0.58), background: avail > 0 ? "rgba(139,92,246,0.2)" : "var(--pane-card)", color: avail > 0 ? "#c4b5fd" : "#3f3f46", borderRadius: "4px", padding: "1px 5px", fontWeight: 600, cursor: "help" }}
                                       onMouseEnter={e => showTooltip(tipBox(`Level ${lvl} Spell Slots`, `${avail} of ${maxSlots[lvl]} remaining. ${MECHANIC_TIPS.SPELL_SLOTS.body}`, "#8b5cf6"), e)}
                                       onMouseLeave={hideTooltip}>
                                       L{lvl}: {avail}/{maxSlots[lvl]}
@@ -8477,29 +8505,29 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         {sidebarTab === "log" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-              <span style={{ fontSize: fs(0.78), color: "#64748b" }}>{logEntries.length} entries</span>
+              <span style={{ fontSize: fs(0.78), color: "var(--text-on-canvas-faint)" }}>{logEntries.length} entries</span>
               <button onClick={() => exportLog(logEntries, params.id)} disabled={logEntries.length === 0}
-                style={{ padding: "5px 12px", borderRadius: "6px", fontSize: fs(0.75), border: "1px solid var(--border)", background: "transparent", color: logEntries.length === 0 ? "#475569" : "#94a3b8", cursor: logEntries.length === 0 ? "default" : "pointer", transition: "color 0.15s, border-color 0.15s" }}
-                onMouseEnter={e => { if (logEntries.length > 0) { e.currentTarget.style.color = "white"; e.currentTarget.style.borderColor = "var(--primary)"; }}}
-                onMouseLeave={e => { e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+                style={{ padding: "5px 12px", borderRadius: "6px", fontSize: fs(0.75), border: "1px solid var(--border)", background: "transparent", color: logEntries.length === 0 ? "var(--text-on-canvas-faint)" : "var(--text-on-canvas-dim)", cursor: logEntries.length === 0 ? "default" : "pointer", transition: "color 0.15s, border-color 0.15s" }}
+                onMouseEnter={e => { if (logEntries.length > 0) { e.currentTarget.style.color = "var(--text-on-canvas)"; e.currentTarget.style.borderColor = "var(--primary)"; }}}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--text-on-canvas-dim)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 ↓ Export .md
               </button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              {logEntries.length === 0 && <p style={{ color: "#475569", fontSize: fs(0.85), textAlign: "center", marginTop: "40px" }}>No events yet. Start adventuring!</p>}
+              {logEntries.length === 0 && <p style={{ color: "var(--text-on-canvas-faint)", fontSize: fs(0.85), textAlign: "center", marginTop: "40px" }}>No events yet. Start adventuring!</p>}
               {logEntries.map(entry => {
                 const time     = entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                 const isDM     = entry.role === "dm";
                 const isPlayer = entry.role === "player";
                 return (
-                  <div key={entry.id} style={{ padding: "9px 12px", borderRadius: "8px", borderLeft: `3px solid ${isDM ? "#8b5cf6" : isPlayer ? "#0ea5e9" : "#475569"}`, background: isDM ? "rgba(139,92,246,0.08)" : isPlayer ? "rgba(14,165,233,0.08)" : "rgba(0,0,0,0.2)" }}>
+                  <div key={entry.id} style={{ padding: "9px 12px", borderRadius: "8px", borderLeft: `3px solid ${isDM ? "#8b5cf6" : isPlayer ? "#0ea5e9" : "#475569"}`, background: isDM ? "linear-gradient(rgba(139,92,246,0.12),rgba(139,92,246,0.12)), var(--pane-card)" : isPlayer ? "linear-gradient(rgba(14,165,233,0.12),rgba(14,165,233,0.12)), var(--pane-card)" : "var(--pane-card)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <span style={{ fontSize: fs(0.68), fontWeight: "bold", color: isDM ? "#a78bfa" : isPlayer ? "#38bdf8" : "#64748b" }}>
+                      <span style={{ fontSize: fs(0.68), fontWeight: "bold", color: isDM ? "#a78bfa" : isPlayer ? "#38bdf8" : "var(--on-pane-faint)" }}>
                         {isDM ? "DM" : entry.role === "system" ? "System" : (entry.sender ?? "Player")}
                       </span>
-                      <span style={{ fontSize: fs(0.65), color: "#475569" }}>{time}</span>
+                      <span style={{ fontSize: fs(0.65), color: "var(--on-pane-faint)" }}>{time}</span>
                     </div>
-                    <p style={{ fontSize: fs(0.78), color: entry.role === "system" ? "#94a3b8" : "#cbd5e1", lineHeight: 1.45, margin: 0 }}>
+                    <p style={{ fontSize: fs(0.78), color: entry.role === "system" ? "var(--on-pane-dim)" : "var(--on-pane)", lineHeight: 1.45, margin: 0 }}>
                       {entry.content.length > 180 ? entry.content.slice(0, 180) + "…" : entry.content}
                     </p>
                   </div>
@@ -8615,6 +8643,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           permission to hidden elements. Positioned off-screen instead. */}
       <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
       <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
+
+      {/* Final-adventurer warning — removing the last character deletes the campaign */}
+      {confirmFinalLeave && (
+        <div onClick={() => setConfirmFinalLeave(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(3,2,12,0.86)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: "min(440px, 100%)", background: "linear-gradient(180deg, rgba(30,18,22,0.98), rgba(18,12,16,0.99))", border: "1px solid rgba(239,68,68,0.45)", borderRadius: "16px", padding: "26px", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", textAlign: "center" }}>
+            <div style={{ fontSize: "2.2rem", marginBottom: "8px" }}>⚠️</div>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#fca5a5", marginBottom: "12px" }}>Delete this campaign?</h2>
+            <p style={{ fontSize: "0.9rem", color: "#e2e8f0", lineHeight: 1.6, marginBottom: "22px" }}>
+              <strong style={{ color: "#fff" }}>{confirmFinalLeave.name}</strong> is the last adventurer in <strong style={{ color: "#fff" }}>{campaignTitle || "this campaign"}</strong>. Removing them leaves no one in the party, so the campaign and its entire story will be permanently deleted — this can&apos;t be undone.
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+              <button onClick={() => setConfirmFinalLeave(null)}
+                style={{ padding: "11px 22px", borderRadius: "10px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.06)", color: "#e2e8f0", fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { const c = confirmFinalLeave; setConfirmFinalLeave(null); leaveParty(c.id); }}
+                style={{ padding: "11px 22px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.6)", background: "rgba(239,68,68,0.85)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Remove &amp; Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Portrait lightbox */}
       {typeof window !== "undefined" && portraitModal && createPortal(

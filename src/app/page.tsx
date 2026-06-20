@@ -54,7 +54,7 @@ const FEATURES: FeatureCard[] = [
   {
     icon: "multiplayer",
     title: "Pull Up a Chair",
-    desc: "Share one link. Up to 10 players join the same table. HP, gold, XP, and status effects sync to every player's screen the instant they change — like passing the salt, only faster.",
+    desc: "Gather the whole table around one screen for couch co-op. Everyone shares the adventure while the DM runs the world — HP, gold, XP, and status effects all tracked live as the story unfolds.",
   },
   {
     icon: "voice",
@@ -84,7 +84,7 @@ const STEPS: StepCard[] = [
     n: "02",
     icon: "map",
     title: "Set the Table",
-    desc: "Create your own world with a single prompt, or join a friend's adventure with an invite link. Solo or a full party of 10 — the DM scales the courses to fit either way.",
+    desc: "Create your own world with a single prompt. Play solo, or gather the party around one screen for couch co-op — the DM scales the courses to fit either way.",
   },
   {
     n: "03",
@@ -300,7 +300,7 @@ export default async function Home() {
               "Tracks all combat: initiative, HP, spell slots, conditions, status effects, and loot",
               "Scales encounter difficulty to your party size and average level on every turn",
               "Voices NPCs, merchants, villains, and wandering monsters with distinct personalities",
-              "Works solo or with a full party of up to 10 players — invite from your roster anytime out of combat",
+              "Plays solo or with the whole party gathered around one screen for couch co-op",
               "Remembers the choices, boasts, mercies, and grudges your party leaves behind",
               "Resume anytime — every session picks up exactly where you left off",
             ].map((text) => (

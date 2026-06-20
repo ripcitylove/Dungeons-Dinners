@@ -17,16 +17,18 @@ export const STAT_TIPS: Record<string, TipEntry> = {
 export const MODIFIER_TIP = "Your modifier = (score − 10) ÷ 2, rounded down. Added to all rolls made with this ability.";
 
 // ── Races ─────────────────────────────────────────────────────────────────────
+// Each blurb opens with a quick bit of lore — who the race is and where they fit
+// in the world — names what they excel at, then lists the 5e mechanical traits.
 export const RACE_TIPS: Record<string, TipEntry> = {
-  Human:      { title: "Human", body: "+1 to all ability scores. Extra skill proficiency and a feat at level 1. The most adaptable and ambitious of races." },
-  Elf:        { title: "Elf", body: "+2 DEX. Darkvision 60 ft. Advantage on saving throws against charm. Immune to magical sleep. Keen Senses (Perception proficiency)." },
-  Dwarf:      { title: "Dwarf", body: "+2 CON. Darkvision 60 ft. Resistance to poison damage. Advantage on saving throws against poison. Tool proficiency." },
-  Halfling:   { title: "Halfling", body: "+2 DEX. Lucky — reroll any 1 on attack rolls, ability checks, or saving throws. Brave — advantage on saves against being frightened." },
-  Dragonborn: { title: "Dragonborn", body: "+2 STR, +1 CHA. Breath weapon based on your draconic ancestry (fire, ice, lightning, etc.) and resistance to that damage type." },
-  Tiefling:   { title: "Tiefling", body: "+1 INT, +2 CHA. Darkvision 60 ft. Resistance to fire damage. Thaumaturgy cantrip, Hellish Rebuke (2nd level), Darkness (3rd level)." },
-  Gnome:      { title: "Gnome", body: "+2 INT. Darkvision 60 ft. Gnome Cunning — advantage on all Intelligence, Wisdom, and Charisma saving throws against magic." },
-  "Half-Elf": { title: "Half-Elf", body: "+2 CHA, +1 to two other stats of your choice. Darkvision 60 ft. Two extra skill proficiencies. Advantage on charm saving throws." },
-  "Half-Orc": { title: "Half-Orc", body: "+2 STR, +1 CON. Darkvision 60 ft. Relentless Endurance — drop to 1 HP instead of 0 once per long rest. Savage Attacks on critical hits." },
+  Human:      { title: "Human", body: "The most adaptable and ambitious folk of the realms — found in every city, trade road, and frontier keep. Humans master nothing in particular and everything in general, making them the perfect fit for any class. Mechanically: +1 to all ability scores, an extra skill, and a bonus feat at level 1." },
+  Elf:        { title: "Elf", body: "Ageless and graceful, elves dwell in ancient forests and starlit cities, living centuries and remembering what others forget. Their poise and affinity for magic make superb rangers, rogues, and wizards. Mechanically: +2 DEX, Darkvision 60 ft, advantage vs. charm, immunity to magical sleep, and Perception proficiency." },
+  Dwarf:      { title: "Dwarf", body: "Stout, stubborn, and proud, dwarves carve mountain-holds of stone and steel — and never forget a grudge or a debt. Hardy and unshakable, they thrive on the front line as fighters, clerics, and paladins. Mechanically: +2 CON, Darkvision 60 ft, resistance and advantage vs. poison, and tool proficiency." },
+  Halfling:   { title: "Halfling", body: "Cheerful, curious, and improbably lucky, halflings prize a warm hearth and a good meal — yet show startling courage when it counts. Their nimble feet and luck suit rogues and rangers. Mechanically: +2 DEX, Lucky (reroll any natural 1), and Brave (advantage vs. being frightened)." },
+  Dragonborn: { title: "Dragonborn", body: "Proud descendants of dragons, scaled and strong, dragonborn prize honor and clan above all and carry a spark of elemental fury in their breath. Commanding presence makes them excellent fighters, paladins, and sorcerers. Mechanically: +2 STR, +1 CHA, an elemental breath weapon, and resistance to its damage type." },
+  Tiefling:   { title: "Tiefling", body: "Marked by an infernal bloodline — horns, a tail, and eyes that catch the firelight — tieflings are met with suspicion and survive on wit and will. Their charm and innate magic make gifted bards, warlocks, and sorcerers. Mechanically: +1 INT, +2 CHA, Darkvision, fire resistance, and innate spells (Thaumaturgy, Hellish Rebuke, Darkness)." },
+  Gnome:      { title: "Gnome", body: "Tiny, brilliant, and endlessly inquisitive, gnomes tinker, experiment, and chase wild ideas with infectious delight. Their sharp minds make them natural wizards and arcane tricksters. Mechanically: +2 INT, Darkvision, and Gnome Cunning — advantage on all INT, WIS, and CHA saves against magic." },
+  "Half-Elf": { title: "Half-Elf", body: "Caught between two worlds and belonging fully to neither, half-elves blend human drive with elven grace — and make friends wherever they wander. Charismatic and versatile, they shine as bards, paladins, and sorcerers. Mechanically: +2 CHA, +1 to two stats of your choice, Darkvision, two extra skills, and advantage vs. charm." },
+  "Half-Orc": { title: "Half-Orc", body: "Strong of body and fierce of spirit, half-orcs are forged on the harsh borderlands and prove their worth through sheer determination. Ferocious in a fight, they excel as barbarians and fighters. Mechanically: +2 STR, +1 CON, Darkvision, Relentless Endurance (drop to 1 HP instead of 0), and Savage Attacks on crits." },
 };
 
 // ── Classes ───────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Cinzel } from "next/font/google";
+import { Geist, Geist_Mono, Cinzel, Cinzel_Decorative } from "next/font/google";
 import "./globals.css";
 import { MusicPlayer } from "../components/MusicPlayer";
 import { FontScaleApplier } from "../components/FontScaleApplier";
@@ -21,6 +21,13 @@ const cinzel = Cinzel({
   weight: ["700", "900"],
 });
 
+// Ornate display face for the epic title header — more fantastical than Cinzel.
+const cinzelDecorative = Cinzel_Decorative({
+  variable: "--font-cinzel-decorative",
+  subsets: ["latin"],
+  weight: ["700", "900"],
+});
+
 export const metadata: Metadata = {
   title: "Dungeons & Dinner Legends",
   description: "A premium AI-driven D&D campaign platform.",
@@ -33,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} ${cinzel.variable}`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${cinzel.variable} ${cinzelDecorative.variable}`}>
         <FontScaleApplier />
         <TooltipSizeControl />
         {children}

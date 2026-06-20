@@ -31,6 +31,9 @@ const TAVERN_TRACKS: string[] = [
 ];
 
 const POOLS: Record<string, string[]> = {
+  // The dashboard always loops this one self-hosted track (see public/Royal_Coupling.mp3)
+  // so it's always available and never rotates to anything else.
+  dashboard: ["/Royal_Coupling.mp3"],
   tavern: TAVERN_TRACKS,
   social: TAVERN_TRACKS,
   combat: [
@@ -242,6 +245,7 @@ const POOL_META: { key: string; icon: string; label: string; desc: string }[] = 
 ];
 
 const POOL_LABELS: Record<string, string> = {
+  dashboard: "Legends Theme",
   tavern: "Tavern", social: "Tavern", combat: "Combat", dungeon: "Dungeon",
   nature: "Wilds", mystical: "Mystical", epic: "Castle", sea: "Sea",
 };
@@ -391,9 +395,11 @@ export function MusicPlayer() {
   const ambianceMusicSuppressed = useRef<number>(1);
   const suppressFadeRef         = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const isOnLanding  = pathname === "/";
-  const isOnCampaign = !!pathname?.startsWith("/campaign");
-  const defaultPool  = isOnCampaign ? "dungeon" : "tavern";
+  const isOnLanding   = pathname === "/";
+  const isOnCampaign  = !!pathname?.startsWith("/campaign");
+  const isOnDashboard = pathname === "/dashboard";
+  // Dashboard locks to a single self-hosted track; campaigns default to dungeon; else tavern.
+  const defaultPool   = isOnDashboard ? "dashboard" : isOnCampaign ? "dungeon" : "tavern";
 
   const getPool = (key: string) => POOLS[key] ?? POOLS.dungeon;
 
@@ -820,8 +826,8 @@ export function MusicPlayer() {
           maxWidth: "min(92vw, 540px)",
         }}
       >
-        {/* Pool picker — floats above the pill */}
-        {pickerOpen && (
+        {/* Pool picker — floats above the pill (never on the dashboard, which is locked) */}
+        {pickerOpen && !isOnDashboard && (
           <div
             className="animate-fade-in"
             style={{
@@ -932,22 +938,31 @@ export function MusicPlayer() {
 
           {!loadError && (
             <>
-              {/* Pool label — opens picker */}
-              <button
-                onClick={() => setPickerOpen(v => !v)}
-                title="Change music mood"
-                style={{
-                  background: pickerOpen ? "rgba(139,92,246,0.18)" : "none",
-                  border: "none", cursor: "pointer", padding: "2px 5px",
-                  borderRadius: "5px", fontSize: "0.78rem", color: playing ? "#94a3b8" : "#475569",
-                  whiteSpace: "nowrap", transition: "all 0.15s", display: "flex", alignItems: "center", gap: "3px",
-                }}
-              >
-                {poolLabel} <span style={{ fontSize: "0.5rem", opacity: 0.7 }}>▾</span>
-              </button>
+              {/* Pool label — opens picker (on the dashboard it's a static, locked label) */}
+              {isOnDashboard ? (
+                <span
+                  title="The dashboard always plays this track"
+                  style={{ padding: "2px 5px", fontSize: "0.78rem", color: playing ? "#94a3b8" : "#475569", whiteSpace: "nowrap" }}
+                >
+                  {poolLabel}
+                </span>
+              ) : (
+                <button
+                  onClick={() => setPickerOpen(v => !v)}
+                  title="Change music mood"
+                  style={{
+                    background: pickerOpen ? "rgba(139,92,246,0.18)" : "none",
+                    border: "none", cursor: "pointer", padding: "2px 5px",
+                    borderRadius: "5px", fontSize: "0.78rem", color: playing ? "#94a3b8" : "#475569",
+                    whiteSpace: "nowrap", transition: "all 0.15s", display: "flex", alignItems: "center", gap: "3px",
+                  }}
+                >
+                  {poolLabel} <span style={{ fontSize: "0.5rem", opacity: 0.7 }}>▾</span>
+                </button>
+              )}
 
-              {/* Skip track */}
-              {playing && (
+              {/* Skip track (hidden on the dashboard — only one track) */}
+              {playing && !isOnDashboard && (
                 <button
                   onClick={skip}
                   title="Skip track"

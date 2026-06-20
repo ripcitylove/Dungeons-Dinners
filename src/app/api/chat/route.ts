@@ -4,6 +4,7 @@ import { DM_LOOT_GUIDE } from "../../../lib/lootData";
 import { formatMessagesForDM } from "../../../lib/dmMessageFormat";
 import { objectivesForPrompt, currentObjectiveId, type Objective } from "../../../lib/objectives";
 import { getSpellSlots, spellSlotsRemaining } from "../../../lib/spellData";
+import { weaponByName } from "../../../lib/equipmentData";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 
@@ -105,6 +106,44 @@ function buildSkillLine(c: Character): string {
     return `${skill} ${sn(modNum(score) + pb)}`;
   });
   return `Proficient skills (with prof bonus): ${bonuses.join(", ")}`;
+}
+
+// Annotates the character's equipped weapons with their 5e properties and detects
+// the resulting loadout style (two-handed / sword-&-shield / dual-wield / versatile)
+// so the DM can enforce handedness, shield, and two-weapon-fighting rules in play.
+function buildWeaponLine(c: Character): string {
+  const names = (c.inventory?.weapons ?? []).filter(Boolean);
+  if (!names.length) return "Wielding: unarmed strike (1 + STR bludgeoning).";
+  const hasShield = (c.inventory?.items ?? []).some(i => /\bshield\b/i.test(i));
+  const annotate = (name: string): string => {
+    const w = weaponByName(name);
+    if (!w) return name;
+    const props: string[] = [
+      w.hands === "2h" ? "two-handed" : w.hands === "versatile" ? `versatile ${w.damage.split(" ")[0]}/${w.versatileDamage}` : "one-handed",
+    ];
+    if (w.light)      props.push("light");
+    if (w.finesse)    props.push("finesse");
+    if (w.thrown)     props.push("thrown");
+    if (w.ammunition) props.push("ammunition");
+    return `${name} [${w.damage}; ${props.join(", ")}]`;
+  };
+  const primary = weaponByName(names[0]);
+  const offName = names[1];
+  const offhand = offName ? weaponByName(offName) : undefined;
+  const dualWield = !!(primary?.light && primary.kind === "melee" && offhand?.light && offhand.kind === "melee");
+  let style = "";
+  if (primary?.hands === "2h") {
+    style = " → TWO-HANDED (both hands occupied; no shield, no off-hand attack).";
+  } else if (dualWield) {
+    style = ` → DUAL-WIELDING (bonus-action off-hand attack with ${offName}; off-hand damage adds NO ability modifier; no shield).`;
+  } else if (hasShield && primary) {
+    style = primary.hands === "versatile"
+      ? ` + Shield (held one-handed → use the ${primary.damage.split(" ")[0]} die; +2 AC already in AC).`
+      : " + Shield (+2 AC already in AC).";
+  } else if (primary?.hands === "versatile") {
+    style = ` → off-hand free (may use two-handed for ${primary.versatileDamage}).`;
+  }
+  return `Wielding: ${names.map(annotate).join(" + ")}${style}`;
 }
 
 const VOICE_AND_RULES = `You are a master Dungeon Master with the storytelling instincts of a seasoned fantasy novelist. Every word you write should pull the player deeper into the world.
@@ -364,6 +403,16 @@ You hold the full character sheet. Players submit only the number showing on the
 - Damage after a hit: ask "Roll a d[N]." Add STR mod for melee, DEX for ranged/finesse, no mod for most spell damage. Magic weapon bonus (+1/+2/+3) adds to both attack rolls and damage. When you show a damage breakdown, label the modifier too ("8 + 3 [STR] = 11 piercing", "10 + 2 [+2 weapon] = 12 slashing"). An enemy's damage bonus comes from its stat block — label it as well ([STR], [Bite], or the creature's bonus).
 - Critical hit (natural 20): double the damage dice rolled (not the modifier). Roll the weapon die twice, add mod once.
 - UNIVERSAL LABELING RULE — applies to EVERY roll you show as arithmetic, with NO exceptions: attack rolls, DAMAGE rolls, saving throws, skill/ability checks, initiative, and healing. Show it in one compact line with every addend after the die labeled in [brackets] by its source: "8 + 3 [STR] + 2 [Prof] = 13 — misses AC 14." The first number is the raw die; every other component MUST be labeled — ability modifier ([STR], [DEX], [CON], [INT], [WIS], [CHA]), proficiency ([Prof]), spell attack ([Spell ATK]), magic weapon ([+1 weapon]), rage ([Rage]), bless ([Bless +1d4]), an enemy's stat-block bonus ([ATK] / [Bite] / [STR]), etc. A bare "14 + 3 = 17" with an unlabeled bonus is NEVER acceptable — the player must always be able to see WHAT each bonus is and where it comes from. Never collapse components into an unlabeled total. Never ask players to verify or re-check.
+
+WEAPON PROPERTIES & HANDEDNESS (enforce strictly — each character's "Wielding:" line states their exact loadout and style)
+- Finesse weapons (dagger, shortsword, rapier, scimitar, dart): use whichever is higher, STR or DEX, for BOTH attack and damage. The Melee and Ranged ATK bonuses above give you both — pick the better and label it ([STR] or [DEX]).
+- Versatile weapons (quarterstaff, spear, longsword, warhammer, battleaxe): a smaller die one-handed, a bigger die two-handed. If the character also holds a shield or a second weapon, a hand is occupied → use the SMALLER die. A free off-hand → they may use the larger two-handed die. The "Wielding:" line tells you which die applies.
+- Two-handed weapons (greatsword, greataxe, maul, shortbow, longbow, light crossbow): need BOTH hands. That character can NOT also use a shield or make an off-hand attack — refuse either in one short sentence.
+- Two-Weapon Fighting / DUAL-WIELDING (two LIGHT melee weapons; the "Wielding:" line says DUAL-WIELDING): when they take the Attack action with the main-hand weapon, they MAY spend a BONUS ACTION to attack once with the off-hand weapon. The off-hand attack roll uses the same modifier, but its DAMAGE adds NO ability modifier (these characters have no Two-Weapon Fighting style yet) — roll only the off-hand die. A dual-wielder can NOT also carry a shield, and only LIGHT melee weapons qualify.
+- Shield: +2 AC (already included in the AC shown). A shield needs a free hand — never valid with a two-handed weapon or while dual-wielding.
+- Thrown weapons (dagger, handaxe, javelin, spear, dart): may be thrown at range using the same modifier the melee weapon uses (finesse thrown may use DEX).
+- Ammunition weapons (shortbow, longbow, crossbows, sling): require ammunition to fire. Hand and light crossbows have Loading — only ONE shot per action even if the character has extra attacks.
+- Proficiency: the ATK bonuses above assume proficiency. If a character ever wields a weapon their class is NOT proficient with, drop the [Prof] bonus from the attack (ability modifier only) and say so once.
 
 SPELLS & SLOTS
 - Track spell slot usage. When a leveled spell is cast, state it consumes a slot ("That uses one of your 1st-level slots").
@@ -713,7 +762,6 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
 
     const partyBlock = party.map(c => {
       const inv      = c.inventory ?? { gold: 0, weapons: [], items: [] };
-      const weapons  = inv.weapons?.join(", ") || "none";
       const items    = inv.items?.join(", ")   || "none";
       const ac       = c.ac ?? "?";
       const pb       = profBonus(c.level);
@@ -743,7 +791,8 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
   HP ${c.hp}/${c.max_hp} (${hpPct}%) | AC ${ac}${statuses}
   STR ${c.strength}(${mod(c.strength)}) DEX ${c.dexterity}(${mod(c.dexterity)}) CON ${c.constitution}(${mod(c.constitution)}) INT ${c.intelligence}(${mod(c.intelligence)}) WIS ${c.wisdom}(${mod(c.wisdom)}) CHA ${c.charisma}(${mod(c.charisma)})
   ATTACK BONUSES: ${atkLine}
-  Weapons: ${weapons}  |  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${resLine}${itemFx}`;
+  ${buildWeaponLine(c)}
+  Items: ${items}${profLine ? `\n  ${profLine}` : ""}${spellLine}${resLine}${itemFx}`;
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
@@ -759,7 +808,6 @@ ${partyScaleHint(partySize, avgLevel)}`;
   if (!char) return `${VOICE_AND_RULES}${openingBlock}${campaignBlock}${enemyBlock}`;
 
   const inv      = char.inventory ?? { gold: 0, weapons: [], items: [] };
-  const weapons  = inv.weapons?.join(", ") || "none";
   const items    = inv.items?.join(", ")   || "none";
   const ac       = char.ac ?? "unknown";
   const pb       = profBonus(char.level);
@@ -806,7 +854,7 @@ Pronouns: ${solPronouns}
 HP ${char.hp}/${char.max_hp} (${char.max_hp > 0 ? Math.round((char.hp / char.max_hp) * 100) : 0}%) | AC ${ac} | Gold ${inv.gold}gp
 STR ${char.strength} (${mod(char.strength)}) · DEX ${char.dexterity} (${mod(char.dexterity)}) · CON ${char.constitution} (${mod(char.constitution)}) · INT ${char.intelligence} (${mod(char.intelligence)}) · WIS ${char.wisdom} (${mod(char.wisdom)}) · CHA ${char.charisma} (${mod(char.charisma)})
 ATTACK BONUSES: ${solAtk}
-Weapons: ${weapons}
+${buildWeaponLine(char)}
 Items: ${items}${solAlign}${solBg}${solSaves}${solSkills}
 Status: ${statuses}${spellInfo}${soloResLine}${itemFx}
 

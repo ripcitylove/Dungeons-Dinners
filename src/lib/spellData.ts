@@ -1,3 +1,5 @@
+import { findEquippedArmor, armorBaseAC } from "./equipmentData";
+
 export type SpellEntry = { name: string; school: string; desc: string };
 
 export const CANTRIPS: Partial<Record<string, SpellEntry[]>> = {
@@ -882,13 +884,22 @@ export function computeAC(
   const wisMod = Math.floor((wis  - 10) / 2);
   const gear   = [...(items ?? []), ...(weapons ?? [])].join(" ").toLowerCase();
   const shield = /\bshield\b/.test(gear) ? 2 : 0;
-  if (/plate mail|full plate/.test(gear))   return 18 + shield;
-  if (/chain mail/.test(gear))              return 16 + shield;
-  if (/scale mail|breastplate/.test(gear))  return 14 + Math.min(dexMod, 2) + shield;
-  if (/leather|studded/.test(gear))         return 11 + dexMod + shield;
-  if (cls === "Barbarian")                  return 10 + dexMod + conMod;
-  if (cls === "Monk")                       return 10 + dexMod + wisMod;
-  if (["Fighter","Paladin"].includes(cls))  return 16 + shield; // chain mail default
-  if (["Cleric","Ranger","Druid"].includes(cls)) return 14 + Math.min(dexMod, 2) + shield;
+
+  // Authoritative: a recognized armor in the inventory drives base AC + DEX rules.
+  const armor = findEquippedArmor(gear);
+  if (armor) return armorBaseAC(armor, dexMod) + shield;
+
+  // No worn armor. Unarmored Defense classes always use their feature.
+  if (cls === "Barbarian") return 10 + dexMod + conMod + shield;
+  if (cls === "Monk")      return 10 + dexMod + wisMod; // Monk loses the feature if using a shield, which it can't take here
+
+  // A character that deliberately chose "no armor" carries the unarmored marker.
+  if (gear.includes("traveler's clothes") || gear.includes("travelers clothes")) {
+    return 10 + dexMod + shield;
+  }
+
+  // Legacy fallback for older saves with no armor data — preserves prior AC.
+  if (["Fighter","Paladin"].includes(cls))        return 16 + shield; // chain mail default
+  if (["Cleric","Ranger","Druid"].includes(cls))  return 14 + Math.min(dexMod, 2) + shield;
   return 11 + dexMod + shield; // leather default (Rogue, Bard, Warlock, Sorcerer, Wizard)
 }

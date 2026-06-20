@@ -7,6 +7,9 @@ import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
 import { useTooltip, tipBox, tipBoxNode } from "../../hooks/useTooltip";
+import { AdventureGlyph, HeroGlyph } from "../../components/EmptyStateIcons";
+import { getTheme, onThemeChange } from "../../lib/theme";
+import { D20Icon } from "../../components/D20Icon";
 import { STAT_TIPS, RACE_TIPS, CLASS_TIPS, MECHANIC_TIPS } from "../../lib/tooltipData";
 import "../globals.css";
 
@@ -299,11 +302,43 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete]   = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting]             = useState(false);
   const [tavernBgUrl, setTavernBgUrl]       = useState<string | null>(null);
-  const [copiedId, setCopiedId]             = useState<string | null>(null);
+  // Light / dark theme — owned by the single global settings menu (Tools, top-left).
+  // We just read the current value and react to changes; the toggle lives there.
+  // SSR-stable default first (avoids the data-theme hydration mismatch), then
+  // apply the saved theme on mount so the global toggle flips in one click.
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => { setTheme(getTheme()); return onThemeChange(setTheme); }, []);
+  const light = theme === "light";
   const musicStarted = useRef(false);
+
+  // Title-reveal chime — the same sound the in-game "New Objective Discovered!"
+  // banner plays. Fired once as the title animates in; if the browser blocks
+  // autoplay on a fresh load, it retries on the first interaction so it still lands.
+  const titleChimePlayed = useRef(false);
+  const playTitleChime = () => {
+    if (titleChimePlayed.current) return;
+    try {
+      const el = new Audio("/sounds/tracker-chime.mp3");
+      el.volume = 0.55;
+      void el.play().then(() => { titleChimePlayed.current = true; }).catch(() => {});
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { playTitleChime(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-start the Legends Theme when the dashboard opens. __dndMusicPlay is a no-op
+  // if music is already playing, and only starts when paused — so a few spaced
+  // attempts cover the global MusicPlayer mounting slightly after this page. If the
+  // browser blocks autoplay before any interaction, the first-touch handler below
+  // still kicks it off on the first click.
+  useEffect(() => {
+    const shots = [120, 700, 1600, 3000].map(ms =>
+      setTimeout(() => { try { window.__dndMusicPlay?.(); } catch { /* ignore */ } }, ms));
+    return () => shots.forEach(clearTimeout);
+  }, []);
 
   useEffect(() => {
     const handleFirstTouch = () => {
+      playTitleChime();
       if (musicStarted.current) return;
       musicStarted.current = true;
       window.__dndMusicPlay?.();
@@ -311,7 +346,7 @@ export default function Dashboard() {
     };
     document.addEventListener("pointerdown", handleFirstTouch);
     return () => document.removeEventListener("pointerdown", handleFirstTouch);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const cached = localStorage.getItem("dnd_tavern_bg");
@@ -451,12 +486,6 @@ export default function Dashboard() {
     setSelectedChar(null);
   };
 
-  const copyInvite = (campId: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/campaign/${campId}`);
-    setCopiedId(campId);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push("/");
@@ -476,15 +505,19 @@ export default function Dashboard() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", position: "relative" }}>
+    <main className="dashboard-root" data-theme={theme} style={{ minHeight: "100vh", position: "relative" }}>
 
-      {/* Tavern background */}
-      {tavernBgUrl && (
-        <div style={{ position: "fixed", inset: 0, zIndex: -1, overflow: "hidden" }}>
+      {/* Themed backdrop — a base canvas (dark fantasy / warm parchment) with the
+          tavern image and a theme-aware wash on top. Always rendered so the light
+          theme reads even before/without a tavern background. */}
+      <div style={{ position: "fixed", inset: 0, zIndex: -1, overflow: "hidden", background: "var(--canvas-bg)" }}>
+        {tavernBgUrl && (
           <img src={tavernBgUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", opacity: 0.3 }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(5,3,15,0.65) 0%, rgba(5,3,15,0.5) 60%, rgba(5,3,15,0.85) 100%)" }} />
-        </div>
-      )}
+        )}
+        <div style={{ position: "absolute", inset: 0, background: theme === "light"
+          ? "linear-gradient(to bottom, rgba(244,238,224,0.86) 0%, rgba(244,238,224,0.78) 60%, rgba(244,238,224,0.93) 100%)"
+          : "linear-gradient(to bottom, rgba(5,3,15,0.65) 0%, rgba(5,3,15,0.5) 60%, rgba(5,3,15,0.85) 100%)" }} />
+      </div>
 
       {/* Character sheet modal */}
       {selectedChar && (
@@ -539,10 +572,11 @@ export default function Dashboard() {
       <div style={{ maxWidth: "1380px", margin: "0 auto", padding: "clamp(20px, 3vw, 36px) clamp(16px, 3vw, 48px) clamp(60px, 6vw, 100px)" }}>
 
         {/* Nav */}
-        <nav className="nav-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "52px" }}>
+        <nav className="nav-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+          {/* Wordmark moved to the centered logo header below; keep the hex mark
+              as the nav's left anchor so the Sign Out cluster stays right-aligned. */}
           <div className="nav-brand" style={{ fontSize: "2.24rem" }}>
-            <span className="nav-brand-mark">⬡</span>
-            <span>Dungeons &amp; Dinner Legends</span>
+            <span className="nav-brand-mark"><D20Icon className="d20-glow" size="1.2em" /></span>
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             <div className="nav-pill">
@@ -555,21 +589,64 @@ export default function Dashboard() {
           </div>
         </nav>
 
+        {/* Centered title header — golden fantasy text that reveals like the in-game
+            "New Objective Discovered!" banner (same look + chime), then sparkles. */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "clamp(28px, 4vw, 48px)" }}>
+          <div className="dnd-title-reveal" style={{ position: "relative", textAlign: "center", padding: "0 20px", maxWidth: "92vw" }}>
+            {/* radial gold glow pool behind the text */}
+            <div aria-hidden style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: "min(820px, 96vw)", height: "210px", pointerEvents: "none",
+              background: "radial-gradient(ellipse at center, rgba(212,175,55,0.20) 0%, rgba(212,175,55,0.07) 40%, transparent 72%)" }} />
+            <h1 className="objective-banner-text dnd-title-sheen" style={{ position: "relative", margin: 0, fontFamily: "var(--font-cinzel-decorative), var(--font-cinzel), Georgia, serif", fontWeight: 900, fontSize: "clamp(1.55rem, 4.8vw, 3.4rem)", lineHeight: 1.18, letterSpacing: "0.01em" }}>
+              Dungeons &amp; Dinner Legends
+            </h1>
+            {/* Magical sparkles — a scattered field that twinkles around AND over the
+                title, continuously, after it appears. */}
+            <div aria-hidden className="dnd-sparkle-layer">
+              {[
+                { left: "3%",  top: "20%", d: "0.0s",  s: 1.05 },
+                { left: "14%", top: "70%", d: "0.9s",  s: 0.7 },
+                { left: "22%", top: "8%",  d: "1.6s",  s: 0.85 },
+                { left: "33%", top: "88%", d: "0.45s", s: 0.65 },
+                { left: "42%", top: "-2%", d: "2.1s",  s: 0.9 },
+                { left: "50%", top: "92%", d: "1.2s",  s: 0.75 },
+                { left: "58%", top: "2%",  d: "0.3s",  s: 0.8 },
+                { left: "67%", top: "84%", d: "1.8s",  s: 0.7 },
+                { left: "78%", top: "10%", d: "0.7s",  s: 0.95 },
+                { left: "86%", top: "76%", d: "2.4s",  s: 0.8 },
+                { left: "96%", top: "26%", d: "1.4s",  s: 1.0 },
+              ].map((sp, i) => (
+                <span key={i} className="dnd-sparkle" style={{ left: sp.left, top: sp.top, animationDelay: sp.d, ['--sp-scale' as string]: String(sp.s) }}>{i % 2 ? '✧' : '✦'}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* ── First-time welcome banner ── */}
         {!loading && characters.length === 0 && campaigns.length === 0 && (
-          <div className="glass-panel animate-fade-in" style={{ marginBottom: "36px", padding: "32px 36px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.07)" }}>
+          <div className="glass-panel animate-fade-in" style={{ position: "relative", overflow: "hidden", marginBottom: "36px", padding: "32px 36px", border: "1px solid rgba(139,92,246,0.35)", background: "rgba(139,92,246,0.07)" }}>
             <p style={{ fontSize: "1.53rem", color: "var(--primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Welcome, Adventurer</p>
-            <h2 style={{ fontSize: "2.01rem", fontWeight: 800, marginBottom: "24px" }}>Here&apos;s how to get started in 3 steps:</h2>
-            <div style={{ display: "flex", gap: "18px", flexWrap: "wrap" }}>
+            <h2 style={{ fontSize: "2.01rem", fontWeight: 800, marginBottom: "24px", color: "var(--text-on-canvas)" }}>Here&apos;s how to get started in 2 steps:</h2>
+            <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", position: "relative" }}>
+              {/* Whimsy — the cooking-dragon mascot. Anchored to the steps' TOP edge so
+                  his counter line pixel-stacks onto the box, with the pancakes & spoon
+                  dipping just inside. (~0.87 of his height is the counter line, so
+                  top:-122 on a 140px-tall image lands the line on the box top.) Hidden
+                  on narrow screens so he never crowds the steps. */}
+              <img
+                src="/mascot/dragon-chef.png"
+                alt="Whimsy, the Dungeons & Dinner Legends mascot — a friendly cooking dragon"
+                draggable={false}
+                className="hide-on-narrow"
+                style={{ position: "absolute", top: "-122px", right: "clamp(48px, 5vw, 92px)", width: "140px", height: "auto", pointerEvents: "none", userSelect: "none", zIndex: 2, filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.45))" }}
+              />
               {[
-                { n: "1", icon: "⚒️", title: "Create a Character", desc: "Hit + Create a Character in the Heroes panel. Pick your race, class, and roll your ability scores." },
-                { n: "2", icon: "🗺️", title: "Start a Campaign",   desc: "Hit + Start a Campaign in the Adventures panel. Set how many players are starting today, then build or import characters from your roster." },
-                { n: "3", icon: "🔗", title: "Invite Your Party",   desc: "Once inside your campaign, hit the Invite button to copy a link. Send it to friends — they join instantly." },
-              ].map(({ n, icon, title, desc }) => (
-                <div key={n} style={{ flex: "1 1 220px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "20px 22px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                { n: "1", Icon: AdventureGlyph, title: "Start a Campaign",   desc: "Hit + Start a Campaign in the Adventures panel. Set how many adventurers are at the table today, then build or import a character for each from your roster." },
+                { n: "2", Icon: HeroGlyph,      title: "Create a Character", desc: "Hit + Create a Character in the Heroes panel. Pick your race, class, and roll your ability scores." },
+              ].map(({ n, Icon, title, desc }) => (
+                <div key={n} style={{ flex: "1 1 220px", background: light ? "rgba(22,18,34,0.9)" : "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "20px 22px", border: light ? "1px solid rgba(80,60,30,0.25)" : "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
                     <span style={{ fontSize: "1.28rem", fontWeight: 900, color: "var(--primary)", background: "rgba(139,92,246,0.2)", borderRadius: "50%", width: "26px", height: "26px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
-                    <span style={{ fontSize: "1.72rem" }}>{icon}</span>
+                    <span style={{ color: "var(--primary)", display: "flex", alignItems: "center" }}><Icon size={26} /></span>
                     <span style={{ fontSize: "1.41rem", fontWeight: 700 }}>{title}</span>
                   </div>
                   <p style={{ fontSize: "1.57rem", color: "var(--subtle)", lineHeight: 1.65, margin: 0 }}>{desc}</p>
@@ -586,8 +663,8 @@ export default function Dashboard() {
           <section>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "1.61rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Campaigns</h2>
-                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1 }}>Your Adventures</p>
+                <h2 style={{ fontSize: "1.61rem", fontWeight: 700, color: "var(--text-on-canvas-dim)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Campaigns</h2>
+                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1, color: "var(--text-on-canvas)" }}>Your Adventures</p>
               </div>
               {/* Header CTA only when the list is non-empty — the empty-state card
                   carries its own button, so we don't show two for the same action.
@@ -605,10 +682,10 @@ export default function Dashboard() {
 
             {campaigns.length === 0 ? (
               <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center", minHeight: "340px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontSize: "3.2rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>⚔</div>
+                <div style={{ marginBottom: "16px", color: "var(--primary)", opacity: 0.45 }}><AdventureGlyph size={54} /></div>
                 <h3 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "10px" }}>No campaigns yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6 }}>
-                  Start your first campaign or join one with a friend&apos;s invite link.
+                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6, minHeight: "3.2em", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  Start your first campaign and gather your party at the table.
                 </p>
                 <button onClick={() => router.push("/create-campaign")} className="btn-cta">
                   <span className="btn-cta-plus">+</span> Start a Campaign
@@ -626,7 +703,7 @@ export default function Dashboard() {
                     >
                       {/* Joined badge */}
                       {!camp.isOwned && (
-                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "1.41rem", background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em", cursor: "help" }}
+                        <span style={{ position: "absolute", top: "14px", right: "14px", fontSize: "1.41rem", background: light ? "rgba(99,102,241,0.18)" : "rgba(99,102,241,0.15)", color: light ? "#4338ca" : "#818cf8", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", padding: "3px 9px", fontWeight: 600, letterSpacing: "0.03em", cursor: "help" }}
                           onMouseEnter={e => showTooltip(tipBox("Joined Campaign", "You are a member of this campaign hosted by another player. You can resume and play your character here.", "#818cf8"), e)}
                           onMouseLeave={hideTooltip}>
                           Joined
@@ -673,14 +750,6 @@ export default function Dashboard() {
 
                       {/* Actions */}
                       <div style={{ display: "flex", gap: "8px", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "14px", marginTop: "auto" }}>
-                        <button
-                          onClick={() => copyInvite(camp.id)}
-                          onMouseEnter={e => showTooltip(tipBox("🔗 Invite Link", "Copies a link to your clipboard. Share it so another player can join this campaign with their account.", "#818cf8"), e)}
-                          onMouseLeave={hideTooltip}
-                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "6px", color: copiedId === camp.id ? "#22c55e" : "var(--subtle)", cursor: "pointer", fontSize: "1.53rem", padding: "8px 16px", transition: "all 0.2s", flexShrink: 0 }}
-                        >
-                          {copiedId === camp.id ? "Copied!" : "🔗 Invite"}
-                        </button>
                         {camp.isOwned && (
                           <button
                             onClick={() => deleteCampaign(camp.id, camp.title)}
@@ -709,14 +778,16 @@ export default function Dashboard() {
               const ROSTER_CAP   = 40;
               const rosterFull   = characters.length >= ROSTER_CAP;
               const rosterClose  = characters.length >= ROSTER_CAP - 5;
-              const counterColor = rosterFull ? "#f87171" : rosterClose ? "#fbbf24" : "#94a3b8";
-              const counterBg    = rosterFull ? "rgba(239,68,68,0.12)" : rosterClose ? "rgba(251,191,36,0.12)" : "rgba(139,92,246,0.10)";
-              const counterBd    = rosterFull ? "rgba(239,68,68,0.4)"  : rosterClose ? "rgba(251,191,36,0.4)"  : "rgba(139,92,246,0.25)";
+              const counterColor = light
+                ? (rosterFull ? "#b91c1c" : rosterClose ? "#b45309" : "#5c5345")
+                : (rosterFull ? "#f87171" : rosterClose ? "#fbbf24" : "#94a3b8");
+              const counterBg    = rosterFull ? (light ? "rgba(239,68,68,0.16)" : "rgba(239,68,68,0.12)") : rosterClose ? (light ? "rgba(251,191,36,0.18)" : "rgba(251,191,36,0.12)") : (light ? "rgba(139,92,246,0.16)" : "rgba(139,92,246,0.10)");
+              const counterBd    = rosterFull ? "rgba(239,68,68,0.4)"  : rosterClose ? "rgba(251,191,36,0.4)"  : "rgba(139,92,246,0.3)";
               return (
             <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "1.61rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <h2 style={{ fontSize: "1.61rem", fontWeight: 700, color: "var(--text-on-canvas-dim)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
                   <span>Characters</span>
                   <span
                     title={rosterFull ? "Roster is full — delete a character to make room." : `Roster cap: ${ROSTER_CAP} characters per account.`}
@@ -736,7 +807,7 @@ export default function Dashboard() {
                     {characters.length} / {ROSTER_CAP}
                   </span>
                 </h2>
-                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1 }}>Your Heroes</p>
+                <p style={{ fontSize: "2.3rem", fontWeight: 800, lineHeight: 1, color: "var(--text-on-canvas)" }}>Your Heroes</p>
               </div>
               {characters.length > 0 && (
                 rosterFull ? (
@@ -760,12 +831,12 @@ export default function Dashboard() {
 
             {/* Cap warning banner — appears when within 5 slots of the cap. */}
             {rosterClose && !rosterFull && characters.length > 0 && (
-              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", fontSize: "1.41rem", color: "#fbbf24", lineHeight: 1.6 }}>
+              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: light ? "rgba(251,191,36,0.16)" : "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", fontSize: "1.41rem", color: light ? "#b45309" : "#fbbf24", lineHeight: 1.6 }}>
                 ⚠ You&apos;re nearing the roster cap — {ROSTER_CAP - characters.length} slot{ROSTER_CAP - characters.length === 1 ? "" : "s"} left. Each account holds up to {ROSTER_CAP} heroes.
               </div>
             )}
             {rosterFull && (
-              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.4)", fontSize: "1.41rem", color: "#f87171", lineHeight: 1.6 }}>
+              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: light ? "rgba(239,68,68,0.14)" : "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.4)", fontSize: "1.41rem", color: light ? "#b91c1c" : "#f87171", lineHeight: 1.6 }}>
                 🔒 Roster is full ({ROSTER_CAP} / {ROSTER_CAP}). Delete a character to create a new one.
               </div>
             )}
@@ -773,16 +844,16 @@ export default function Dashboard() {
               );
             })()}
             {!loading && characters.length > 0 && campaigns.length === 0 && (
-              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "1.57rem", color: "#c4b5fd", lineHeight: 1.6 }}>
+              <div style={{ marginBottom: "14px", padding: "10px 14px", borderRadius: "8px", background: light ? "rgba(139,92,246,0.14)" : "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "1.57rem", color: light ? "#6d28d9" : "#c4b5fd", lineHeight: 1.6 }}>
                 💡 Ready to play? Hit <strong>+ Start a Campaign</strong> to start an adventure with your characters.
               </div>
             )}
 
             {characters.length === 0 ? (
               <div className="glass-panel" style={{ padding: "56px 40px", textAlign: "center", minHeight: "340px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontSize: "3.2rem", marginBottom: "16px", opacity: 0.35, lineHeight: 1 }}>🧙‍♂️</div>
+                <div style={{ marginBottom: "16px", color: "var(--primary)", opacity: 0.45 }}><HeroGlyph size={54} /></div>
                 <h3 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "10px" }}>No characters yet</h3>
-                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6 }}>
+                <p style={{ color: "var(--subtle)", fontSize: "1.46rem", maxWidth: "360px", margin: "0 auto 28px", lineHeight: 1.6, minHeight: "3.2em", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   Create your first hero to start adventuring.
                 </p>
                 <Link href="/create-character" style={{ textDecoration: "none" }}>

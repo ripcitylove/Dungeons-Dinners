@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { getTheme, setThemeGlobal, onThemeChange, type Theme } from "../lib/theme";
 
 const STEPS = [1, 1.25, 1.5, 1.75] as const;
 const STORAGE_KEY = "dnd_tooltip_font_scale";
@@ -15,6 +16,7 @@ export function TooltipSizeControl() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen]       = useState(false);
   const [saving, setSaving]   = useState(false);
+  const [theme, setTheme]     = useState<Theme>("dark");
   const router   = useRouter();
   const pathname = usePathname();
   const isCampaign = pathname?.startsWith("/campaign/");
@@ -28,6 +30,15 @@ export function TooltipSizeControl() {
     document.documentElement.style.setProperty("--tooltip-font-scale", String(STEPS[initial]));
     setMounted(true);
   }, []);
+
+  // Theme lives here now (the single settings menu). Read it on mount and keep the
+  // menu's indicator in sync if it's changed elsewhere.
+  useEffect(() => {
+    setTheme(getTheme());
+    return onThemeChange(setTheme);
+  }, []);
+
+  const toggleTheme = () => setThemeGlobal(theme === "dark" ? "light" : "dark");
 
   const cycle = () => {
     const next = (stepIdx + 1) % STEPS.length;
@@ -114,6 +125,17 @@ export function TooltipSizeControl() {
           transition: "opacity 0.18s ease, transform 0.18s ease",
         }}
       >
+        {/* Theme — light / dark */}
+        <button
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to light (parchment) theme" : "Switch to dark (dungeon) theme"}
+          tabIndex={open ? 0 : -1}
+          style={menuItemStyle(theme === "light")}
+        >
+          <span style={{ fontSize: "0.95rem", lineHeight: 1 }}>{theme === "dark" ? "☀️" : "🌙"}</span>
+          <span style={{ flex: 1, fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>{theme === "dark" ? "Light Theme" : "Dark Theme"}</span>
+        </button>
+
         {/* Tooltip size control */}
         <button
           onClick={cycle}

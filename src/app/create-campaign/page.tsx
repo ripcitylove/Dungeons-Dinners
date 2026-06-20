@@ -1,21 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getTheme, onThemeChange, type Theme } from "../../lib/theme";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { sanitizeCharacterName, characterNameError } from "../../lib/nameValidation";
 import "../globals.css";
-import {
-  CANTRIPS, LEVEL1_SPELLS, SPELL_LIMITS, SPELLCASTING_CLASSES,
-  getSpellCounts, CLASS_STAT_GUIDES, getTierStyle, type SpellEntry,
-} from "../../lib/spellData";
+import { getSpellCounts } from "../../lib/spellData";
 import { computeInventoryBonuses } from "../../lib/lootData";
 import { initObjectives } from "../../lib/objectives";
-import {
-  CLASS_PROFICIENCIES, STANDARD_ARRAY, POINT_BUY_COST, POINT_BUY_BUDGET, calcPointBuyCost,
-} from "../../lib/proficiencyData";
-import { useTooltip, tipBox, tipBoxNode } from "../../hooks/useTooltip";
-import { RACE_TIPS, ALIGNMENT_TIPS, CLASS_TIPS, MECHANIC_TIPS, STAT_TIPS, SKILL_TIPS, STAT_METHOD_TIPS, PROF_TIPS, WEAPON_TIPS, SPELL_SCHOOL_TIPS, ARRAY_VALUE_TIPS } from "../../lib/tooltipData";
+import { CLASS_PROFICIENCIES } from "../../lib/proficiencyData";
+import { armorInventoryEntry, findEquippedArmor } from "../../lib/equipmentData";
+import { useTooltip, tipBox } from "../../hooks/useTooltip";
+import { CharacterSteps, isRollUnrolled, UNROLLED_SCORES, type CharForm } from "../../components/CharacterSteps";
+import { STAT_TIPS } from "../../lib/tooltipData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type AbilityScores = {
@@ -25,7 +23,7 @@ type AbilityScores = {
 type StatMethod = "roll" | "array" | "pointbuy";
 type CharDraft = {
   name: string; title: string; race: string; sex: string; class: string; alignment: string;
-  weapon: string; trinket: string; shield: boolean; charBackground: string;
+  weapon: string; offHand: string; armor: string; trinket: string; shield: boolean; charBackground: string;
   scores: AbilityScores;
   cantrips: string[]; spells: string[]; skillProficiencies: string[];
   rosterId?: string;
@@ -51,24 +49,8 @@ const CLASS_HIT_DIE: Record<string, number> = {
   Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8,
   Sorcerer: 6, Wizard: 6,
 };
-const ALIGNMENTS = [
-  { key: "Lawful Good", short: "LG" }, { key: "Neutral Good", short: "NG" }, { key: "Chaotic Good", short: "CG" },
-  { key: "Lawful Neutral", short: "LN" }, { key: "True Neutral", short: "TN" }, { key: "Chaotic Neutral", short: "CN" },
-  { key: "Lawful Evil", short: "LE" }, { key: "Neutral Evil", short: "NE" }, { key: "Chaotic Evil", short: "CE" },
-] as const;
-
-const POINTBUY_DEFAULT: AbilityScores = {
-  strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8,
-};
-
-const WEAPONS = ["Longsword", "Shortbow", "Staff", "Daggers (x2)", "Warhammer", "Crossbow"];
-
-const RACE_EMOJI: Record<string, string> = {
-  Human: "⚔", Elf: "🌙", Dwarf: "🪨", Halfling: "🌿",
-  Dragonborn: "🐉", Tiefling: "🔥", Gnome: "🔮", "Half-Elf": "✦", "Half-Orc": "💪",
-};
 const CLASS_COLORS: Record<string, string> = {
-  Fighter: "#ef4444", Wizard: "#3b82f6", Rogue: "#94a3b8", Cleric: "#f59e0b",
+  Fighter: "#ef4444", Wizard: "#3b82f6", Rogue: "var(--subtle)", Cleric: "#f59e0b",
   Paladin: "#fbbf24", Ranger: "#22c55e", Bard: "#ec4899", Warlock: "#a78bfa",
   Barbarian: "#f97316", Druid: "#84cc16", Monk: "#06b6d4", Sorcerer: "#8b5cf6",
 };
@@ -80,11 +62,6 @@ const CLASS_EMOJI: Record<string, string> = {
 const WEAPON_EMOJI: Record<string, string> = {
   "Longsword": "⚔️", "Shortbow": "🏹", "Staff": "🔮",
   "Daggers (x2)": "🗡️", "Warhammer": "🔨", "Crossbow": "🎯",
-};
-const ALIGNMENT_COLORS: Record<string, string> = {
-  "Lawful Good": "#f59e0b", "Neutral Good": "#fbbf24", "Chaotic Good": "#22c55e",
-  "Lawful Neutral": "#8b5cf6", "True Neutral": "#64748b", "Chaotic Neutral": "#f97316",
-  "Lawful Evil": "#6366f1", "Neutral Evil": "#ef4444", "Chaotic Evil": "#dc2626",
 };
 const STEP_ICONS = ["🧑", "⚔️", "🎲", "🗡️", "📜", "✨"];
 const PLAYER_COUNT_NAMES = ["Solo", "Duo", "Trio", "Party", "Company", "Band", "Warband", "Brigade", "Legion", "Army"];
@@ -131,10 +108,10 @@ const STAT_LEGEND_CAMP: { code: string; line: string; color: string }[] = [
   { code: 'CHA', line: 'Presence, Bard/Sorcerer/Warlock',   color: '#ec4899' },
 ];
 
-const DEFAULT_SCORES: AbilityScores = {
-  strength: 15, dexterity: 14, constitution: 13,
-  intelligence: 12, wisdom: 10, charisma: 8,
-};
+// Fresh characters open on the Roll tab, so the grid starts on the shared
+// "unrolled" sentinel (all zeros → renders as dashes) instead of a seeded
+// spread that would look like Standard Array before any dice are thrown.
+const DEFAULT_SCORES: AbilityScores = { ...UNROLLED_SCORES };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function roll4d6DropLowest(): number {
@@ -157,74 +134,71 @@ const SHIELD_CLASSES = new Set(["Fighter", "Paladin", "Ranger", "Cleric", "Druid
 function emptyDraft(): CharDraft {
   return {
     name: "", title: "", race: "", sex: "male", class: "", alignment: "",
-    weapon: "", trinket: "", shield: false, charBackground: "",
+    weapon: "", offHand: "", armor: "", trinket: "", shield: false, charBackground: "",
     scores: DEFAULT_SCORES, cantrips: [], spells: [], skillProficiencies: [],
   };
 }
 
-// ── SpellCard ──────────────────────────────────────────────────────────────────
-const SCHOOL_COLORS: Record<string, string> = {
-  Abjuration: "#3b82f6", Conjuration: "#8b5cf6", Divination: "#e879f9",
-  Enchantment: "#f59e0b", Evocation: "#ef4444", Illusion: "#06b6d4",
-  Necromancy: "#22c55e", Transmutation: "#f97316",
-};
-function SpellCard({ spell, selected, disabled, onToggle }: {
-  spell: SpellEntry; selected: boolean; disabled: boolean; onToggle: () => void;
-}) {
-  const color = SCHOOL_COLORS[spell.school] ?? "#94a3b8";
-  return (
-    <div onClick={() => !disabled && onToggle()} style={{
-      padding: "10px 12px", borderRadius: "8px",
-      border: `1px solid ${selected ? color : "var(--border)"}`,
-      background: selected ? `${color}18` : "rgba(0,0,0,0.2)",
-      cursor: disabled && !selected ? "not-allowed" : "pointer",
-      opacity: disabled && !selected ? 0.45 : 1, transition: "all 0.15s",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "6px" }}>
-        <span style={{ fontSize: "1.05rem", fontWeight: "bold", color: selected ? color : "white" }}>{spell.name}</span>
-        {selected && <span style={{ fontSize: "1rem", color, flexShrink: 0 }}>✓</span>}
-      </div>
-      <div style={{ fontSize: "1.2rem", color, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{spell.school}</div>
-      <div style={{ fontSize: "1rem", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{spell.desc}</div>
-    </div>
-  );
-}
-
 // ── Wizard ────────────────────────────────────────────────────────────────────
+// The per-character creation UI is the shared <CharacterSteps> component
+// (src/components/CharacterSteps.tsx) — the single source of truth, also used by
+// /create-character. This file only wraps it with campaign + multi-player chrome.
 export default function CreateCampaignWizard() {
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>("count");
+  // SSR-stable default first (avoids the data-theme hydration mismatch), then
+  // apply the saved theme on mount so the global toggle flips in one click.
+  const [theme, setTheme] = useState<Theme>("dark");
+  useEffect(() => { setTheme(getTheme()); return onThemeChange(setTheme); }, []);
   const [playerCount, setPlayerCount] = useState(1);
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
   const [charStep, setCharStep] = useState(1);
   const [draft, setDraft] = useState<CharDraft>(emptyDraft());
   const [scores, setScores] = useState<AbilityScores>(DEFAULT_SCORES);
-  const [rolling, setRolling] = useState(false);
   const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
   const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
   const [charNameErr, setCharNameErr] = useState("");
-  const [hoveredStat, setHoveredStat] = useState<string | null>(null);
-  const [hoveredRace, setHoveredRace] = useState<string | null>(null);
-  const [hoveredClass, setHoveredClass] = useState<string | null>(null);
-  const [hoveredAlign, setHoveredAlign] = useState<string | null>(null);
-  const [hoveredWeapon, setHoveredWeapon] = useState<string | null>(null);
 
   // Stat method state (resets per character)
   const [statMethod, setStatMethod] = useState<StatMethod>("roll");
-  const [arrayAssignments, setArrayAssignments] = useState<Record<string, number | null>>({
-    strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null,
-  });
-  const [selectedArrayVal, setSelectedArrayVal] = useState<number | null>(null);
   const [completedChars, setCompletedChars] = useState<CharDraft[]>([]);
   const [rosterChars, setRosterChars] = useState<RosterChar[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
 
   const { showTooltip, hideTooltip, TooltipPortal } = useTooltip();
 
+  // Adapter: map this wizard's split working state <-> the shared CharForm so the
+  // single-source-of-truth <CharacterSteps> drives the per-player draft.
+  const form: CharForm = {
+    name: draft.name, title: draft.title, race: draft.race, class: draft.class, sex: draft.sex,
+    alignment: draft.alignment, weapon: draft.weapon, offHand: draft.offHand, armor: draft.armor, trinket: draft.trinket, shield: draft.shield,
+    background: draft.charBackground, skillProficiencies: draft.skillProficiencies,
+    scores, statMethod, cantrips: selectedCantrips, spells: selectedSpells,
+  };
+  const patch = (p: Partial<CharForm>) => {
+    setDraft(d => ({ ...d,
+      ...(p.name !== undefined ? { name: p.name } : {}),
+      ...(p.title !== undefined ? { title: p.title } : {}),
+      ...(p.race !== undefined ? { race: p.race } : {}),
+      ...(p.class !== undefined ? { class: p.class } : {}),
+      ...(p.sex !== undefined ? { sex: p.sex } : {}),
+      ...(p.alignment !== undefined ? { alignment: p.alignment } : {}),
+      ...(p.weapon !== undefined ? { weapon: p.weapon } : {}),
+      ...(p.offHand !== undefined ? { offHand: p.offHand } : {}),
+      ...(p.armor !== undefined ? { armor: p.armor } : {}),
+      ...(p.trinket !== undefined ? { trinket: p.trinket } : {}),
+      ...(p.shield !== undefined ? { shield: p.shield } : {}),
+      ...(p.background !== undefined ? { charBackground: p.background } : {}),
+      ...(p.skillProficiencies !== undefined ? { skillProficiencies: p.skillProficiencies } : {}),
+    }));
+    if (p.scores !== undefined) setScores(p.scores);
+    if (p.statMethod !== undefined) setStatMethod(p.statMethod);
+    if (p.cantrips !== undefined) setSelectedCantrips(p.cantrips);
+    if (p.spells !== undefined) setSelectedSpells(p.spells);
+  };
+
   const spellCounts       = getSpellCounts(draft.class, scores);
-  const availableCantrips = CANTRIPS[draft.class] ?? [];
-  const availableSpells   = LEVEL1_SPELLS[draft.class] ?? [];
   // Half-casters (Paladin/Ranger) have no L1 spells — skip the spell step at creation.
   const isSpellcaster     = spellCounts.cantrips > 0 || spellCounts.spells > 0;
   const totalCharSteps    = isSpellcaster ? 6 : 5;
@@ -240,20 +214,8 @@ export default function CreateCampaignWizard() {
     setSelectedCantrips([]);
     setSelectedSpells([]);
     setStatMethod("roll");
-    setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
-    setSelectedArrayVal(null);
     setCharStep(1);
     setCharNameErr("");
-    setHoveredRace(null);
-    setHoveredClass(null);
-    setHoveredAlign(null);
-    setHoveredWeapon(null);
-  };
-
-  const handleClassChange = (cls: string) => {
-    setDraft(d => ({ ...d, class: cls, skillProficiencies: [] }));
-    setSelectedCantrips([]);
-    setSelectedSpells([]);
   };
 
   const loadRoster = async () => {
@@ -274,65 +236,10 @@ export default function CreateCampaignWizard() {
   };
 
   // ── Stat helpers ──
-  const effectiveScores = (): AbilityScores => {
-    if (statMethod === "array") {
-      return {
-        strength: arrayAssignments.strength ?? 8, dexterity: arrayAssignments.dexterity ?? 8,
-        constitution: arrayAssignments.constitution ?? 8, intelligence: arrayAssignments.intelligence ?? 8,
-        wisdom: arrayAssignments.wisdom ?? 8, charisma: arrayAssignments.charisma ?? 8,
-      };
-    }
-    return scores;
-  };
-  const arrayComplete   = Object.values(arrayAssignments).every(v => v !== null);
-  const pointsSpent     = statMethod === "pointbuy" ? calcPointBuyCost(scores) : 0;
-  const pointsLeft      = POINT_BUY_BUDGET - pointsSpent;
+  // The unified grid keeps `scores` as the effective set for every source.
+  const effectiveScores = (): AbilityScores => scores;
   const profData        = draft.class ? CLASS_PROFICIENCIES[draft.class] : null;
   const profRequired    = profData?.skillChoices.count ?? 0;
-
-  const handleStatMethodChange = (method: StatMethod) => {
-    setStatMethod(method);
-    if (method === "pointbuy") setScores(POINTBUY_DEFAULT);
-    if (method === "array") {
-      setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
-      setSelectedArrayVal(null);
-    }
-  };
-
-  const handleArrayChipClick = (val: number) => {
-    const isUsed = Object.values(arrayAssignments).includes(val);
-    if (isUsed) return;
-    setSelectedArrayVal(prev => prev === val ? null : val);
-  };
-
-  const handleArrayStatClick = (statKey: string) => {
-    if (selectedArrayVal !== null) {
-      const displaced = arrayAssignments[statKey];
-      setArrayAssignments(a => ({ ...a, [statKey]: selectedArrayVal }));
-      setSelectedArrayVal(displaced);
-    } else if (arrayAssignments[statKey] !== null) {
-      setSelectedArrayVal(arrayAssignments[statKey]);
-      setArrayAssignments(a => ({ ...a, [statKey]: null }));
-    }
-  };
-
-  const adjustPBStat = (statKey: string, delta: number) => {
-    const current = scores[statKey as keyof AbilityScores];
-    const newVal = current + delta;
-    if (newVal < 8 || newVal > 15) return;
-    const newScores = { ...scores, [statKey as keyof AbilityScores]: newVal };
-    if (calcPointBuyCost(newScores) > POINT_BUY_BUDGET) return;
-    setScores(newScores);
-  };
-
-  const toggleSkillProf = (skill: string) => {
-    setDraft(d => {
-      const prev = d.skillProficiencies;
-      if (prev.includes(skill)) return { ...d, skillProficiencies: prev.filter(s => s !== skill) };
-      if (prev.length >= profRequired) return d;
-      return { ...d, skillProficiencies: [...prev, skill] };
-    });
-  };
 
   // ── Finalize new character and advance ──
   const finalizeAndAdvance = () => {
@@ -354,6 +261,8 @@ export default function CreateCampaignWizard() {
       name: char.name, race: char.race, sex: char.sex, class: char.class,
       title: "", alignment: "", charBackground: "", skillProficiencies: [],
       weapon: char.inventory?.weapons?.[0] ?? "",
+      offHand: char.inventory?.weapons?.[1] ?? "",
+      armor: findEquippedArmor((char.inventory?.items ?? []).join(" "))?.name ?? "",
       trinket: "",
       shield: char.inventory?.items?.includes("Shield") ?? false,
       scores: {
@@ -422,7 +331,6 @@ export default function CreateCampaignWizard() {
         setSelectedCantrips(prevDraft.cantrips);
         setSelectedSpells(prevDraft.spells);
         setStatMethod("roll"); // restored characters always show roll tab
-        setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
         { const pc = getSpellCounts(prevDraft.class, prevDraft.scores); setCharStep(pc.cantrips > 0 || pc.spells > 0 ? 6 : 5); }
       }
       return;
@@ -442,7 +350,6 @@ export default function CreateCampaignWizard() {
         setSelectedCantrips(lastDraft.cantrips);
         setSelectedSpells(lastDraft.spells);
         setStatMethod("roll");
-        setArrayAssignments({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
         { const lc = getSpellCounts(lastDraft.class, lastDraft.scores); setCharStep(lc.cantrips > 0 || lc.spells > 0 ? 6 : 5); }
       }
     }
@@ -489,8 +396,8 @@ export default function CreateCampaignWizard() {
       let newCharData: { id: string }[] = [];
       if (newChars.length > 0) {
         const rows = newChars.map(c => {
-          const weapons = [c.weapon || "Iron Dagger"];
-          const items   = ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"];
+          const weapons = [c.weapon || "Iron Dagger", ...(c.offHand ? [c.offHand] : [])];
+          const items   = ["Bedroll", "Rations (5 days)", armorInventoryEntry(c.armor), ...(c.shield ? ["Shield"] : []), ...(c.trinket.trim() ? [c.trinket.trim()] : [])];
           const baseMaxHp   = startingHP(c.class, c.scores.constitution);
           const ib          = computeInventoryBonuses(items, weapons);
           const effectiveHp = baseMaxHp + ib.hpMaxAdd;
@@ -529,8 +436,8 @@ export default function CreateCampaignWizard() {
         // Insert campaign-specific state rows for new characters
         const ccNewRows = (data as { id: string }[]).map((char, i) => {
           const c = newChars[i];
-          const weapons = [c.weapon || "Iron Dagger"];
-          const items   = ["Bedroll", "Rations (5 days)", ...(c.shield ? ["Shield"] : []), c.trinket || "Mysterious Coin"];
+          const weapons = [c.weapon || "Iron Dagger", ...(c.offHand ? [c.offHand] : [])];
+          const items   = ["Bedroll", "Rations (5 days)", armorInventoryEntry(c.armor), ...(c.shield ? ["Shield"] : []), ...(c.trinket.trim() ? [c.trinket.trim()] : [])];
           const baseMaxHp   = startingHP(c.class, c.scores.constitution);
           const ib          = computeInventoryBonuses(items, weapons);
           const effectiveHp = baseMaxHp + ib.hpMaxAdd;
@@ -629,7 +536,7 @@ export default function CreateCampaignWizard() {
 
   const nextDisabled =
     (phase === "characters" && charStep === 2 && (!draft.class || draft.skillProficiencies.length < profRequired)) ||
-    (phase === "characters" && charStep === 3 && statMethod === "array" && !arrayComplete) ||
+    (phase === "characters" && charStep === 3 && isRollUnrolled(form)) ||
     (phase === "characters" && charStep === 4 && !draft.weapon);
 
   const stepTitle =
@@ -640,7 +547,7 @@ export default function CreateCampaignWizard() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "clamp(20px, 3vw, 40px) clamp(12px, 2vw, 20px)", backgroundImage: "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%)" }}>
+    <main className="themed-page" data-theme={theme} style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "clamp(20px, 3vw, 40px) clamp(12px, 2vw, 20px)", background: "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(139,92,246,0.09) 0%, transparent 70%), var(--canvas-bg)" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: "24px", width: "100%", maxWidth: "1280px", justifyContent: "center", flexWrap: "wrap" }}>
 
       {/* Left rail — Ability Score legend (sticky, always visible on wide
@@ -650,8 +557,8 @@ export default function CreateCampaignWizard() {
       {phase === "characters" && (
         <aside className="hide-on-narrow-camp" style={{ width: "220px", flexShrink: 0, position: "sticky", top: "40px" }}>
           <div className="glass-panel" style={{ padding: "20px 18px" }}>
-            <div style={{ fontSize: "0.7rem", letterSpacing: "0.12em", color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>Reference</div>
-            <h3 style={{ fontSize: "1rem", margin: 0, marginBottom: "14px", color: "white", fontWeight: 600 }}>Ability Scores</h3>
+            <div style={{ fontSize: "0.7rem", letterSpacing: "0.12em", color: "var(--muted)", textTransform: "uppercase", marginBottom: "4px" }}>Reference</div>
+            <h3 style={{ fontSize: "1rem", margin: 0, marginBottom: "14px", color: "var(--foreground)", fontWeight: 600 }}>Ability Scores</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {STAT_LEGEND_CAMP.map(s => {
                 const t = STAT_TIPS[s.code];
@@ -659,20 +566,20 @@ export default function CreateCampaignWizard() {
                   <div key={s.code}
                     onMouseEnter={e => { if (t) showTooltip(tipBox(t.title, t.body, s.color), e); }}
                     onMouseLeave={hideTooltip}
-                    style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "8px 10px", borderRadius: "8px", background: "rgba(0,0,0,0.25)", border: `1px solid ${s.color}33`, cursor: "help", transition: "border-color 0.15s, background 0.15s" }}
-                    onMouseOver={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}88`; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,0,0,0.4)"; }}
-                    onMouseOut={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}33`; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,0,0,0.25)"; }}
+                    style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "8px 10px", borderRadius: "8px", background: "var(--inset-bg)", border: `1px solid ${s.color}33`, cursor: "help", transition: "border-color 0.15s, background 0.15s" }}
+                    onMouseOver={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}88`; (e.currentTarget as HTMLDivElement).style.background = "var(--inset-bg)"; }}
+                    onMouseOut={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${s.color}33`; (e.currentTarget as HTMLDivElement).style.background = "var(--inset-bg)"; }}
                   >
                     <div style={{ fontSize: "0.78rem", fontWeight: 700, color: s.color, letterSpacing: "0.05em" }}>{s.code}</div>
-                    <div style={{ fontSize: "0.7rem", color: "#94a3b8", lineHeight: 1.35 }}>{s.line}</div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--subtle)", lineHeight: 1.35 }}>{s.line}</div>
                   </div>
                 );
               })}
             </div>
-            <div style={{ marginTop: "14px", padding: "8px 10px", borderRadius: "8px", background: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.68rem", color: "#c4b5fd", lineHeight: 1.45, cursor: "help" }}
+            <div style={{ marginTop: "14px", padding: "8px 10px", borderRadius: "8px", background: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "0.68rem", color: "var(--accent-strong)", lineHeight: 1.45, cursor: "help" }}
               onMouseEnter={e => showTooltip(tipBox("Ability Modifier", "Your modifier = (score − 10) ÷ 2, rounded down. Added to every roll made with that ability (attack, save, skill check).", "#c4b5fd"), e)}
               onMouseLeave={hideTooltip}>
-              <strong style={{ color: "#a78bfa" }}>Modifier:</strong> (score − 10) ÷ 2, rounded down. Hover for details.
+              <strong style={{ color: "var(--accent-strong)" }}>Modifier:</strong> (score − 10) ÷ 2, rounded down. Hover for details.
             </div>
           </div>
         </aside>
@@ -684,7 +591,7 @@ export default function CreateCampaignWizard() {
         {/* ── Top progress ── */}
         <div style={{ marginBottom: "32px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-            <span style={{ fontSize: "1.1rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ fontSize: "1.1rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {phase === "characters" ? `Player ${currentPlayerIdx + 1} of ${playerCount}` :
                phase === "creating"   ? "The DM is forging your world…" : "Campaign Setup"}
             </span>
@@ -732,14 +639,14 @@ export default function CreateCampaignWizard() {
         </div>
         {phase === "characters" && (
           <div style={{ textAlign: "center", marginBottom: charStep === 1 ? "16px" : "28px" }}>
-            <p style={{ color: "#64748b", fontSize: "1.2rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
+            <p style={{ color: "var(--muted)", fontSize: "1.2rem", marginBottom: currentPlayerIdx === 0 && charStep === 1 ? "8px" : "0" }}>
               Building <strong style={{ color: "var(--primary)" }}>
                 {draft.name.trim() || `Player ${currentPlayerIdx + 1}`}
               </strong>'s character
             </p>
             {currentPlayerIdx === 0 && charStep === 1 && (
               <p style={{ fontSize: "1rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "20px", padding: "3px 12px" }}>
-                👑 <span>Player 1&apos;s character becomes the <strong style={{ color: "#c4b5fd" }}>Party Leader</strong> — they can invite others and manage the party</span>
+                👑 <span>Player 1&apos;s character becomes the <strong style={{ color: "var(--accent-strong)" }}>Party Leader</strong> — they lead and manage the party</span>
               </p>
             )}
             {/* Inline nav on step 1 — sits right below the disclaimer */}
@@ -765,7 +672,7 @@ export default function CreateCampaignWizard() {
           {/* Player count */}
           {phase === "count" && (
             <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px" }}>
-              <p style={{ color: "#94a3b8", textAlign: "center", fontSize: "1rem", maxWidth: "480px" }}>
+              <p style={{ color: "var(--subtle)", textAlign: "center", fontSize: "1rem", maxWidth: "480px" }}>
                 Each adventurer can create a new character or select one from their existing roster.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", width: "100%", maxWidth: "620px" }}>
@@ -773,12 +680,12 @@ export default function CreateCampaignWizard() {
                   <div key={n} onClick={() => setPlayerCount(n)} style={{
                     padding: "26px 10px", borderRadius: "14px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
                     border: `2px solid ${playerCount === n ? "var(--primary)" : "var(--border)"}`,
-                    background: playerCount === n ? "rgba(139,92,246,0.2)" : "rgba(0,0,0,0.15)",
+                    background: playerCount === n ? "rgba(139,92,246,0.2)" : "var(--inset-bg)",
                     transform: playerCount === n ? "translateY(-4px)" : "none",
                     boxShadow: playerCount === n ? "0 8px 28px rgba(139,92,246,0.4)" : "none",
                   }}>
-                    <div style={{ fontSize: "2rem", fontWeight: "bold", color: playerCount === n ? "var(--primary)" : "white", lineHeight: 1 }}>{n}</div>
-                    <div style={{ fontSize: "1rem", color: playerCount === n ? "#c4b5fd" : "#64748b", marginTop: "6px", fontWeight: playerCount === n ? 700 : 400, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <div style={{ fontSize: "2rem", fontWeight: "bold", color: playerCount === n ? "var(--primary)" : "var(--foreground)", lineHeight: 1 }}>{n}</div>
+                    <div style={{ fontSize: "1rem", color: playerCount === n ? "var(--accent-strong)" : "var(--muted)", marginTop: "6px", fontWeight: playerCount === n ? 700 : 400, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                       {PLAYER_COUNT_NAMES[n - 1]}
                     </div>
                   </div>
@@ -790,9 +697,9 @@ export default function CreateCampaignWizard() {
               </p>
               <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "14px 18px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", maxWidth: "480px", textAlign: "left" }}>
                 <span style={{ fontSize: "1.1rem", flexShrink: 0, marginTop: "1px" }}>💡</span>
-                <div style={{ fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.65 }}>
-                  <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "3px" }}>Only set this to who&apos;s here right now.</strong>
-                  More players can join any time using the invite link inside your campaign — they pick their own character when they arrive.
+                <div style={{ fontSize: "1.05rem", color: "var(--subtle)", lineHeight: 1.65 }}>
+                  <strong style={{ color: "var(--accent-strong)", display: "block", marginBottom: "3px" }}>Set this to everyone at the table today.</strong>
+                  Pick one character per adventurer — everyone plays together from the same screen.
                 </div>
               </div>
             </div>
@@ -801,127 +708,17 @@ export default function CreateCampaignWizard() {
           {/* Character creation */}
           {phase === "characters" && (
             <div className="animate-fade-in">
-
-              {/* Identity */}
-              {charStep === 1 && (
-                <div className="animate-fade-in" style={{ display: "flex", gap: "clamp(16px, 2vw, 28px)", alignItems: "flex-start", flexWrap: "wrap" }}>
-
-                  {/* Left: new character form — gap matched to create-character (28px) so spacing reads identically */}
-                  <div style={{ flex: "1 1 480px", display: "flex", flexDirection: "column", gap: "clamp(20px, 2vw, 28px)", minWidth: 0 }}>
-
-                    {/* Name + Title — matched to create-character aesthetic */}
-                    <div style={{ display: "flex", gap: "14px" }}>
-                      <div style={{ flex: 2 }}>
-                        <label style={{ display: "block", marginBottom: "10px", color: "#cbd5e1", fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
-                          onMouseEnter={e => showTooltip(tipBox("Character Name", "What your hero is called in the world. The DM and other players will use this name throughout your adventure.", "#c4b5fd"), e)}
-                          onMouseLeave={hideTooltip}>Character Name</label>
-                        <input
-                          autoFocus type="text" value={draft.name}
-                          onChange={e => {
-                            const clean = sanitizeCharacterName(e.target.value);
-                            setCharNameErr(clean !== e.target.value ? "Names use letters, spaces, apostrophes, and hyphens only." : "");
-                            setDraft(d => ({ ...d, name: clean }));
-                          }}
-                          placeholder="e.g. Elara Moonwhisper"
-                          style={{ width: "100%", padding: "18px 20px", borderRadius: "10px", border: `1px solid ${charNameErr ? "#ef4444" : "var(--border)"}`, background: "rgba(0,0,0,0.25)", color: "white", fontSize: "1.2rem" }}
-                        />
-                        {charNameErr && <p style={{ color: "#ef4444", fontSize: "0.9rem", marginTop: "8px" }}>{charNameErr}</p>}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ display: "block", marginBottom: "10px", color: "#cbd5e1", fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
-                          onMouseEnter={e => showTooltip(tipBox("Title", "An optional honorific like \"the Brave\" or \"Shadowbane.\" The DM uses it alongside your name in narration — e.g. \"Aria the Brave steps forward…\"", "#c4b5fd"), e)}
-                          onMouseLeave={hideTooltip}>
-                          Title <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 400 }}>(optional)</span>
-                        </label>
-                        <input type="text" value={draft.title} maxLength={40}
-                          onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
-                          placeholder="e.g. the Brave"
-                          style={{ width: "100%", padding: "18px 20px", borderRadius: "10px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.25)", color: "white", fontSize: "1.2rem" }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Race — matched to create-character aesthetic */}
-                    <div>
-                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
-                        onMouseEnter={e => showTooltip(tipBox("Race", "Your character's ancestry — determines stat bonuses, special abilities, darkvision, and innate traits. Hover any race for details.", "#c4b5fd"), e)}
-                        onMouseLeave={hideTooltip}>Race</label>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(150px, 18vw, 220px), 1fr))", gap: "clamp(12px, 1.3vw, 18px)" }}>
-                        {["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome", "Half-Elf", "Half-Orc"].map(race => (
-                          <div key={race} onClick={() => setDraft(d => ({ ...d, race }))}
-                            onMouseEnter={e => { setHoveredRace(race); const t = RACE_TIPS[race]; if (t) showTooltip(tipBox(t.title, t.body, "#c4b5fd"), e); }}
-                            onMouseLeave={() => { setHoveredRace(null); hideTooltip(); }}
-                            style={{
-                              padding: "clamp(14px, 1.6vw, 22px) clamp(8px, 1vw, 14px) clamp(12px, 1.4vw, 18px)", borderRadius: "14px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                              border: `2px solid ${draft.race === race ? "var(--primary)" : hoveredRace === race ? "rgba(139,92,246,0.55)" : "var(--border)"}`,
-                              background: draft.race === race ? "rgba(139,92,246,0.22)" : hoveredRace === race ? "rgba(139,92,246,0.1)" : "rgba(0,0,0,0.18)",
-                              transform: draft.race === race ? "translateY(-4px)" : hoveredRace === race ? "translateY(-2px)" : "none",
-                              boxShadow: draft.race === race ? "0 10px 30px rgba(139,92,246,0.45), 0 0 0 1px rgba(139,92,246,0.5) inset" : "none",
-                            }}>
-                            <div style={{ position: "relative", width: "clamp(72px, 8vw, 96px)", height: "clamp(72px, 8vw, 96px)", margin: "0 auto clamp(8px, 1vw, 12px)", borderRadius: "50%", overflow: "hidden", background: "rgba(0,0,0,0.4)", border: `2px solid ${draft.race === race ? "rgba(196,181,253,0.7)" : "rgba(148,163,184,0.2)"}`, boxShadow: draft.race === race ? "0 0 22px rgba(139,92,246,0.55)" : "none" }}>
-                              <img
-                                src={`/races/${race.toLowerCase().replace('-', '_')}.png`}
-                                alt={`${race} emblem`}
-                                onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
-                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                              />
-                              <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "2.2rem", position: "absolute", inset: 0 }}>{RACE_EMOJI[race] ?? "🧙"}</div>
-                            </div>
-                            <div style={{ fontSize: "1.18rem", fontWeight: draft.race === race ? 700 : 400, color: draft.race === race ? "#c4b5fd" : "inherit" }}>{race}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Sex — matched to create-character aesthetic */}
-                    <div>
-                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
-                        onMouseEnter={e => showTooltip(tipBox("Sex / Pronouns", "Sets the pronouns the DM uses when narrating your character's actions — he/him, she/her, or they/them.", "#c4b5fd"), e)}
-                        onMouseLeave={hideTooltip}>Sex</label>
-                      <div style={{ display: "flex", gap: "clamp(10px, 1.2vw, 14px)" }}>
-                        {(["male", "female", "non-binary"] as const).map(s => {
-                          const pronounMap = { male: "he/him", female: "she/her", "non-binary": "they/them" };
-                          return (
-                          <div key={s} onClick={() => setDraft(d => ({ ...d, sex: s }))}
-                            onMouseEnter={e => showTooltip(tipBox(s.charAt(0).toUpperCase() + s.slice(1), `Pronouns: ${pronounMap[s]} — the DM will refer to your character using these pronouns.`, "#c4b5fd"), e)}
-                            onMouseLeave={hideTooltip}
-                            style={{ flex: 1, padding: "clamp(14px, 1.6vw, 22px) clamp(10px, 1vw, 16px)", borderRadius: "12px", border: `2px solid ${draft.sex === s ? "var(--primary)" : "var(--border)"}`, background: draft.sex === s ? "rgba(139,92,246,0.22)" : "rgba(0,0,0,0.18)", cursor: "pointer", textAlign: "center", transition: "all 0.2s", textTransform: "capitalize", boxShadow: draft.sex === s ? "0 6px 22px rgba(139,92,246,0.4)" : "none" }}>
-                              <div style={{ fontSize: "1.2rem", fontWeight: draft.sex === s ? 700 : 600, color: draft.sex === s ? "#c4b5fd" : "#e2e8f0" }}>{s}</div>
-                              <div style={{ fontSize: "0.8rem", color: draft.sex === s ? "rgba(196,181,253,0.8)" : "#64748b", marginTop: "6px", letterSpacing: "0.04em", textTransform: "none" }}>{pronounMap[s]}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Alignment — matched to create-character aesthetic */}
-                    <div>
-                      <label style={{ display: "block", marginBottom: "14px", color: "#cbd5e1", fontSize: "1.25rem", fontWeight: 600, letterSpacing: "0.02em", cursor: "help" }}
-                        onMouseEnter={e => showTooltip(tipBox("Alignment", "Your character's moral and ethical outlook. Optional — shapes how the DM portrays NPC reactions and your character's motivations. Hover any alignment for its description.", "#a78bfa"), e)}
-                        onMouseLeave={hideTooltip}>Alignment <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 400 }}>(optional — shapes how the DM reads your character)</span></label>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(120px, 12vw, 170px), 1fr))", gap: "clamp(10px, 1vw, 14px)" }}>
-                        {ALIGNMENTS.map(a => (
-                          <div key={a.key} onClick={() => setDraft(d => ({ ...d, alignment: d.alignment === a.key ? "" : a.key }))}
-                            onMouseEnter={e => { setHoveredAlign(a.key); showTooltip(tipBox(a.key, ALIGNMENT_TIPS[a.key] ?? "", ALIGNMENT_COLORS[a.key] ?? "#a78bfa"), e); }}
-                            onMouseLeave={() => { setHoveredAlign(null); hideTooltip(); }}
-                            style={{ padding: "clamp(12px, 1.4vw, 18px) clamp(8px, 1vw, 12px)", borderRadius: "12px", cursor: "pointer", textAlign: "center", transition: "all 0.2s", border: `2px solid ${draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "var(--primary)") : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "77" : "var(--border)"}`, background: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "22" : hoveredAlign === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#8b5cf6") + "14" : "rgba(0,0,0,0.18)", transform: draft.alignment === a.key ? "translateY(-3px)" : "none", boxShadow: draft.alignment === a.key ? `0 8px 24px ${ALIGNMENT_COLORS[a.key] ?? "#8b5cf6"}44` : "none" }}>
-                            <div style={{ fontSize: "1.2rem", fontWeight: 800, letterSpacing: "0.1em", color: draft.alignment === a.key ? (ALIGNMENT_COLORS[a.key] ?? "#c4b5fd") : "#94a3b8", textTransform: "uppercase", marginBottom: "4px", lineHeight: 1 }}>{a.short}</div>
-                            <div style={{ fontSize: "0.95rem", color: draft.alignment === a.key ? "white" : "#cbd5e1", lineHeight: 1.25, fontWeight: draft.alignment === a.key ? 600 : 400 }}>{a.key}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+              {charStep === 1 ? (
+                <div style={{ display: "flex", gap: "clamp(16px, 2vw, 28px)", alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 480px", minWidth: 0 }}>
+                    <CharacterSteps step={1} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} />
                   </div>
-
-                  {/* Right: roster import (vertical list). flex: "0 1 220px" so it
-                      shrinks gracefully and wraps under the form on narrower viewports
-                      (Xbox / small windows) — keeps the Identity form full-width and
-                      identical to the create-character single-character flow. */}
+                  {/* Roster import — create-campaign-specific chrome around the shared identity step */}
                   {(rosterLoading || availableRoster.length > 0) && (
                     <div style={{ flex: "0 1 220px", minWidth: "180px", display: "flex", flexDirection: "column", gap: "8px" }}>
                       <p style={{ fontSize: "1rem", color: "#fbbf24", fontWeight: "bold", letterSpacing: "0.03em", lineHeight: 1.4 }}>
                         📜 Import from Roster
-                        <span style={{ display: "block", color: "#64748b", fontWeight: 400, fontSize: "1rem" }}>Click a character to skip creation</span>
+                        <span style={{ display: "block", color: "var(--muted)", fontWeight: 400, fontSize: "1rem" }}>Click a character to skip creation</span>
                       </p>
                       {rosterLoading ? (
                         <div style={{ padding: "12px 0", textAlign: "center", fontSize: "1.05rem", color: "#475569" }}>Loading…</div>
@@ -930,23 +727,21 @@ export default function CreateCampaignWizard() {
                           {availableRoster.map(c => {
                             const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.max_hp)) * 100));
                             const hpCol = hpPct > 60 ? "#22c55e" : hpPct > 25 ? "#f59e0b" : "#ef4444";
-                            const classColor = ({ Fighter:"#ef4444",Wizard:"#3b82f6",Rogue:"#94a3b8",Cleric:"#f59e0b",Paladin:"#fbbf24",Ranger:"#22c55e",Bard:"#ec4899",Warlock:"#a78bfa",Barbarian:"#f97316",Druid:"#84cc16",Monk:"#06b6d4",Sorcerer:"#8b5cf6" } as Record<string,string>)[c.class] ?? "#c4b5fd";
+                            const classColor = ({ Fighter:"#ef4444",Wizard:"#3b82f6",Rogue:"var(--subtle)",Cleric:"#f59e0b",Paladin:"#fbbf24",Ranger:"#22c55e",Bard:"#ec4899",Warlock:"#a78bfa",Barbarian:"#f97316",Druid:"#84cc16",Monk:"#06b6d4",Sorcerer:"#8b5cf6" } as Record<string,string>)[c.class] ?? "var(--accent-strong)";
                             return (
                               <div key={c.id} onClick={() => selectRosterChar(c)}
                                 style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.04)", cursor: "pointer", transition: "all 0.18s", userSelect: "none" }}
                                 onMouseEnter={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.55)"; e.currentTarget.style.background = "rgba(245,158,11,0.1)"; e.currentTarget.style.transform = "translateX(-2px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(245,158,11,0.12)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.border = "1px solid rgba(245,158,11,0.2)"; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
-                                {/* Portrait */}
                                 <div style={{ width: "56px", height: "56px", borderRadius: "50%", overflow: "hidden", border: `2px solid ${classColor}`, boxShadow: `0 0 10px ${classColor}44`, background: "rgba(0,0,0,0.5)", flexShrink: 0 }}>
                                   {c.portrait_url
                                     ? <img src={c.portrait_url} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
                                     : <div style={{ width: "100%", height: "100%", background: `${classColor}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>🧙</div>
                                   }
                                 </div>
-                                {/* Info */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: "1.05rem", fontWeight: "bold", color: classColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
-                                  <div style={{ fontSize: "1.2rem", color: "#64748b", marginBottom: "3px" }}>{c.race} {c.class}</div>
+                                  <div style={{ fontSize: "1.2rem", color: "var(--muted)", marginBottom: "3px" }}>{c.race} {c.class}</div>
                                   <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                                     <span style={{ fontSize: "1.15rem", fontWeight: "bold", color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", padding: "1px 5px" }}>Lvl {c.level}</span>
                                     <span style={{ fontSize: "1.2rem", color: hpCol }}>{c.hp}/{c.max_hp} HP</span>
@@ -961,369 +756,8 @@ export default function CreateCampaignWizard() {
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Class & Proficiencies */}
-              {charStep === 2 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(clamp(120px, 14vw, 170px), 1fr))", gap: "clamp(10px, 1.2vw, 14px)" }}>
-                    {["Fighter", "Wizard", "Rogue", "Cleric", "Paladin", "Ranger", "Bard", "Warlock", "Barbarian", "Druid", "Monk", "Sorcerer"].map(cls => {
-                      const ct = CLASS_TIPS[cls];
-                      const clsColor = CLASS_COLORS[cls] ?? "#8b5cf6";
-                      return (
-                      <div key={cls} onClick={() => handleClassChange(cls)}
-                        onMouseEnter={e => { setHoveredClass(cls); if (ct) showTooltip(tipBoxNode(ct.title, <>
-                          <div style={{ color: "#64748b", fontSize: "0.9em", marginBottom: "4px" }}>Hit Die: {ct.hitDie} · Primary: {ct.primaryStat}</div>
-                          <div style={{ color: "#94a3b8" }}>{ct.body}</div>
-                        </>, clsColor), e); }}
-                        onMouseLeave={() => { setHoveredClass(null); hideTooltip(); }}
-                        style={{
-                          padding: "18px 8px", borderRadius: "12px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                          border: `1px solid ${draft.class === cls ? clsColor : hoveredClass === cls ? clsColor + "77" : "var(--border)"}`,
-                          background: draft.class === cls ? clsColor + "22" : hoveredClass === cls ? clsColor + "11" : "rgba(0,0,0,0.15)",
-                          transform: draft.class === cls ? "translateY(-3px)" : hoveredClass === cls ? "translateY(-1px)" : "none",
-                          boxShadow: draft.class === cls ? `0 6px 22px ${clsColor}44` : "none",
-                        }}>
-                        <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", marginBottom: "8px", borderRadius: "8px", overflow: "hidden", background: "rgba(0,0,0,0.35)", border: `1px solid ${draft.class === cls ? clsColor + "88" : "rgba(148,163,184,0.15)"}` }}>
-                          <img
-                            src={`/classes/${cls.toLowerCase()}.png`}
-                            alt={`${cls} portrait`}
-                            onError={e => { const i = e.currentTarget; i.style.display = "none"; const fb = i.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }}
-                          />
-                          <div style={{ display: "none", width: "100%", height: "100%", alignItems: "center", justifyContent: "center", fontSize: "1.9rem", position: "absolute", inset: 0 }}>{CLASS_EMOJI[cls] ?? "⚔️"}</div>
-                        </div>
-                        <div style={{ fontSize: "1.18rem", fontWeight: draft.class === cls ? 700 : 400, color: draft.class === cls ? clsColor : "inherit" }}>{cls}</div>
-                        {SPELLCASTING_CLASSES.has(cls) && <div style={{ fontSize: "1.2rem", color: "#8b5cf6", marginTop: "3px", letterSpacing: "0.05em", fontWeight: 700 }}>✦ SPELL</div>}
-                      </div>
-                      );
-                    })}
-                  </div>
-
-                  {profData && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                      <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.7, display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                        <span><strong style={{ color: "#c4b5fd" }}>Saves:</strong> {profData.savingThrows.join(", ")}</span>
-                        <span style={{ color: "#374151" }}>|</span>
-                        <span><strong style={{ color: "#c4b5fd" }}>Armor:</strong> {profData.armorProficiencies}</span>
-                        <span style={{ color: "#374151" }}>|</span>
-                        <span><strong style={{ color: "#c4b5fd" }}>Weapons:</strong> {profData.weaponProficiencies}</span>
-                      </div>
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                          <label style={{ color: "#94a3b8", fontSize: "1.1rem" }}>
-                            Choose <strong style={{ color: "white" }}>{profData.skillChoices.count}</strong> Skill Proficiencies
-                          </label>
-                          <span style={{ fontSize: "1.05rem", fontWeight: "bold", color: draft.skillProficiencies.length === profRequired ? "#22c55e" : "#8b5cf6" }}>
-                            {draft.skillProficiencies.length} / {profRequired}
-                          </span>
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                          {profData.skillChoices.skills.map(skill => {
-                            const selected = draft.skillProficiencies.includes(skill);
-                            const disabled = !selected && draft.skillProficiencies.length >= profRequired;
-                            return (
-                              <div key={skill} onClick={() => toggleSkillProf(skill)}
-                                onMouseEnter={e => { const st = SKILL_TIPS[skill]; if (st) showTooltip(tipBox(st.title, st.body), e); }}
-                                onMouseLeave={hideTooltip}
-                                style={{
-                                  padding: "5px 12px", borderRadius: "20px", cursor: disabled ? "not-allowed" : "pointer",
-                                  border: `1px solid ${selected ? "var(--primary)" : "var(--border)"}`,
-                                  background: selected ? "rgba(139,92,246,0.25)" : "transparent",
-                                  color: selected ? "white" : disabled ? "#374151" : "#94a3b8",
-                                  fontSize: "1.05rem", opacity: disabled ? 0.5 : 1, transition: "all 0.15s",
-                                }}>
-                                {selected && <span style={{ marginRight: "3px", fontSize: "1.2rem" }}>✓</span>}
-                                {skill}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Ability Scores */}
-              {charStep === 3 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                  {/* Method tabs */}
-                  <div style={{ display: "flex", gap: "8px", paddingBottom: "14px", borderBottom: "1px solid var(--border)" }}>
-                    {(["roll", "array", "pointbuy"] as const).map(method => (
-                      <button key={method} onClick={() => handleStatMethodChange(method)} style={{
-                        padding: "7px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "1.05rem", transition: "all 0.15s",
-                        border: `1px solid ${statMethod === method ? "var(--primary)" : "var(--border)"}`,
-                        background: statMethod === method ? "rgba(139,92,246,0.2)" : "transparent",
-                        color: statMethod === method ? "white" : "#94a3b8",
-                        fontWeight: statMethod === method ? "bold" : "normal",
-                      }}>
-                        {method === "roll" ? "🎲 Roll" : method === "array" ? "📊 Standard Array" : "🔢 Point Buy"}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Roll */}
-                  {statMethod === "roll" && (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-                      <div style={{ fontSize: "3.5rem", animation: rolling ? "float 0.5s infinite" : "none" }}>🎲</div>
-                      <button className="btn-primary" disabled={rolling} onClick={() => {
-                        setRolling(true);
-                        setTimeout(() => { setScores(rollAll()); setRolling(false); }, 900);
-                      }}>
-                        {rolling ? "Rolling…" : "Roll Ability Scores (4d6 drop lowest)"}
-                      </button>
-                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
-                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
-                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
-                          const val = scores[sk]; const m = Math.floor((val-10)/2);
-                          const guide = CLASS_STAT_GUIDES[draft.class]?.[label];
-                          const ts = guide ? getTierStyle(guide.tier) : null;
-                          return (
-                            <div key={label} style={{ position:"relative", padding:"14px 16px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"70px", border:`1px solid ${ts ? ts.color+"55":"var(--border)"}` }}
-                              onMouseEnter={() => setHoveredStat(label)} onMouseLeave={() => setHoveredStat(null)}>
-                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
-                              <div style={{ fontWeight:"bold", fontSize:"1.3rem" }}>{val}</div>
-                              <div style={{ fontSize:"1rem", color:m>=0?"#22c55e":"#ef4444" }}>{m>=0?`+${m}`:m}</div>
-                              {ts && <div style={{ fontSize:"0.85rem", color:ts.color, marginTop:"4px", fontWeight:"bold" }}>{ts.label.toUpperCase()}</div>}
-                              {hoveredStat===label && guide && ts && (
-                                <div style={{ position:"absolute", bottom:"calc(100% + 8px)", left:"50%", transform:"translateX(-50%)", background:"#1a1730", border:`1px solid ${ts.color}66`, borderRadius:"7px", padding:"9px 11px", zIndex:300, width:"170px", pointerEvents:"none", fontSize:"1rem", color:"#e2e8f0", lineHeight:1.45, textAlign:"left" }}>
-                                  <div style={{ fontWeight:"bold", color:ts.color, marginBottom:"4px" }}>{ts.label} Stat</div>{guide.reason}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p style={{ color:"#475569", fontSize:"1rem" }}>Re-roll as many times as you like.</p>
-                    </div>
-                  )}
-
-                  {/* Standard Array */}
-                  {statMethod === "array" && (
-                    <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
-                      <p style={{ color:"#94a3b8", fontSize:"1.05rem", textAlign:"center" }}>Click a value, then click a stat to assign it.</p>
-                      <div style={{ display:"flex", gap:"10px", justifyContent:"center", flexWrap:"wrap" }}>
-                        {STANDARD_ARRAY.map(v => {
-                          const isUsed = Object.values(arrayAssignments).includes(v);
-                          const isSelected = selectedArrayVal === v;
-                          return (
-                            <div key={v} onClick={() => handleArrayChipClick(v)} style={{
-                              width:"50px", height:"50px", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center",
-                              fontWeight:"bold", fontSize:"1.05rem", cursor:isUsed?"default":"pointer", transition:"all 0.15s",
-                              border:`2px solid ${isSelected?"var(--primary)":isUsed?"#1e293b":"var(--border)"}`,
-                              background:isSelected?"rgba(139,92,246,0.3)":isUsed?"rgba(0,0,0,0.1)":"rgba(0,0,0,0.2)",
-                              color:isUsed?"#374151":"white", textDecoration:isUsed?"line-through":"none",
-                            }}>{v}</div>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", justifyContent:"center" }}>
-                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
-                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
-                          const assigned = arrayAssignments[sk]; const m = assigned !== null ? Math.floor((assigned-10)/2) : null;
-                          return (
-                            <div key={label} onClick={() => handleArrayStatClick(sk)} style={{
-                              padding:"12px 14px", borderRadius:"8px", textAlign:"center", minWidth:"72px", cursor:"pointer", transition:"all 0.15s",
-                              background:assigned!==null?"rgba(139,92,246,0.15)":selectedArrayVal!==null?"rgba(139,92,246,0.05)":"var(--card-bg)",
-                              border:`1px solid ${assigned!==null?"var(--primary)":selectedArrayVal!==null?"rgba(139,92,246,0.4)":"var(--border)"}`,
-                            }}>
-                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"4px" }}>{label}</div>
-                              <div style={{ fontWeight:"bold", fontSize:"1.2rem", color:assigned!==null?"white":"#374151" }}>{assigned??'--'}</div>
-                              <div style={{ fontSize:"1rem", color:assigned!==null?(m!>=0?"#22c55e":"#ef4444"):"#374151" }}>
-                                {assigned!==null?(m!>=0?`+${m}`:m):'··'}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p style={{ color:"#64748b", fontSize:"1.05rem", textAlign:"center" }}>
-                        {!arrayComplete ? (selectedArrayVal!==null ? `Click a stat to assign ${selectedArrayVal}` : "Click a value to select it") : "✓ All stats assigned"}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Point Buy */}
-                  {statMethod === "pointbuy" && (
-                    <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
-                      <div style={{ textAlign:"center" }}>
-                        <span style={{ fontSize:"1.1rem", fontWeight:"bold", color:pointsLeft===0?"#22c55e":"#c4b5fd" }}>{pointsLeft}</span>
-                        <span style={{ color:"#64748b", fontSize:"1.05rem" }}> / {POINT_BUY_BUDGET} points remaining</span>
-                      </div>
-                      <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", justifyContent:"center" }}>
-                        {(["STR","DEX","CON","INT","WIS","CHA"] as const).map((label, i) => {
-                          const sk = (["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const)[i];
-                          const val = scores[sk]; const m = Math.floor((val-10)/2);
-                          const incCost = (POINT_BUY_COST[val+1]??99)-(POINT_BUY_COST[val]??0);
-                          const canInc = val < 15 && pointsLeft >= incCost;
-                          const canDec = val > 8;
-                          return (
-                            <div key={label} style={{ padding:"12px 10px", background:"var(--card-bg)", borderRadius:"8px", textAlign:"center", minWidth:"82px", border:"1px solid var(--border)" }}>
-                              <div style={{ fontSize:"1rem", color:"#94a3b8", marginBottom:"8px" }}>{label}</div>
-                              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"8px" }}>
-                                <button onClick={() => adjustPBStat(sk,-1)} disabled={!canDec} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canDec?"rgba(139,92,246,0.15)":"transparent", color:canDec?"white":"#374151", cursor:canDec?"pointer":"not-allowed", fontWeight:"bold", fontSize:"1.15rem" }}>−</button>
-                                <span style={{ fontWeight:"bold", fontSize:"1.2rem", minWidth:"22px" }}>{val}</span>
-                                <button onClick={() => adjustPBStat(sk,1)} disabled={!canInc} style={{ width:"22px", height:"22px", borderRadius:"6px", border:"1px solid var(--border)", background:canInc?"rgba(139,92,246,0.15)":"transparent", color:canInc?"white":"#374151", cursor:canInc?"pointer":"not-allowed", fontWeight:"bold", fontSize:"1.15rem" }}>+</button>
-                              </div>
-                              <div style={{ fontSize:"1rem", color:m>=0?"#22c55e":"#ef4444", marginTop:"6px" }}>{m>=0?`+${m}`:m}</div>
-                              <div style={{ fontSize:"0.95rem", color:"#475569", marginTop:"2px" }}>{POINT_BUY_COST[val]}pt{POINT_BUY_COST[val]!==1?"s":""}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {draft.class && (
-                    <p style={{ color:"#475569", fontSize:"1.05rem", textAlign:"center" }}>
-                      Level 1 HP: <strong style={{ color:"white" }}>{startingHP(draft.class, effectiveScores().constitution)}</strong>
-                      {" "}(d{CLASS_HIT_DIE[draft.class]??8} + CON mod)
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Equipment */}
-              {charStep === 4 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "12px", color: "#94a3b8", fontSize: "1rem" }}>Primary Weapon</label>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
-                      {WEAPONS.map(w => (
-                        <div key={w} onClick={() => setDraft(d => ({ ...d, weapon: w }))}
-                          onMouseEnter={() => setHoveredWeapon(w)}
-                          onMouseLeave={() => setHoveredWeapon(null)}
-                          style={{
-                            padding: "22px 12px", borderRadius: "12px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                            border: `1px solid ${draft.weapon === w ? "#f59e0b" : hoveredWeapon === w ? "rgba(245,158,11,0.5)" : "var(--border)"}`,
-                            background: draft.weapon === w ? "rgba(245,158,11,0.15)" : hoveredWeapon === w ? "rgba(245,158,11,0.07)" : "rgba(0,0,0,0.15)",
-                            transform: draft.weapon === w ? "translateY(-3px)" : hoveredWeapon === w ? "translateY(-1px)" : "none",
-                            boxShadow: draft.weapon === w ? "0 6px 22px rgba(245,158,11,0.3)" : "none",
-                          }}>
-                          <div style={{ fontSize: "2rem", marginBottom: "8px", lineHeight: 1 }}>{WEAPON_EMOJI[w] ?? "⚔️"}</div>
-                          <div style={{ fontSize: "1.18rem", fontWeight: draft.weapon === w ? 700 : 400, color: draft.weapon === w ? "#f59e0b" : "inherit" }}>{w}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Shield — only for proficient classes */}
-                  {SHIELD_CLASSES.has(draft.class) && (
-                    <div>
-                      <label style={{ display: "block", marginBottom: "10px", color: "#94a3b8" }}>Shield</label>
-                      <div
-                        onClick={() => setDraft(d => ({ ...d, shield: !d.shield }))}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s",
-                          border: `1px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`,
-                          background: draft.shield ? "rgba(139,92,246,0.2)" : "transparent",
-                        }}
-                      >
-                        <span style={{ fontSize: "1.5rem" }}>🛡</span>
-                        <div>
-                          <div style={{ fontWeight: "bold", fontSize: "1.15rem" }}>Shield <span style={{ color: "#22c55e", fontSize: "1.05rem" }}>+2 AC</span></div>
-                          <div style={{ fontSize: "1rem", color: "#64748b" }}>Requires one free hand — pairs well with one-handed weapons</div>
-                        </div>
-                        <div style={{ marginLeft: "auto", width: "20px", height: "20px", borderRadius: "50%", border: `2px solid ${draft.shield ? "var(--primary)" : "var(--border)"}`, background: draft.shield ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1rem" }}>
-                          {draft.shield && "✓"}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
-                      Starting Trinket <span style={{ color: "#475569" }}>(optional)</span>
-                    </label>
-                    <input
-                      type="text" value={draft.trinket} maxLength={80}
-                      onChange={e => setDraft(d => ({ ...d, trinket: e.target.value }))}
-                      placeholder="e.g. A silver locket with a faded portrait"
-                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.2rem" }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Character Background */}
-              {charStep === 5 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                  <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "1.05rem", color: "#94a3b8", lineHeight: 1.65 }}>
-                    <strong style={{ color: "#c4b5fd", display: "block", marginBottom: "4px" }}>Optional — skip to continue.</strong>
-                    The DM and portrait artist will use this backstory to shape your character&apos;s story and portrait.
-                  </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", color: "#94a3b8" }}>
-                      Character Background <span style={{ fontSize: "1rem", color: "#475569" }}>(optional)</span>
-                    </label>
-                    <textarea
-                      value={draft.charBackground} rows={6} maxLength={500}
-                      onChange={e => setDraft(d => ({ ...d, charBackground: e.target.value }))}
-                      placeholder="e.g. A wandering mercenary haunted by a betrayal. They carry a broken medallion — once a symbol of their old order, now a reminder of who they used to be..."
-                      style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", color: "white", fontSize: "1.15rem", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
-                    />
-                    <p style={{ color: "#374151", fontSize: "1rem", textAlign: "right", marginTop: "4px" }}>{draft.charBackground.length} / 500</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Spells */}
-              {charStep === 6 && isSpellcaster && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px" }}>
-                  <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", fontSize: "1.05rem", color: "#c4b5fd", lineHeight: 1.5, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
-                    <span>As a Level 1 <strong>{draft.class}</strong>, choose your spells.
-                    {SPELL_LIMITS[draft.class]?.spellFormula && " Prepared count is based on your ability modifier."}</span>
-                    <span style={{ flexShrink: 0, fontWeight: "bold", color: (selectedCantrips.length === spellCounts.cantrips || spellCounts.cantrips === 0) && (selectedSpells.length === spellCounts.spells || spellCounts.spells === 0) ? "#22c55e" : "#8b5cf6" }}>
-                      {selectedCantrips.length + selectedSpells.length} / {spellCounts.cantrips + spellCounts.spells} chosen
-                    </span>
-                  </div>
-
-                  {spellCounts.cantrips > 0 && (
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cantrips</span>
-                        <span style={{ fontSize: "1.05rem", color: selectedCantrips.length === spellCounts.cantrips ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
-                          {selectedCantrips.length} / {spellCounts.cantrips}
-                        </span>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                        {availableCantrips.map(spell => (
-                          <SpellCard key={spell.name} spell={spell}
-                            selected={selectedCantrips.includes(spell.name)}
-                            disabled={selectedCantrips.length >= spellCounts.cantrips && !selectedCantrips.includes(spell.name)}
-                            onToggle={() => setSelectedCantrips(prev =>
-                              prev.includes(spell.name) ? prev.filter(s => s !== spell.name) :
-                              prev.length < spellCounts.cantrips ? [...prev, spell.name] : prev
-                            )} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {spellCounts.spells > 0 && (
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                          1st-Level Spells
-                        </span>
-                        <span style={{ fontSize: "1.05rem", color: selectedSpells.length === spellCounts.spells ? "#22c55e" : "#8b5cf6", fontWeight: "bold" }}>
-                          {selectedSpells.length} / {spellCounts.spells} {SPELL_LIMITS[draft.class]?.spellFormula ? "prepared" : "known"}
-                        </span>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                        {availableSpells.map(spell => (
-                          <SpellCard key={spell.name} spell={spell}
-                            selected={selectedSpells.includes(spell.name)}
-                            disabled={selectedSpells.length >= spellCounts.spells && !selectedSpells.includes(spell.name)}
-                            onToggle={() => setSelectedSpells(prev =>
-                              prev.includes(spell.name) ? prev.filter(s => s !== spell.name) :
-                              prev.length < spellCounts.spells ? [...prev, spell.name] : prev
-                            )} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              ) : (
+                <CharacterSteps step={charStep} form={form} patch={patch} showTooltip={showTooltip} hideTooltip={hideTooltip} nameError={charNameErr} setNameError={setCharNameErr} />
               )}
             </div>
           )}
@@ -1331,7 +765,7 @@ export default function CreateCampaignWizard() {
           {/* Party review */}
           {phase === "review" && (
             <div className="animate-fade-in">
-              <p style={{ textAlign: "center", color: "#94a3b8", marginBottom: "24px", fontSize: "1.15rem" }}>
+              <p style={{ textAlign: "center", color: "var(--subtle)", marginBottom: "24px", fontSize: "1.15rem" }}>
                 Your party is assembled. The DM will name your campaign upon launch.
               </p>
               <div style={{ display: "grid", gridTemplateColumns: completedChars.length === 1 ? "1fr" : "1fr 1fr", gap: "14px" }}>
@@ -1348,13 +782,13 @@ export default function CreateCampaignWizard() {
                       }
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: "bold", fontSize: "1.2rem", color: "white" }}>{c.name}</div>
+                      <div style={{ fontWeight: "bold", fontSize: "1.2rem", color: "var(--foreground)" }}>{c.name}</div>
                       <div style={{ color: clsColor, fontSize: "1rem", fontWeight: 600, marginTop: "1px" }}>{c.race} {c.class} · {c.rosterId ? `Level ${c.rosterLevel}` : "Lv 1"}</div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "5px" }}>
-                        <span style={{ fontSize: "1rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>
+                        <span style={{ fontSize: "1rem", color: "var(--subtle)", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>
                           ❤ {c.rosterId ? c.rosterMaxHp : startingHP(c.class, c.scores.constitution)} HP
                         </span>
-                        {!c.rosterId && <span style={{ fontSize: "1rem", color: "#94a3b8", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>{WEAPON_EMOJI[c.weapon] ?? "⚔️"} {c.weapon || "Iron Dagger"}</span>}
+                        {!c.rosterId && <span style={{ fontSize: "1rem", color: "var(--subtle)", background: "rgba(255,255,255,0.06)", borderRadius: "6px", padding: "1px 7px" }}>{WEAPON_EMOJI[c.weapon] ?? "⚔️"} {c.weapon || "Iron Dagger"}</span>}
                         {c.cantrips.length > 0 && <span style={{ fontSize: "1rem", color: "#8b5cf6", background: "rgba(139,92,246,0.1)", borderRadius: "6px", padding: "1px 7px" }}>✨ {c.cantrips.length} cantrip{c.cantrips.length > 1 ? "s" : ""}</span>}
                         {c.rosterId && <span style={{ fontSize: "1.2rem", color: "#fbbf24", background: "rgba(251,191,36,0.1)", borderRadius: "6px", padding: "1px 7px" }}>📜 Returning</span>}
                       </div>
@@ -1373,7 +807,7 @@ export default function CreateCampaignWizard() {
               <div style={{ fontSize: "4rem", animation: "float 1.2s ease-in-out infinite", filter: "drop-shadow(0 0 24px rgba(139,92,246,0.7))" }}>⚔️</div>
               <div style={{ textAlign: "center" }}>
                 <p className="shimmer-heading" style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "8px" }}>The DM is forging your world…</p>
-                <p style={{ color: "#64748b", fontSize: "1.05rem" }}>Naming your campaign and preparing the stage</p>
+                <p style={{ color: "var(--muted)", fontSize: "1.05rem" }}>Naming your campaign and preparing the stage</p>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 {[0, 1, 2].map(i => (

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
+import { D20Icon } from "./D20Icon";
 
 export default function LandingNav() {
   const [showSignup, setShowSignup] = useState(false);
@@ -11,7 +12,7 @@ export default function LandingNav() {
     <>
       <nav className="glass-panel" style={{ margin: "20px", padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
         <div className="nav-brand" style={{ fontSize: "1.5rem" }}>
-          <span className="nav-brand-mark">⬡</span>
+          <span className="nav-brand-mark"><D20Icon className="d20-glow" size="1.1em" /></span>
           <span>Dungeons &amp; Dinner Legends</span>
         </div>
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
@@ -64,17 +65,9 @@ export default function LandingNav() {
             </p>
 
             <p style={{ color: "#64748b", lineHeight: 1.75, fontSize: "0.79rem", marginBottom: "32px" }}>
-              We&apos;re actively building and testing new features. Access is invite-only at this time.
+              We&apos;re actively building and testing new features. Access is limited at this time.
               Stay tuned — the tavern doors will open soon.
             </p>
-
-            <div style={{
-              padding: "14px 18px", borderRadius: "10px",
-              background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)",
-              fontSize: "0.74rem", color: "#a78bfa", lineHeight: 1.6,
-            }}>
-              🍺 &nbsp;If you received an invite from a friend, use the link they shared — it will take you directly into their campaign.
-            </div>
 
             <button
               className="btn-primary"

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
+import { D20Icon } from '../../components/D20Icon';
 import '../globals.css';
 
 export default function AuthPage() {
@@ -65,7 +66,7 @@ export default function AuthPage() {
       <div style={{ position: 'absolute', bottom: '15%', right: '15%', width: '300px', height: '300px', background: '#f59e0b', filter: 'blur(160px)', opacity: 0.06, zIndex: -1 }} />
 
       <Link href="/" className="nav-brand" style={{ position: 'absolute', top: '40px', left: '40px', fontSize: '1.5rem' }}>
-        <span className="nav-brand-mark">⬡</span> Dungeons &amp; Dinner Legends
+        <span className="nav-brand-mark"><D20Icon className="d20-glow" size="1.1em" /></span> Dungeons &amp; Dinner Legends
       </Link>
 
       <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '560px', padding: '44px 44px' }}>
