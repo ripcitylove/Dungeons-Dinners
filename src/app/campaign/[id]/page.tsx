@@ -319,6 +319,28 @@ function reconcileUnconscious(statuses: string[], newHp: number, hpDelta: number
   return statuses;
 }
 
+// Deterministic NPC-departure backstop. True when the narrative plainly shows the
+// named NPC LEAVING the scene (subject-position only, to avoid false positives like
+// "the guard departs as Mira watches"). Catches departures the DM narrated but
+// forgot to tag with [NPC-GONE], so a stale card never lingers after the character
+// has gone. Deliberately conservative — bare ambiguous "leaves" is excluded; only
+// "leaves the <place>" and clear motion-away phrasing count.
+const NPC_DEPART = [
+  "(?:walks?|steps?|strides?|slips?|hurries?|scurries?|wanders?|backs?|runs?|dashes?|races?|storms?|marches?|shuffles?|sweeps?|stalks?|saunters?|limps?|drifts?|heads?|moves?|hobbles?)\\s+(?:away|off|out|back|aside)",
+  "turns?\\s+(?:and\\s+)?(?:walks?|strides?|heads?|goes?|leaves?|slips?|hurries?|stalks?|marches?)\\b",
+  "(?:slips?|disappears?|vanish(?:es|ed)?|melts?|fades?|recedes?|retreats?|withdraws?)\\s+(?:back\\s+)?into\\s+the\\s+(?:crowd|shadows?|darkness|night|mist|fog|throng|woods?|trees|forest|alley)",
+  "departs?\\b", "exits?\\b", "disappear(?:s|ed)?\\b", "vanish(?:es|ed)?\\b", "retreats?\\b", "withdraws?\\b", "flees\\b", "fled\\b",
+  "takes?\\s+(?:his|her|their|its)\\s+leave", "is\\s+(?:now\\s+)?gone\\b", "hurries?\\s+off", "runs?\\s+off",
+  "leaves?\\s+(?:the\\s+)?(?:room|scene|tavern|chamber|hall|shop|area|building|street|table|stall|counter|bar|forge|square|camp|clearing|hut|cottage|inn|gate)\\b",
+].join("|");
+function npcLeftInNarrative(narrative: string, name: string): boolean {
+  if (!narrative || !name) return false;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Name as the subject, followed within a short span by a departure phrase.
+  const re = new RegExp(`\\b${esc}\\b[^.!?\\n]{0,45}\\b(?:${NPC_DEPART})`, "i");
+  return re.test(narrative);
+}
+
 /** Parses [THP:FirstName:+N] tags from DM text. Returns the highest temp-HP grant
  *  seen for that character (D&D 5e: temp HP doesn't stack — keep the larger value). */
 function parseThpTag(text: string, firstName: string): number {
@@ -1042,10 +1064,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (!sameSet) commitNpcs(next, broadcast);
       return;
     }
-    if (entered.length === 0 && gone.length === 0) return;
+    // Backstop: also despawn any present NPC the narrative clearly says LEFT but the
+    // DM didn't tag — unless the SAME response re-affirms them as entering/present.
+    const enteredLower = new Set(entered.map(e => e.name.toLowerCase()));
+    const departed = prev
+      .filter(n => !enteredLower.has(n.name.toLowerCase()) && npcLeftInNarrative(narrative, n.name))
+      .map(n => n.name);
+    const allGone = departed.length ? [...gone, ...departed] : gone;
+    if (entered.length === 0 && allGone.length === 0) return;
     let next = [...prev];
-    if (gone.length) {
-      const goneSet = new Set(gone.map(g => g.toLowerCase()));
+    if (allGone.length) {
+      const goneSet = new Set(allGone.map(g => g.toLowerCase()));
       next = next.filter(n => !goneSet.has(n.name.toLowerCase()));
     }
     for (const e of entered) {
@@ -2563,7 +2592,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             return {
               ...e,
               condition:      ch.condition,
-              is_defeated:    ch.is_defeated || e.is_defeated,
+              is_defeated:    ch.is_defeated || e.is_defeated || ch.condition === "defeated",
               status_effects: [...e.status_effects.filter(s => !ch.status_effects_lost?.includes(s)), ...(ch.status_effects_gained ?? [])],
             };
           });
@@ -3074,12 +3103,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     let newMaxHp = char.max_hp;
     let leveledUp = false;
 
+    let totalHpGain = 0;
     if (change.xp_award > 0) {
       newXp += change.xp_award;
       parts.push(`+${change.xp_award} XP`);
       // Loop (not a single if) so one large award can cross MULTIPLE thresholds
       // at once and grant every level earned, accumulating HP for each.
-      let totalHpGain = 0;
       while (newXp >= getXpToNextLevel(newLevel) && newLevel < 10) {
         newLevel++;
         const hitDie  = CLASS_HIT_DIE[char.class] ?? 8;
@@ -3091,6 +3120,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         parts.push(`⬆ LEVEL UP → ${newLevel}! +${totalHpGain} max HP`);
       }
     }
+
+    // On level-up, CURRENT hp rises by the same amount as max hp — a character
+    // who levels up is not suddenly wounded relative to their new maximum.
+    // (newHp above was clamped to the OLD max; without this they'd read e.g. 12/19.)
+    const finalHp = leveledUp ? Math.min(newMaxHp + charIb.hpMaxAdd, newHp + totalHpGain) : newHp;
 
     // Rebuild class_resources with updated temp HP
     const classResChanged = newTempHp !== currentTempHp;
@@ -3113,7 +3147,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     else delete newInventory.item_meta;
 
     const updatedChar: Character = {
-      ...char, hp: newHp, level: newLevel, max_hp: newMaxHp, xp: newXp,
+      ...char, hp: finalHp, level: newLevel, max_hp: newMaxHp, xp: newXp,
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
       class_resources: newClassRes,
       inventory: newInventory,
@@ -3129,7 +3163,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updatedChar : c);
 
     const dbUpdate: Record<string, unknown> = {
-      hp: newHp, inventory: updatedChar.inventory, xp: newXp,
+      hp: finalHp, inventory: updatedChar.inventory, xp: newXp,
       status_effects: newStatuses, spell_slots_used: newSlotsUsed,
     };
     if (classResChanged) dbUpdate.class_resources = newClassRes;
@@ -3148,7 +3182,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       type: "broadcast", event: "character_sync",
       payload: {
         charId:           char.id,
-        hp:               newHp,
+        hp:               finalHp,
         max_hp:           newMaxHp,
         xp:               newXp,
         level:            newLevel,
@@ -4066,7 +4100,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     try {
       const res = await fetch("/api/enemies/state", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ narrative, enemies: active.map(e => ({ id: e.id, name: e.name })) }),
+        body: JSON.stringify({ narrative, enemies: active.map(e => ({ id: e.id, name: e.name, condition: e.condition })) }),
       });
       const { changes, combat_ended } = await res.json() as {
         changes: { name: string; condition: EnemyCondition; is_defeated: boolean; status_effects_gained: string[]; status_effects_lost: string[] }[];
@@ -4080,7 +4114,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             return {
               ...e,
               condition:      ch.condition,
-              is_defeated:    ch.is_defeated || e.is_defeated,
+              is_defeated:    ch.is_defeated || e.is_defeated || ch.condition === "defeated",
               status_effects: [...e.status_effects.filter(s => !ch.status_effects_lost?.includes(s)), ...(ch.status_effects_gained ?? [])],
             };
           });
@@ -6473,7 +6507,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               Only enemies whose portrait has generated are shown (never a placeholder),
               and the cards shrink as more enemies appear so a full party's worth fits. ── */}
         {(() => {
-          const visEnemies = enemies.filter(e => !e.is_defeated && e.portrait_url);
+          const visEnemies = enemies.filter(e => !e.is_defeated && e.condition !== "defeated" && e.portrait_url);
           if (visEnemies.length === 0) return null;
           const cnt = visEnemies.length;
           // Shrink card width as the enemy count climbs (dynamic 1–10 encounters).

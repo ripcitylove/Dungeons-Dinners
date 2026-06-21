@@ -23,9 +23,10 @@ export type EnemyStateResult = {
   combat_ended: boolean;
 };
 
-const SYSTEM = `You extract enemy state changes from a D&D 5e Dungeon Master's narrative.
+const SYSTEM = `You track enemy state changes from a D&D 5e Dungeon Master's narrative.
 
-Given a list of active enemy names and the DM narrative, return valid JSON only:
+You are given each active enemy with its CURRENT condition, plus the DM narrative.
+Return valid JSON only:
 {
   "changes": [
     {
@@ -39,32 +40,37 @@ Given a list of active enemy names and the DM narrative, return valid JSON only:
   "combat_ended": false
 }
 
-Condition values — pick the most accurate based on the narrative:
-- "healthy"  — no injury described, or enemy is not mentioned this turn
+Condition values, from best to worst: healthy → wounded → bloodied → critical → defeated.
 - "wounded"  — minor hit, slight stumble, glancing blow
 - "bloodied" — clearly hurt, bleeding, staggering, notably damaged
 - "critical"  — barely standing, gravely wounded, on one knee, near death
 - "defeated"  — falls, dies, flees permanently, rendered incapacitated
 
+CRITICAL — DAMAGE ONLY ACCUMULATES. An enemy's condition NEVER improves on its own:
+- An enemy's HP does not regenerate between turns. Wounds do not close on their own.
+- If an enemy takes MORE damage this turn, report the new WORSE condition.
+- If an enemy is merely mentioned, acts, attacks, or speaks but is NOT freshly wounded this turn, return its CURRENT condition UNCHANGED — never reset it to "healthy".
+- ONLY report a BETTER (healthier) condition if the narrative EXPLICITLY describes THAT enemy being healed, regenerating, mending, or magically restored. Absent an explicit heal, a healthier condition is wrong.
+
 Rules:
-- Only include enemies explicitly named or clearly referenced in THIS narrative
-- Set is_defeated: true when the enemy definitively falls, dies, surrenders, or is stopped
-- combat_ended: true only when the fight has clearly concluded (all enemies defeated, fled, or peace restored)
-- Do not include enemies that are not mentioned — omit them from changes entirely
+- Only include enemies explicitly named or clearly referenced in THIS narrative; omit the rest.
+- Set is_defeated: true when the enemy definitively falls, dies, surrenders, or is stopped.
+- combat_ended: true only when the fight has clearly concluded (all enemies defeated, fled, or peace restored).
 - Return valid JSON only. No markdown, no explanation.`;
 
 export async function POST(req: NextRequest) {
   try {
     const { narrative, enemies } = (await req.json()) as {
       narrative: string;
-      enemies:   { id: string; name: string }[];
+      enemies:   { id: string; name: string; condition?: EnemyCondition }[];
     };
 
     if (!narrative?.trim() || !enemies.length) {
       return Response.json({ changes: [], combat_ended: false });
     }
 
-    const prompt = `Active enemies: ${enemies.map(e => e.name).join(", ")}
+    const prompt = `Active enemies (with current condition):
+${enemies.map(e => `- ${e.name} (currently ${e.condition ?? "healthy"})`).join("\n")}
 
 DM narrative:
 ${narrative.slice(0, 1200)}`;
@@ -82,6 +88,26 @@ ${narrative.slice(0, 1200)}`;
 
     const parsed = JSON.parse(match[0]) as Partial<EnemyStateResult>;
     const changes: EnemyStateChange[] = Array.isArray(parsed.changes) ? parsed.changes : [];
+
+    // ── Monotonic clamp — enemies never auto-heal ──────────────────────────────
+    // The classifier can still misfire (re-reading an unhurt mention as "healthy").
+    // Deterministically forbid any IMPROVEMENT in condition unless the narrative
+    // explicitly describes THAT enemy being healed/regenerating. Damage only ever
+    // accumulates; a worse condition (or defeat) is always allowed.
+    const RANK: Record<EnemyCondition, number> = { healthy: 0, wounded: 1, bloodied: 2, critical: 3, defeated: 4 };
+    const HEAL = "heal(?:s|ed|ing)?|regenerat\\w+|mends?|knits?|restore[sd]?|recover(?:s|ed|ing)?|wounds?\\s+close|new\\s+flesh|made\\s+whole";
+    for (const c of changes) {
+      const prior = enemies.find(e => e.name === c.name)?.condition;
+      if (!prior || c.is_defeated) continue;            // defeat is always allowed
+      const newRank = RANK[c.condition] ?? 0;
+      const curRank = RANK[prior] ?? 0;
+      if (newRank < curRank) {
+        // Improvement proposed — only honor it if THIS enemy was explicitly healed.
+        const esc = c.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const healed = new RegExp(`\\b${esc}\\b[^.!?]{0,90}\\b(?:${HEAL})\\b|\\b(?:${HEAL})\\b[^.!?]{0,90}\\b${esc}\\b`, "i").test(narrative);
+        if (!healed) c.condition = prior;               // clamp: no auto-heal
+      }
+    }
 
     // Persist condition + defeat changes to DB
     await Promise.all(

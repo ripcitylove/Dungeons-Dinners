@@ -285,7 +285,7 @@ function DieSVG({
     width: size, height: size,
     display: "flex", alignItems: "center", justifyContent: "center",
     animation: spinning
-      ? `dieRollSpin 0.68s ease-in-out infinite`
+      ? `dieRollSpin 0.7s linear infinite`
       : idleAnim
       ? `dieBobFloat 2.2s ease-in-out infinite`
       : undefined,
@@ -637,7 +637,7 @@ export default function DiceRoller({
               })}
             </div>
 
-            <div style={{ animation:"dieRollSpin 0.62s ease-in-out infinite",
+            <div style={{ animation:"dieRollSpin 0.7s linear infinite",
               filter:`drop-shadow(0 0 28px ${CRYSTAL_GLOW}) drop-shadow(0 8px 24px rgba(0,0,0,0.88))` }}>
               <DieSVG sides={selectedDie} size={172}
                 edgeColor={CRYSTAL_EDGE} glowColor={CRYSTAL_GLOW} faceColor={CRYSTAL_FACE}
@@ -750,16 +750,15 @@ export default function DiceRoller({
       )}
 
       <style dangerouslySetInnerHTML={{ __html: `
+        /* Seamless continuous tumble: exactly one full 360° turn per loop (so the
+           infinite loop wraps with NO snap-back jump), paired with a gentle scale +
+           skew pulse that returns to base at 0/50/100%. Pair with linear timing. */
         @keyframes dieRollSpin {
-          0%   { transform: rotate(0deg)   scale(1)    skewX(0deg);   }
-          12%  { transform: rotate(65deg)  scale(0.90) skewX(5deg);   }
-          25%  { transform: rotate(150deg) scale(1.08) skewX(-6deg);  }
-          38%  { transform: rotate(235deg) scale(0.92) skewX(6deg);   }
-          51%  { transform: rotate(308deg) scale(1.07) skewX(-5deg);  }
-          64%  { transform: rotate(390deg) scale(0.91) skewX(5deg);   }
-          77%  { transform: rotate(455deg) scale(1.06) skewX(-4deg);  }
-          90%  { transform: rotate(528deg) scale(0.93) skewX(3deg);   }
-          100% { transform: rotate(580deg) scale(1)    skewX(0deg);   }
+          0%   { transform: rotate(0deg)   scale(1)    skewX(0deg);  }
+          25%  { transform: rotate(90deg)  scale(1.05) skewX(-4deg); }
+          50%  { transform: rotate(180deg) scale(1)    skewX(0deg);  }
+          75%  { transform: rotate(270deg) scale(1.05) skewX(4deg);  }
+          100% { transform: rotate(360deg) scale(1)    skewX(0deg);  }
         }
         @keyframes dieBobFloat {
           0%,100% { transform: translateY(0px)   rotate(-2deg); }

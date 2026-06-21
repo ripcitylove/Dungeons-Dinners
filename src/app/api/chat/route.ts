@@ -700,7 +700,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     : "";
 
   const targetBlock = targetedEnemyName
-    ? `\nPLAYER'S TARGET: The active player is focusing their attack on ${targetedEnemyName}. Resolve their action against ${targetedEnemyName} unless they explicitly say otherwise.\n`
+    ? `\nPLAYER'S CHOSEN TARGET — AUTHORITATIVE: The active player has SELECTED ${targetedEnemyName} as their target. Treat ${targetedEnemyName} as the recipient of WHATEVER action the player takes this turn — their attack, spell, ability, thrown item, or maneuver lands on ${targetedEnemyName} by default. Do NOT redirect it to a different enemy on your own, and do NOT ask the player who they are attacking — the target is already chosen. The ONLY exception: if the player's own typed action EXPLICITLY names a different enemy, honor that instead.\n`
     : (defaultTargetEnemyName
         ? `\nDEFAULT TARGET: If the active player attacks but does NOT name which enemy, resolve the attack against ${defaultTargetEnemyName} (the enemy with the least health remaining). This applies ONLY to attacks — never force a non-combat action (talking, moving, searching, casting a non-damaging spell) into an attack.\n`
         : "");

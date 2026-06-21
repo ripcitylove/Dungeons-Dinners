@@ -107,6 +107,12 @@ Return ONLY a valid JSON array, no markdown, no explanation:
       is_defeated:    false,
     }));
 
+    // Each encounter is a FRESH set. Spawning only happens when no enemies are
+    // active (the client gates it), so wipe any leftover rows for this campaign
+    // first — otherwise non-defeated stragglers from a past fight accumulate in
+    // the DB and re-appear (wrong enemy count) on resume.
+    await supabase.from("campaign_enemies").delete().eq("campaign_id", campaign_id);
+
     const { data, error } = await supabase
       .from("campaign_enemies")
       .insert(rows)
