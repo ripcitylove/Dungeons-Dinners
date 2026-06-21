@@ -148,6 +148,8 @@ Set shouldChange: false when:
 - Routine player actions inside a stable environment
 When borderline, prefer TRUE — refreshing the background sells the world's momentum.
 
+PARTY MOVED — set "moved": true ONLY when the party PHYSICALLY RELOCATED to a new, distinct space this turn — they went through a door, up/down stairs, exited or entered a building, left one room/area for another, or travelled to a new place. Set "moved": false for everything that happens WITHOUT the party changing location, including atmospheric or lighting changes in the SAME space (sunset→night, fog rolls in, lights go out), combat, and dialogue. This flag controls whether on-screen NPC cards from the OLD location are cleared, so be strict: only true when the party actually left the previous space behind.
+
 MOMENT DETECTION — key visual events worth a dedicated story illustration:
 Set "moment" to an object when the narrative contains ANY of:
 - A named NPC or creature making a vivid first appearance, dramatic action, or notable reveal
@@ -159,7 +161,7 @@ Set "moment": null for: generic combat rounds with no visual specifics, routine 
 Lean toward emitting a moment when the narrative paints a clear picture — moments are how the campaign earns its memorable beats.
 
 Return ONLY valid JSON, no other text:
-{"type":"<scene_type>","shouldChange":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"],"moment":{"tag":"<3_to_5_word_snake_case_unique_id>","description":"<1–2 vivid illustrative sentences of exactly what to depict>"} or null}`;
+{"type":"<scene_type>","shouldChange":<bool>,"moved":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"],"moment":{"tag":"<3_to_5_word_snake_case_unique_id>","description":"<1–2 vivid illustrative sentences of exactly what to depict>"} or null}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -193,6 +195,7 @@ export async function POST(req: NextRequest) {
     let modifiers:   string[] = [];
     let description  = "";
     let shouldChange = false; // conservative default — only change on explicit AI confirmation
+    let moved        = false; // party physically relocated → clear old-location NPC cards
     let moment: { tag: string; description: string } | null = null;
 
     try {
@@ -201,6 +204,7 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(parsed.modifiers)) modifiers = parsed.modifiers.map((m: unknown) => String(m).toLowerCase().replace(/[^a-z]/g, "")).filter(Boolean).slice(0, 3);
       if (parsed.description) description = String(parsed.description).slice(0, 400);
       shouldChange = parsed.shouldChange === true;
+      moved        = parsed.moved === true;
       // Parse story moment
       if (parsed.moment && typeof parsed.moment === "object" && parsed.moment.tag && parsed.moment.description) {
         moment = {
@@ -217,7 +221,7 @@ export async function POST(req: NextRequest) {
 
     // If no background change needed and no moment to handle, return early
     if (!shouldChange && currentScene && !moment) {
-      return Response.json({ sceneName: currentScene, imageUrl: null, momentImageUrl: null, sceneType, modifiers, description, shouldChange: false });
+      return Response.json({ sceneName: currentScene, imageUrl: null, momentImageUrl: null, sceneType, modifiers, description, shouldChange: false, moved });
     }
 
     // Fetch all cached entries — used for both background and moment lookups
@@ -313,10 +317,11 @@ export async function POST(req: NextRequest) {
       modifiers,
       description,
       shouldChange:   bgImageUrl !== null,
+      moved,
     });
 
   } catch (err) {
     console.error("[detect-scene]", err);
-    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null, momentImageUrl: null, shouldChange: false });
+    return Response.json({ sceneName: currentScene ?? "wilderness", imageUrl: null, momentImageUrl: null, shouldChange: false, moved: false });
   }
 }

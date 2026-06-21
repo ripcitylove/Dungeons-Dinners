@@ -2610,6 +2610,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .on("broadcast", { event: "scene_change" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
         const ambianceMood = payload.ambianceMood as string | undefined;
+        // Party moved → peers also clear NPC cards left behind, keeping only those
+        // re-affirmed in the last DM narration (the dm_response broadcast already
+        // delivered the full text and applied entries/exits before this arrives).
+        if (payload.moved) {
+          const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
+          if (lastDm) applyNpcTagsFromNarrative(lastDm.content, false, true);
+        }
         if (payload.imageUrl) {
           currentSceneRef.current = payload.sceneName as string;
           setCurrentSceneUrl(payload.imageUrl as string);
@@ -5248,21 +5255,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           body: JSON.stringify({ narrative: full, currentScene: currentSceneRef.current, isCombat: isCombatNow, campaignDescription: campaignDescriptionRef.current, party: partySnap, enemies: enemySnap }),
         })
           .then(r => r.json())
-          .then(({ sceneName, imageUrl, momentImageUrl, sceneType, modifiers, description }: { sceneName: string; imageUrl: string | null; momentImageUrl?: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean }) => {
+          .then(({ sceneName, imageUrl, momentImageUrl, sceneType, modifiers, description, moved }: { sceneName: string; imageUrl: string | null; momentImageUrl?: string | null; sceneType?: string; modifiers?: string[]; description?: string; shouldChange?: boolean; moved?: boolean }) => {
             if (sceneRequestIdRef.current !== sceneReqId) return; // superseded by a newer request
-            const prevScene = currentSceneRef.current;
             // Narrative-driven ambiance: an unnatural scene-wide silence mutes the
             // environmental ambiance so it never contradicts the prose (e.g. "the
             // harbor goes completely silent" while harbor chatter plays).
             const ambianceMood = detectAmbianceMood(full) ?? undefined;
+            // Party physically RELOCATED → clear NPC cards left behind in the old
+            // location, keeping only those re-affirmed in this narration (a guide who
+            // travelled along). Fires whenever the party moved — NOT tied to the
+            // background image, since same-type moves (new room, same dungeon) reuse a
+            // cached image and would otherwise leave the old NPCs on screen.
+            if (moved) applyNpcTagsFromNarrative(full, true, true);
             // Update background when server decided a change is warranted
             if (imageUrl) {
               currentSceneRef.current = sceneName;
-              // Location changed → clear NPCs left behind in the old scene; keep only
-              // those the DM re-affirmed in this narration (a guide who travelled along).
-              if (sceneName && sceneName.toLowerCase() !== (prevScene ?? "").toLowerCase()) {
-                applyNpcTagsFromNarrative(full, true, true);
-              }
               setCurrentSceneUrl(imageUrl);
               if (campaignLoadingRef.current) setLoadSceneDone(true);
               (window as Window).__dndSetMusicScene?.(sceneName, sceneType, modifiers);
@@ -5277,7 +5284,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             // Broadcast scene update (background + moment) to all other clients
             channelRef.current?.send({
               type: "broadcast", event: "scene_change",
-              payload: { senderId: userId, sceneName, imageUrl, momentImageUrl: momentImageUrl ?? null, sceneType, modifiers, ambianceMood, dmContent: full.slice(0, 120) },
+              payload: { senderId: userId, sceneName, imageUrl, momentImageUrl: momentImageUrl ?? null, sceneType, modifiers, ambianceMood, moved: !!moved, dmContent: full.slice(0, 120) },
             });
             // Attach story moment illustration to the DM message that triggered it
             if (momentImageUrl) {
