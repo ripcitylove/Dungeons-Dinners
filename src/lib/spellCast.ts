@@ -34,3 +34,20 @@ export function findFastSpellCast(text: string, casterFirstName: string, leveled
   }
   return null;
 }
+
+// The DM emits one [CAST:CasterFirstName:Exact Spell Name] tag for EVERY spell a
+// player successfully casts (cantrip or leveled) — see the chat route's CAST TAGS
+// rules. This is the deterministic source of truth for both slot consumption
+// (level looked up from spell data) and concentration classification, covering
+// ALL spells, not just the sound-registered subset the [SPELL] tag uses.
+const CAST_TAG_RE = /\[CAST:([A-Za-z][A-Za-z'\- ]*?):([^\]]+)\]/gi;
+
+/** All spell casts the DM tagged this turn: { caster firstName, exact spell name }. */
+export function parseCastTags(text: string): Array<{ caster: string; spell: string }> {
+  if (!text) return [];
+  const out: Array<{ caster: string; spell: string }> = [];
+  const re = new RegExp(CAST_TAG_RE);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push({ caster: m[1].trim(), spell: m[2].trim() });
+  return out;
+}

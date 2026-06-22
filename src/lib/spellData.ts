@@ -703,6 +703,61 @@ export function getSpellLevel(spellName: string): number {
   return SPELL_LEVEL_MAP[spellName] ?? 0;
 }
 
+// ── Concentration classification (D&D 5e 2014) ──────────────────────────────────
+// The authoritative source of truth for which spells require concentration. Only
+// concentration spells should mark their caster "Concentrating" — instantaneous
+// spells (Magic Missile, Cure Wounds, Fireball) and most cantrips must NOT.
+const _normSpell = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const _CONCENTRATION_SPELL_NAMES: string[] = [
+  // Cantrips that require concentration
+  "Guidance", "Resistance", "True Strike", "Dancing Lights",
+  // Level 1
+  "Bane", "Bless", "Compelled Duel", "Detect Evil and Good", "Detect Magic",
+  "Detect Poison and Disease", "Divine Favor", "Entangle", "Ensnaring Strike",
+  "Expeditious Retreat", "Faerie Fire", "Fog Cloud", "Hail of Thorns", "Heroism",
+  "Hex", "Hunter's Mark", "Protection from Evil and Good", "Protection from Evil & Good",
+  "Searing Smite", "Shield of Faith", "Silent Image", "Tasha's Hideous Laughter",
+  "Witch Bolt", "Wrathful Smite",
+  // Level 2
+  "Alter Self", "Blur", "Branding Smite", "Calm Emotions", "Crown of Madness",
+  "Darkness", "Detect Thoughts", "Enlarge/Reduce", "Flame Blade", "Flaming Sphere",
+  "Heat Metal", "Hold Person", "Invisibility", "Levitate", "Locate Object",
+  "Magic Weapon", "Moonbeam", "Pass without Trace", "Ray of Enfeeblement", "Silence",
+  "Spider Climb", "Suggestion", "Web",
+  // Level 3
+  "Bestow Curse", "Call Lightning", "Clairvoyance", "Conjure Animals", "Fear", "Fly",
+  "Gaseous Form", "Haste", "Hunger of Hadar", "Hypnotic Pattern", "Major Image",
+  "Protection from Energy", "Sleet Storm", "Slow", "Spirit Guardians", "Stinking Cloud",
+  "Vampiric Touch", "Wind Wall",
+  // Level 4
+  "Arcane Eye", "Banishment", "Compulsion", "Confusion", "Conjure Minor Elementals",
+  "Conjure Woodland Beings", "Control Water", "Dominate Beast", "Evard's Black Tentacles",
+  "Giant Insect", "Greater Invisibility", "Locate Creature", "Phantasmal Killer",
+  "Polymorph", "Stoneskin", "Wall of Fire",
+  // Level 5
+  "Animate Objects", "Bigby's Hand", "Circle of Power", "Cloudkill", "Conjure Elemental",
+  "Dominate Person", "Hold Monster", "Insect Plague", "Modify Memory", "Scrying",
+  "Skill Empowerment", "Swift Quiver", "Telekinesis", "Tree Stride", "Wall of Force",
+  "Wall of Stone",
+];
+export const CONCENTRATION_SPELLS: Set<string> = new Set(_CONCENTRATION_SPELL_NAMES.map(_normSpell));
+
+/** Whether a spell requires concentration (case/punctuation-insensitive). */
+export function requiresConcentration(spellName: string): boolean {
+  return CONCENTRATION_SPELLS.has(_normSpell(spellName));
+}
+
+// Normalized name → slot level, so a DM-emitted spell name in any casing/variant
+// resolves to its level. Cantrips (not in SPELL_LEVEL_MAP) return 0.
+const _NORM_SPELL_LEVEL: Record<string, number> = Object.fromEntries(
+  Object.entries(SPELL_LEVEL_MAP).map(([k, v]) => [_normSpell(k), v]),
+);
+/** Slot level for a spell name (case/punctuation-insensitive); 0 for cantrip/unknown. */
+export function getSpellLevelLoose(spellName: string): number {
+  return _NORM_SPELL_LEVEL[_normSpell(spellName)] ?? 0;
+}
+
 // ── Combined spell lookups across all spell levels ──────────────────────────────
 export const SPELL_LISTS_BY_LEVEL: Record<number, Partial<Record<string, SpellEntry[]>>> = {
   1: LEVEL1_SPELLS, 2: LEVEL2_SPELLS, 3: LEVEL3_SPELLS, 4: LEVEL4_SPELLS, 5: LEVEL5_SPELLS,

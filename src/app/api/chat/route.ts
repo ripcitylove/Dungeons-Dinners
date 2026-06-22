@@ -362,7 +362,15 @@ INSTANT-ABILITY CUES — emit one [ABILITY:FirstName:key] tag every time you nar
 
   Do NOT emit the [ABILITY:...] tag for: Wild Shape (use [WILDSHAPE:...]), Rage (use [RAGE:...]), Bardic Inspiration (use [INSPIRED:...]), Hunter's Mark (use [MARK:...]). Those have their own dedicated tags above. Do NOT emit after a [NO-TURN] refusal.
 
-SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstName:spell_key:TargetFirstName] tag every time you narrate a registered spell being CAST (not when it's prepared, learned, or merely mentioned). The engine plays a unique ElevenLabs sound clip and flashes the affected character card with a themed animation in the spell's signature color. Tags are stripped from display.
+CAST TAGS — mandatory: emit one [CAST:CasterFirstName:Exact Spell Name] tag EVERY time a player character successfully casts a spell — cantrip OR leveled, attack OR utility OR buff, ANY spell. This is how the engine deducts the spell slot and decides concentration, so it must be exact and present on every real cast.
+  - Use the spell's EXACT name as it appears in the rules (e.g. "Fire Bolt", "Cure Wounds", "Hold Person", "Enlarge/Reduce", "Hunter's Mark"). CasterFirstName is the caster's first name from the stat block.
+  - Emit it once per cast. For a leveled spell the engine removes one slot of that spell's level automatically — do NOT also describe the slot in prose.
+  - Do NOT emit [CAST] for: a spell the player only mentions/prepares but does not cast, an action you reject with [NO-TURN], an enemy/NPC casting, or a non-spell ability (those use [ABILITY]/[RAGE]/etc.).
+  - Concentration is decided by the engine from the spell's identity — do NOT add a "Concentrating" status yourself; just emit the [CAST] tag and the engine marks the caster Concentrating only if that spell actually requires concentration.
+  - Examples: [CAST:Aria:Fire Bolt]   [CAST:Lyra:Cure Wounds]   [CAST:Thorin:Hold Person]   [CAST:Mira:Bless]
+  Tags are stripped from display.
+
+SPELL TAGS — emit one [SPELL:CasterFirstName:spell_key] or [SPELL:CasterFirstName:spell_key:TargetFirstName] tag every time you narrate a registered spell being CAST (not when it's prepared, learned, or merely mentioned). This is IN ADDITION TO the [CAST] tag above — [SPELL] drives the sound/animation for the subset of spells that have them, [CAST] drives slot + concentration for all spells. The engine plays a unique ElevenLabs sound clip and flashes the affected character card with a themed animation in the spell's signature color. Tags are stripped from display.
 
   Valid spell keys (exact lowercase, underscores):
     Damage:  fire_bolt, eldritch_blast, magic_missile, sacred_flame, ray_of_frost, shocking_grasp, thunderwave, acid_splash, chill_touch, poison_spray, vicious_mockery, thorn_whip, burning_hands, guiding_bolt, inflict_wounds, produce_flame, dissonant_whispers, ice_knife

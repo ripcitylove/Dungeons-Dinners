@@ -10,7 +10,7 @@ import { D20Icon as BrandD20 } from "../../../components/D20Icon";
 import "../../globals.css";
 import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel, getClassSpellsAtLevel } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel, getSpellLevelLoose, requiresConcentration, getClassSpellsAtLevel } from "../../../lib/spellData";
 import {
   getItemByName, getAllCatalogItems, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
@@ -32,7 +32,7 @@ import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
 import { parseNpcTags } from "../../../lib/npcTags";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
-import { findFastSpellCast } from "../../../lib/spellCast";
+import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks, looksLikeRollRequest } from "../../../lib/narration";
@@ -3286,6 +3286,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // declined cast (e.g. a rejected Identify burning a spell slot).
     if (/\[NO-?TURN\]/i.test(narrative)) return;
     const econ = parseEconomyTags(narrative);
+    // Concentration is classified deterministically from the spell cast (see the
+    // [CAST] handler in sendToAI). If spells were cast this turn but NONE require
+    // concentration, the extractor must not invent a "Concentrating" badge — strip
+    // it. (Concentration spells get the badge applied deterministically on cast.)
+    const casts = parseCastTags(narrative);
+    const stripPhantomConcentration = casts.length > 0 && !casts.some(c => requiresConcentration(c.spell));
+    const gateConcentration = (ch: StateChange): StateChange =>
+      stripPhantomConcentration && ch.status_effects_gained.some(s => /concentrat/i.test(s))
+        ? { ...ch, status_effects_gained: ch.status_effects_gained.filter(s => !/concentrat/i.test(s)) }
+        : ch;
     const econOnlyChange = (): StateChange => ({
       target_name: econ.target_name,
       hp_delta: 0, temp_hp_grant: 0,
@@ -3298,7 +3308,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
     fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative }) })
       .then(r => r.json())
-      .then((change: StateChange) => {
+      .then((rawChange: StateChange) => {
+        const change = gateConcentration(rawChange);
         if (!econ.any) { applyStateChange(change, narrative); return; }
         // Deterministic tags are authoritative — strip the tagged categories out of
         // the extractor's result so they can't double-apply or fight the tag.
@@ -4159,6 +4170,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[MARK:[^\]]+\]/gi, "")
       .replace(/\[ABILITY:[^\]]+\]/gi, "")
       .replace(/\[SPELL:[^\]]+\]/gi, "")
+      .replace(/\[CAST:[^\]]+\]/gi, "")
       .replace(/\[GOLD:[^\]]+\]/gi, "")
       .replace(/\[LOOT:[^\]]+\]/gi, "")
       .replace(/\[WEAPON:[^\]]+\]/gi, "")
@@ -4871,6 +4883,46 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const turnCharId = turnOrderRef.current[currentTurnIndexRef.current];
         const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
         if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
+      }
+
+      // ── Deterministic spell-cast handling from [CAST:Caster:Spell Name] tags ──
+      // The DM tags EVERY successful cast. This is the authoritative source for
+      //   (a) SLOT CONSUMPTION — level looked up from spell data, covering ALL
+      //       leveled spells (not just the sound-registered [SPELL] subset), and
+      //   (b) CONCENTRATION — only concentration spells mark the caster
+      //       "Concentrating"; instantaneous spells / cantrips never do.
+      // The legacy [SPELL] fast path and the chat-state extractor remain fallbacks
+      // (de-duped via pendingSpellCastRef).
+      if (!isOpeningScene) {
+        for (const { caster, spell } of parseCastTags(full)) {
+          const member = campaignPartyRef.current.find(
+            c => c.name.split(" ")[0].toLowerCase() === caster.split(" ")[0].toLowerCase(),
+          );
+          if (!member) continue;
+          const isActing = member.id === characterRef.current?.id;
+          // (a) consume one slot for leveled spells (skip if already charged for the acting caster)
+          const lvl = getSpellLevelLoose(spell);
+          if (lvl > 0 && !(isActing && pendingSpellCastRef.current > 0)) {
+            const allSlots = getSpellSlots(member.class, member.level);
+            const used = { ...(member.spell_slots_used ?? {}) };
+            if ((allSlots[lvl] ?? 0) - (used[lvl] ?? 0) > 0) {
+              used[lvl] = (used[lvl] ?? 0) + 1;
+              setCampaignParty(prev => prev.map(c => c.id === member.id ? { ...c, spell_slots_used: used } : c));
+              campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === member.id ? { ...c, spell_slots_used: used } : c);
+              if (isActing && characterRef.current) {
+                const fc = { ...characterRef.current, spell_slots_used: used };
+                setCharacter(fc); characterRef.current = fc;
+                // Mark pending so the legacy [SPELL] path + chat-state don't double-deduct.
+                pendingSpellCastRef.current++; pendingSpellCastLevelRef.current = lvl;
+              }
+              charWriteRef.current?.(member.id, { spell_slots_used: used });
+              channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: member.id, spell_slots_used: used } });
+            }
+          }
+          // (b) concentration badge — ONLY for concentration spells (a new one
+          // replaces the old; casting a non-concentration spell leaves it intact).
+          if (requiresConcentration(spell)) addStatusEffectsToMember(member.id, ["Concentrating"]);
+        }
       }
 
       // Fast client-side spell slot detection — fire immediately so the card updates before chat-state returns.
