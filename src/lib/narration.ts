@@ -54,21 +54,36 @@ export function sanitizeForTts(text: string): string {
     .replace(STRIP_NONTEXT, "");
   // Normalize exotic quotes/dashes to plain forms first.
   out = out.replace(CURLY_SINGLE, "'").replace(CURLY_DOUBLE, '"').replace(FANCY_DASH, "—");
-  // Remove DOUBLE-quote marks from speech entirely. They are never vocalized, and
-  // an isolated quote-wrapped line ("That was a demonstration.") is a known
-  // ElevenLabs trigger for yells / hisses / "speaking in tongues". Apostrophes (')
-  // are kept so contractions (he's, doesn't) survive. (Only the SPOKEN text is
-  // affected — the chat display still shows the quotes.)
-  out = out.replace(/"/g, "");
+  // ── Quotation marks — the #1 source of TTS "funny noises" ──
+  // The engine never speaks quote characters, and a quote-wrapped line is a known
+  // ElevenLabs trigger for yells / hisses / "speaking in tongues". Remove EVERY
+  // kind of quotation mark from the SPOKEN text (the chat display keeps them):
+  //   • double quotes  • guillemets « » ‹ ›  • SINGLE quotes used as quotation marks.
+  // Contraction/possessive apostrophes (a single quote with a letter on BOTH sides
+  // — he's, don't, dog's, o'clock) are preserved so words still sound natural.
+  out = out
+    .replace(/"/g, "")
+    .replace(/[«»‹›]/g, "")
+    // Drop a single quote UNLESS it sits between two letters (he's, dog's,
+    // o'clock): a quote with a non-letter on either side is a quotation mark,
+    // not an apostrophe.
+    .replace(/'(?![A-Za-z])|(?<![A-Za-z])'/g, "");
+  // ── Other symbols the engine reads literally or garbles ──
+  out = out
+    .replace(/[()[\]{}]/g, " ")     // brackets/parens → a pause, never "open paren"
+    .replace(/\s*&\s*/g, " and ")   // ampersand → spoken "and"
+    .replace(/\s*\/\s*/g, " ")       // slash → space, never "slash" or a garble
+    .replace(/\\+/g, " ");           // stray backslashes
   // Collapse punctuation runs that confuse prosody, and tidy spacing.
   out = out
     .replace(/\.{3,}/g, "…")          // ... -> ellipsis
-    .replace(/([!?])\1+/g, "$1")            // !!! -> !   ??? -> ?
+    .replace(/[!?]{2,}/g, m => m[0])        // !!!, ?!, ?? -> single terminal mark
     .replace(/,{2,}/g, ",")
+    .replace(/[;:]{2,}/g, m => m[0])
     .replace(/—{2,}/g, "—")
-    .replace(/''+/g, "'")                   // any single-quote run -> one
     .replace(/\s*—\s*/g, " — ")  // even spacing around em dash
     .replace(/\s+([,.!?;:…])/g, "$1") // no space before punctuation
+    .replace(/([,.!?;:…])(?=[A-Za-z])/g, "$1 ") // ensure a space AFTER sentence punctuation
     .replace(/\s{2,}/g, " ")
     .trim();
   // Drop leading clutter that isn't a letter/digit/opening apostrophe/paren — a
