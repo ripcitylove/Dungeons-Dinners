@@ -466,8 +466,9 @@ WEAPON PROPERTIES & HANDEDNESS (enforce strictly — each character's "Wielding:
 
 SPELLS & SLOTS
 - Track spell slot usage. When a leveled spell is cast, state it consumes a slot ("That uses one of your 1st-level slots").
-- Cantrips cost no slots. State this naturally if relevant.
-- If a caster is out of slots, they cannot cast leveled spells — acknowledge this in the narrative.
+- Cantrips are AT-WILL — they NEVER consume a spell slot and can be cast an UNLIMITED number of times, every turn, forever. A caster with ZERO spell slots remaining can STILL cast any of their cantrips freely. NEVER refuse, gate, ration, or limit a cantrip because the caster is "out of slots" — running out of slots affects LEVELED spells only, never cantrips.
+- ⚠ COMMON MISTAKE TO AVOID — a Warlock out of Pact Magic slots can STILL cast Eldritch Blast every single turn: Eldritch Blast is a CANTRIP, not a slot spell. The same is true for every class's cantrips (Fire Bolt, Sacred Flame, Vicious Mockery, Ray of Frost, Thorn Whip, etc.) — if it's in the character's Cantrips list, it is always castable no matter how many slots are left. Treating a cantrip as "unavailable / out of slots" is a CRITICAL error.
+- If a caster is out of slots, they cannot cast LEVELED spells (1st level and higher) — acknowledge this in the narrative. This restriction NEVER applies to cantrips.
 - STRICT SPELL RESTRICTION: Only ever reference, suggest, or narrate a character casting a spell that appears in their listed Cantrips or Prepared spells. Never hint at, name, or suggest spells they don't have — including spells typical of their class. Players can only cast what is explicitly prepared. If you suggest actions, only spells from their actual list are valid options.
 
 INVALID / IMPOSSIBLE / OUT-OF-RESOURCE ACTIONS — DO NOT CONSUME THE TURN
@@ -478,7 +479,7 @@ When a player declares an action they CANNOT actually perform — for any of the
 
 Triggers for [NO-TURN]:
 - Casting a spell that is NOT in their Cantrips or Prepared spells list. ("That spell isn't in your prepared list. What would you like to do instead, Aria? [NO-TURN]")
-- Casting a leveled spell when that level shows 0 remaining in the character's "Spell slots remaining" line — and ONLY then. If the line shows 1 or more remaining for that level, the cast is VALID: resolve it and consume a slot; never refuse it. Re-read the exact remaining count before refusing. ("You're out of 2nd-level slots — what else, Aria? [NO-TURN]" — but only when 2nd level truly reads 0.) Cantrips never cost a slot, so they are never refused for slots.
+- Casting a LEVELED spell when that level shows 0 remaining in the character's "Spell slots remaining" line — and ONLY then. If the line shows 1 or more remaining for that level, the cast is VALID: resolve it and consume a slot; never refuse it. Re-read the exact remaining count before refusing. ("You're out of 2nd-level slots — what else, Aria? [NO-TURN]" — but only when 2nd level truly reads 0.) NEVER apply this to a cantrip: a cantrip in the character's Cantrips list is ALWAYS a valid cast regardless of slots (Eldritch Blast, Fire Bolt, Sacred Flame, etc. work fine at 0 slots). Refusing a CANTRIP for being "out of slots" is a CRITICAL error — never do it.
 - Using a class feature their class doesn't have, or that their level doesn't yet grant (e.g. a level-1 druid trying Wild Shape, a non-rogue trying Sneak Attack, a non-monk trying Flurry of Blows).
 - Using a class resource that's already exhausted (Wild Shape uses, Bardic Inspiration, Ki, Rage uses, Channel Divinity, Action Surge, Second Wind, etc.).
 - Using an item the character doesn't have in their inventory.
@@ -836,7 +837,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const cantStr    = c.cantrips_known?.length  ? annotateCantrips(c.cantrips_known, c.level ?? 1)  : "";
       const spellStr   = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
       const spellLine  = (cantStr || spellStr)
-        ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
+        ? `\n  Cantrips (AT-WILL — unlimited, never use a slot, castable even at 0 slots): ${cantStr || "—"}  |  Spells prepared (use leveled slots): ${spellStr || "—"}`
         : "";
       // Spell slots remaining/max per level — WITHOUT this the DM can't know how
       // many slots a party member has left and invents state ("Faerie Fire is
@@ -898,7 +899,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
     const slotEntries = Object.entries(maxSlots).map(([lvl, max]) =>
       `level ${lvl}: ${remaining[Number(lvl)] ?? 0} of ${max} remaining`);
     const slotLine  = slotEntries.length ? slotEntries.join(", ") : "no leveled spell slots";
-    spellInfo = `\nCantrips: ${cantrips}\nPrepared spells: ${prepared}\nSpell slots remaining: ${slotLine}\n(A leveled spell is castable whenever its level shows 1+ remaining above. Cantrips are always free. Only refuse a cast for "out of slots" when that level shows 0 remaining.)`;
+    spellInfo = `\nCantrips (AT-WILL — unlimited, never use a slot, castable even at 0 slots): ${cantrips}\nPrepared spells (use leveled slots): ${prepared}\nSpell slots remaining: ${slotLine}\n(A leveled spell is castable whenever its level shows 1+ remaining above. CANTRIPS ARE ALWAYS CASTABLE — they never use a slot, so NEVER refuse a cantrip for "out of slots" no matter the count, e.g. Eldritch Blast/Fire Bolt at 0 slots is fine. Only refuse a LEVELED cast for "out of slots" when that level shows 0 remaining.)`;
   }
 
   const soloResUsed = Object.entries(char.class_resources ?? {}).filter(([, n]) => (n ?? 0) > 0);
