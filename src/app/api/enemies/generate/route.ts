@@ -27,6 +27,42 @@ export type CampaignEnemy = {
   is_defeated:    boolean;
 };
 
+// Parse the model's enemy array, TOLERATING a truncated response. A large party can
+// push the JSON past max_tokens, cutting the final object mid-property — a plain
+// JSON.parse then throws and the whole request 500s with an EMPTY board. Instead we
+// try a clean parse, and on failure salvage every COMPLETE top-level {…} object
+// (dropping only the partial tail), so combat still gets its cards.
+function parseEnemyObjects(raw: string): Record<string, unknown>[] {
+  const start = raw.indexOf("[");
+  const body  = start >= 0 ? raw.slice(start) : raw;
+  const arr   = body.match(/\[[\s\S]*\]/);
+  if (arr) {
+    try { const a = JSON.parse(arr[0]); if (Array.isArray(a)) return a as Record<string, unknown>[]; } catch { /* salvage below */ }
+  }
+  // Salvage: walk the text, collecting brace-balanced objects and parsing each alone.
+  const objs: Record<string, unknown>[] = [];
+  let depth = 0, objStart = -1, inStr = false, esc = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "{") { if (depth === 0) objStart = i; depth++; }
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        try { objs.push(JSON.parse(body.slice(objStart, i + 1)) as Record<string, unknown>); } catch { /* skip malformed */ }
+        objStart = -1;
+      }
+    }
+  }
+  return objs;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { campaign_id, party, context } = (await req.json()) as {
@@ -39,9 +75,10 @@ export async function POST(req: NextRequest) {
     const partySize = party.length;
     const partyDesc = party.map(c => `${c.name} the Lvl ${c.level} ${c.race} ${c.class}`).join(", ");
     // Encounter size scales with the party (which ranges 1–10). Keep a real floor so
-    // a big party never faces a lone foe, and a ceiling of 10 so it stays balanced
-    // and the scene's enemy cards still fit on screen.
-    const maxEnemies = Math.min(10, Math.max(2, Math.ceil(partySize * 1.5)));
+    // a big party never faces a lone foe, and a ceiling of 12 so a leader + a full
+    // band of minions (the intended large-party structure) all fit as cards without
+    // the prose ever describing more foes than the engine can spawn.
+    const maxEnemies = Math.min(12, Math.max(2, Math.ceil(partySize * 1.5)));
     const minEnemies = Math.min(maxEnemies, Math.max(1, Math.round(partySize * 0.75)));
     const crMin = Math.max(0.125, avgLevel - 2);
     const crMax = avgLevel + 1;
@@ -49,21 +86,25 @@ export async function POST(req: NextRequest) {
     // XP reference by CR for the prompt
     const xpRef = "CR 1/8=25, 1/4=50, 1/2=100, 1=200, 2=450, 3=700, 4=1100, 5=1800, 6=2300, 7=2900, 8=3900";
 
-    const prompt = `You are a D&D 5e encounter designer. Generate an enemy group for this combat.
+    const prompt = `You are a D&D 5e encounter builder. The Dungeon Master has just narrated enemies becoming present for a fight. Turn EXACTLY the foes the DM described into stat-blocked cards — be FAITHFUL to the prose, do NOT rebalance the count.
 
 Party (${partySize} adventurers, avg level ${avgLevel}): ${partyDesc}
-Combat context: ${context.slice(0, 500)}
 
-Generate ${minEnemies}–${maxEnemies} enemies — SCALE THE COUNT to a party of ${partySize}. A solo or duo party should face few foes; a large party of 6–10 should face a sizable group (or a boss with minions) so the fight feels earned. Requirements:
-- CR range: ${crMin}–${crMax}
-- For parties of 5+: use a boss (higher CR) flanked by minions, or more enemies of moderate CR
-- XP must match D&D 5e values: ${xpRef}
-- Total loot gold across all enemies: ${avgLevel * 5}–${avgLevel * 30}gp (split naturally per enemy)
-- Include weapons/items only when they fit the enemy's nature
-- Number identical enemy types (e.g. "Goblin Scout #1", "Goblin Scout #2")
-- portrait_emoji: one emoji that visually represents the creature
+DM narrative — spawn exactly the enemies it describes:
+"""
+${context.slice(0, 1500)}
+"""
 
-Return ONLY a valid JSON array, no markdown, no explanation:
+RULES:
+1. COUNT & IDENTITY COME FROM THE PROSE. Create one entry per distinct enemy the narrative actually describes as present. "Three cultists" → exactly 3 cultists. "A cult leader and two acolytes" → 1 leader + 2 acolytes. Use the same names/types the DM used. NEVER add, drop, merge, or rename enemies to rebalance — the players were told these exact foes appeared, so the cards MUST match.
+2. Number identical types: "Cultist #1", "Cultist #2". Give a named leader/boss its own distinct name (e.g. "Cult Leader"). Hard cap of 12 entries — if the prose implies a horde (e.g. "a dozen rats"), represent up to 12 and stop.
+3. STATS are yours to set, tuned to the party (avg level ${avgLevel}): pick a sensible CR per enemy (minions lower, a leader/boss higher), roughly within CR ${crMin}–${crMax}, and 5e-appropriate max_hp / ac / attack_bonus / damage_dice for that creature at that CR.
+4. ONLY if the narrative does not clearly describe any specific enemies, fall back to inventing a fitting group of ${minEnemies}–${maxEnemies} foes for a party of ${partySize}.
+5. XP must match D&D 5e by CR: ${xpRef}
+6. Total loot gold across all enemies: ${avgLevel * 5}–${avgLevel * 30}gp (split naturally; only give items/weapons that fit the enemy).
+7. portrait_emoji: one emoji that visually represents the creature.
+
+Return ONLY a valid JSON array, no markdown, no explanation. Schema per enemy:
 [{
   "name": "Orc Warchief",
   "enemy_type": "Humanoid (orc)",
@@ -80,15 +121,16 @@ Return ONLY a valid JSON array, no markdown, no explanation:
 
     const res = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 900,
+      // Scale the budget with the enemy ceiling — each stat-block object is ~140–220
+      // tokens, so a large party (up to 12 foes) needs far more than the old flat
+      // 1500, which truncated the JSON mid-array and 500'd the whole request.
+      max_tokens: Math.min(4096, 700 + maxEnemies * 260),
       messages:   [{ role: "user", content: prompt }],
     });
 
-    const raw   = res.content[0].type === "text" ? res.content[0].text : "";
-    const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("No JSON array in response");
-
-    const parsed = JSON.parse(match[0]) as Partial<CampaignEnemy & { loot: object }>[];
+    const raw    = res.content[0].type === "text" ? res.content[0].text : "";
+    const parsed = parseEnemyObjects(raw) as Partial<CampaignEnemy & { loot: object }>[];
+    if (parsed.length === 0) throw new Error("No parseable enemies in response");
     const rows = parsed.map(e => ({
       campaign_id,
       name:           String(e.name          ?? "Unknown Enemy"),

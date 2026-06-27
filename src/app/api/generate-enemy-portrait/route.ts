@@ -78,18 +78,40 @@ export async function POST(req: NextRequest) {
       return Response.json({ portraitUrl: publicUrl });
     }
 
-    // Generate with DALL-E
+    // Generate the portrait — retry transient failures (429 rate-limit, 5xx,
+    // timeouts) the same way character portraits do, so a momentary blip no longer
+    // leaves the enemy with no image (it previously failed silently to null).
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const imgRes = await openai.images.generate({
-      model:   "gpt-image-1",
-      prompt:  buildEnemyPrompt(enemyType, cr),
-      size:    "1024x1024",
-      quality: "medium",
-      n:       1,
-    });
-
-    const b64 = imgRes.data?.[0]?.b64_json;
-    if (!b64) return Response.json({ portraitUrl: null });
+    let b64: string | undefined;
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const imgRes = await openai.images.generate({
+          model:   "gpt-image-1",
+          prompt:  buildEnemyPrompt(enemyType, cr),
+          size:    "1024x1024",
+          quality: "medium",
+          n:       1,
+        });
+        b64 = imgRes.data?.[0]?.b64_json;
+        if (b64) break;
+        lastErr = new Error("No image data returned from OpenAI");
+      } catch (e: unknown) {
+        lastErr = e;
+        const err = e as { status?: number; message?: string };
+        const status = err?.status ?? 0;
+        const msg = err?.message ?? "";
+        const transient = status === 429 || (status >= 500 && status < 600) || /rate limit|timeout|timed out|ECONNRESET|fetch failed|network/i.test(msg);
+        if (!transient || attempt === 4) break;
+        const hint = /try again in ([\d.]+)s/i.exec(msg);
+        const waitMs = Math.min(20000, Math.ceil(((hint ? parseFloat(hint[1]) : 2 * attempt) + 1) * 1000));
+        await new Promise(r => setTimeout(r, waitMs));
+      }
+    }
+    if (!b64) {
+      console.error("[generate-enemy-portrait] generation failed:", lastErr instanceof Error ? lastErr.message : lastErr);
+      return Response.json({ portraitUrl: null });
+    }
 
     const { error } = await supabase.storage
       .from("portraits")

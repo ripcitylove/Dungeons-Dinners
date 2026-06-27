@@ -252,6 +252,13 @@ const POOL_LABELS: Record<string, string> = {
 
 const MAX_SKIP = 6;
 
+// Always-available self-hosted tracks (in /public) used as the last-resort fallback
+// when the archive.org CDN is flaky (intermittent ERR_HTTP2_PROTOCOL_ERROR). Rather
+// than dead-ending to "music unavailable", the player drops to one of these so the
+// soundtrack keeps playing.
+const SELF_HOSTED_MUSIC = ["/Tavern_Theme.mp3", "/Royal_Coupling.mp3"];
+const isSelfHosted = (src: string) => SELF_HOSTED_MUSIC.some(p => src.endsWith(p));
+
 // Volume ratio for background music when this ambiance pool is active (0=mute, 1=full).
 // Every pool now plays pure soundscape (no melodic content), so music can layer at
 // full volume without two scores fighting each other. Each value is a gentle taper
@@ -411,11 +418,15 @@ export function MusicPlayer() {
   const ambianceFade    = useRef<ReturnType<typeof setInterval> | null>(null);
   const musicQueue      = useRef<string[]>([]);
   const musicErrors     = useRef(0);
+  // The src we last retried in-place, so a transient CDN blip retries the SAME track
+  // once before we give up on it and move to the next.
+  const musicRetriedSrc = useRef<string>("");
   const lastSceneArgs   = useRef<{ scene: string; type?: string; mods?: string[] } | null>(null);
   // Ambiance pool state
   const activeAmbiancePool = useRef<string>("");
   const ambianceQueueRef   = useRef<string[]>([]);
   const ambianceErrors     = useRef(0);
+  const ambianceRetriedSrc = useRef<string>("");
   const isDucked               = useRef(false);
   const duckFadeTimer          = useRef<number | null>(null);
   const musicMutedRef          = useRef(false);
@@ -829,14 +840,35 @@ export function MusicPlayer() {
         ref={audioRef}
         preload="none"
         loop
-        onPlay={()  => { setPlaying(true); setLoadError(false); musicErrors.current = 0; }}
+        onPlay={()  => { setPlaying(true); setLoadError(false); musicErrors.current = 0; musicRetriedSrc.current = ""; }}
         onPause={()  => { setPlaying(false); }}
         onEnded={() => playNextMusic()}
         onError={() => {
+          const audio  = audioRef.current;
+          const failed = audio?.src ?? "";
+          // 1) Transient blip (e.g. ERR_HTTP2_PROTOCOL_ERROR) → retry the SAME track
+          //    once after a short beat. Most archive.org hiccups clear immediately and
+          //    we keep the track we wanted instead of jumping to a different one.
+          if (failed && !isSelfHosted(failed) && musicRetriedSrc.current !== failed) {
+            musicRetriedSrc.current = failed;
+            setTimeout(() => {
+              const a = audioRef.current;
+              if (a && a.src === failed) { a.load(); a.play().catch(() => {}); }
+            }, 500);
+            return;
+          }
+          musicRetriedSrc.current = "";
           musicErrors.current++;
           if (musicErrors.current >= MAX_SKIP) {
-            setPlaying(false);
-            setLoadError(true);
+            // Don't dead-end on a flaky CDN — drop to a guaranteed self-hosted track so
+            // the soundtrack keeps playing. Only surface the error if even that fails.
+            if (audio && !isSelfHosted(failed)) {
+              musicErrors.current = 0;
+              loadAndPlay(SELF_HOSTED_MUSIC[0]);
+            } else {
+              setPlaying(false);
+              setLoadError(true);
+            }
           } else {
             setTimeout(() => playNextMusic(), 600);
           }
@@ -846,11 +878,22 @@ export function MusicPlayer() {
         ref={ambianceRef}
         preload="none"
         loop
-        onCanPlayThrough={() => { if (ambianceRef.current?.src) fadeInAmbiance(); }}
+        onCanPlayThrough={() => { if (ambianceRef.current?.src) { ambianceRetriedSrc.current = ""; fadeInAmbiance(); } }}
         // No onEnded rotation — `loop` keeps the same track playing forever. The
         // ambient track only swaps when the scene's pool changes (handled in
         // playNextAmbiance) or when the user picks a different mood manually.
         onError={() => {
+          const failed = ambianceRef.current?.src ?? "";
+          // Transient blip → retry the same soundscape once before rotating to another.
+          if (failed && ambianceRetriedSrc.current !== failed) {
+            ambianceRetriedSrc.current = failed;
+            setTimeout(() => {
+              const a = ambianceRef.current;
+              if (a && a.src === failed) a.load();
+            }, 600);
+            return;
+          }
+          ambianceRetriedSrc.current = "";
           ambianceErrors.current++;
           if (ambianceErrors.current < MAX_SKIP && activeAmbiancePool.current) {
             setTimeout(() => playNextAmbiance(activeAmbiancePool.current), 800);

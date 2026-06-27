@@ -6,11 +6,12 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
 import { getTheme, onThemeChange } from "../../../lib/theme";
+import { setFontScaleGlobal, onFontScaleChange } from "../../../lib/fontScale";
 import { D20Icon as BrandD20 } from "../../../components/D20Icon";
 import "../../globals.css";
 import DiceRoller, { D20Icon } from "../../../components/DiceRoller";
 import type { StateChange } from "../../api/chat-state/route";
-import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel, getSpellLevelLoose, requiresConcentration, getClassSpellsAtLevel } from "../../../lib/spellData";
+import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS_STAT_GUIDES, getTierStyle, CANTRIPS, LEVEL1_SPELLS, getSpellLevel, getSpellLevelLoose, isCantrip, requiresConcentration, getClassSpellsAtLevel } from "../../../lib/spellData";
 import {
   getItemByName, getAllCatalogItems, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
@@ -1246,6 +1247,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // apply the saved theme on mount so the global toggle flips in one click.
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   useEffect(() => { setTheme(getTheme()); return onThemeChange(setTheme); }, []);
+  // Reading font size is also driven by the global Tools menu ("Text Size"), so the
+  // campaign page reacts to changes live — not just via its own inline A−/A+ buttons.
+  // (chatFontSize already lazily inits from the same key, so we only subscribe here.)
+  useEffect(() => onFontScaleChange(setChatFontSize), []);
 
   // Resizable pane widths — persisted across sessions
   const [chatPaneWidth,    setChatPaneWidth]    = useState<number>(380);
@@ -2989,6 +2994,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       change = { ...change, hp_delta: 0 };
     }
     pendingHpDeltaRef.current = 0; // always clear after deciding
+    // Deterministic [HP:Name:±N] tags are authoritative and applied by the fast-HP
+    // path (for EVERY party member, not just the actor). If the narrative carried
+    // an [HP] tag for THIS character, that path already handled it — skip the slow
+    // extractor's hp_delta so multi-target rounds (an enemy hitting several PCs in
+    // one response, which the single-target extractor can't represent) aren't
+    // double-counted or mis-attributed. No tag → extractor remains the fallback.
+    if (change.hp_delta !== 0 && narrativeContext && parseHpTag(narrativeContext, char.name.split(" ")[0]) !== 0) {
+      change = { ...change, hp_delta: 0 };
+    }
+
+    // Cantrip guard: the chat-state extractor (Haiku) occasionally mis-counts a
+    // cantrip (e.g. Fire Bolt, Eldritch Blast, Sacred Flame) as a leveled spell and
+    // returns spell_slots_used > 0. Cantrips are at-will and NEVER consume a slot,
+    // so we authoritatively zero the charge whenever the spell actually cast was a
+    // cantrip — identified two ways, in priority order:
+    //   1. The deterministic [CAST] tags — if every tagged cast is level 0, the
+    //      [CAST] handler consumed no slot, so the extractor's count is spurious.
+    //   2. No [CAST] tag (the DM omitted it): fall back to the extractor's own
+    //      spell_cast_name and check it against the authoritative cantrip table.
+    //      This catches the Fire-Bolt-with-no-tag case that layer 1 can't see.
+    if (change.spell_slots_used > 0) {
+      const casts = narrativeContext ? parseCastTags(narrativeContext) : [];
+      const allTaggedCastsAreCantrips = casts.length > 0 && casts.every(c => getSpellLevelLoose(c.spell) === 0);
+      const extractorSawCantrip = casts.length === 0 && !!change.spell_cast_name && isCantrip(change.spell_cast_name);
+      if (allTaggedCastsAreCantrips || extractorSawCantrip) {
+        change = { ...change, spell_slots_used: 0, spell_slot_level: 0 };
+      }
+    }
 
     // Spell slots: ONLY the acting character (the caster) consumes slots.
     // Observers learn about other players' slot changes via character_sync broadcast from the caster's client.
@@ -3032,7 +3065,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // the acting player; "Thorin finds a potion" lands on Thorin. Without this, items the DM awards
     // to "you" silently disappear because target_name is null.
     const newGold    = isEffectiveTarget ? Math.max(0, (char.inventory?.gold ?? 0) + change.gold_delta) : (char.inventory?.gold ?? 0);
-    const newItems   = isEffectiveTarget ? [...(char.inventory?.items ?? []).filter(i => !change.items_lost.includes(i)), ...change.items_gained] : (char.inventory?.items ?? []);
+    // Remove lost items CASE-INSENSITIVELY, one inventory entry per lost name — the
+    // DM/extractor often returns a different casing than what's stored ("potion of
+    // healing" vs "Potion of Healing"), and an exact-case filter silently failed to
+    // consume the item (so a used potion stayed in the bag).
+    const lostQueue  = change.items_lost.map(s => s.trim().toLowerCase());
+    const keptItems  = (char.inventory?.items ?? []).filter(i => {
+      const idx = lostQueue.indexOf(i.trim().toLowerCase());
+      if (idx >= 0) { lostQueue.splice(idx, 1); return false; }
+      return true;
+    });
+    const newItems   = isEffectiveTarget ? [...keptItems, ...change.items_gained] : (char.inventory?.items ?? []);
     const newWeapons = isEffectiveTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
 
     // Status effects — unconscious tracks HP for any effective target; named conditions require explicit target.
@@ -3104,16 +3147,41 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (shouldApplySlots && change.spell_slots_used > 0 && !hadPendingCast) parts.push(`${change.spell_slots_used} spell slot${change.spell_slots_used > 1 ? "s" : ""} used`);
     if (isExplicitTarget && newHp === 0 && adjustedHpDelta < 0) parts.push("💀 UNCONSCIOUS");
 
-    // XP + level up
+    // XP — split EVENLY across all party members who are still ALIVE. A member who
+    // is unconscious or dead earns no share for that instance of combat (per the
+    // product rule). Each alive member gets an equal floor-share; the acting char's
+    // share is applied inline here, the other members in a pass after the write.
+    const isMemberAlive = (m: Character, hp: number) =>
+      hp > 0 && !(m.status_effects ?? []).some(s => {
+        const n = s.toLowerCase();
+        return n.startsWith("unconscious") || n.startsWith("dead");
+      });
+    let xpShare = 0;
+    if (change.xp_award > 0) {
+      const aliveCount = campaignPartyRef.current.filter(m =>
+        m.id === char.id ? isMemberAlive(char, newHp) : isMemberAlive(m, m.hp)).length;
+      if (aliveCount > 0) {
+        // COMBAT XP is SPLIT across the party — and encounters scale to party size
+        // (see ENCOUNTER SCALING), so per-member progression stays balanced regardless
+        // of headcount. NON-combat XP — skill checks, traps, exploration, story/quest
+        // beats — is MILESTONE-style: every alive member earns the FULL amount, so a
+        // large party isn't penalised on out-of-combat progression (a picked lock is
+        // worth the same to each hero whether there are two of them or six).
+        const inCombat = enemiesRef.current.some(e => !e.is_defeated);
+        xpShare = inCombat ? Math.floor(change.xp_award / aliveCount) : change.xp_award;
+      }
+    }
+
+    // XP + level up — the acting char's share (only if they're alive).
     let newXp    = char.xp ?? 0;
     let newLevel = char.level;
     let newMaxHp = char.max_hp;
     let leveledUp = false;
 
     let totalHpGain = 0;
-    if (change.xp_award > 0) {
-      newXp += change.xp_award;
-      parts.push(`+${change.xp_award} XP`);
+    if (xpShare > 0 && isMemberAlive(char, newHp)) {
+      newXp += xpShare;
+      parts.push(`+${xpShare} XP`);
       // Loop (not a single if) so one large award can cross MULTIPLE thresholds
       // at once and grant every level earned, accumulating HP for each.
       while (newXp >= getXpToNextLevel(newLevel) && newLevel < 10) {
@@ -3207,6 +3275,36 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setLogEntries(prev => [...prev, { id: makeLogId("state"), timestamp: new Date(), role: "system", content: `⚡ ${notice}` }]);
     }
 
+    // Apply each OTHER alive party member's equal XP share (the acting char got
+    // theirs above). Downed/dead members are skipped. Each member levels up against
+    // their own class/CON; we persist + broadcast so every card updates live.
+    if (xpShare > 0) {
+      for (const m of campaignPartyRef.current) {
+        if (m.id === char.id) continue;            // acting char already handled
+        if (!isMemberAlive(m, m.hp)) continue;     // no XP for the downed
+        let mXp = (m.xp ?? 0) + xpShare;
+        let mLevel = m.level, mHpGain = 0, mLeveled = false;
+        while (mXp >= getXpToNextLevel(mLevel) && mLevel < 10) {
+          mLevel++;
+          const hd = CLASS_HIT_DIE[m.class] ?? 8;
+          mHpGain += Math.floor(hd / 2) + 1 + Math.floor((m.constitution - 10) / 2);
+          mLeveled = true;
+        }
+        const mMaxHp = mLeveled ? m.max_hp + mHpGain : m.max_hp;
+        const mHp    = mLeveled ? Math.min(mMaxHp, m.hp + mHpGain) : m.hp;
+        const mUpdated: Character = { ...m, xp: mXp, level: mLevel, max_hp: mMaxHp, hp: mHp };
+        setCampaignParty(prev => prev.map(c => c.id === m.id ? mUpdated : c));
+        campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === m.id ? mUpdated : c);
+        if (m.id === characterRef.current?.id) { setCharacter(mUpdated); characterRef.current = mUpdated; }
+        const mDb: Record<string, unknown> = { xp: mXp };
+        if (mLeveled) { mDb.level = mLevel; mDb.max_hp = mMaxHp; mDb.hp = mHp; }
+        charWrite(m.id, mDb);
+        channelRef.current?.send({ type: "broadcast", event: "character_sync",
+          payload: { charId: m.id, xp: mXp, ...(mLeveled && { level: mLevel, max_hp: mMaxHp, hp: mHp }) } });
+        if (mLeveled) setLogEntries(prev => [...prev, { id: makeLogId("state"), timestamp: new Date(), role: "system", content: `⚡ ${m.name.split(" ")[0]} ⬆ LEVEL UP → ${mLevel}!` }]);
+      }
+    }
+
     // Enrich DM-awarded loot that isn't in the static catalog so players see real
     // tooltips and values for invented items. Only the recipient enriches —
     // observers get the meta via the second character_sync broadcast below.
@@ -3285,6 +3383,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // client and prevents the chat-state extractor from phantom-charging a
     // declined cast (e.g. a rejected Identify burning a spell slot).
     if (/\[NO-?TURN\]/i.test(narrative)) return;
+    // OPTIMIZATION — skip the chat-state extractor (a Haiku round-trip) on turns that
+    // CANNOT have changed state: pure narration / dialogue / scene-setting. We force
+    // the call to run on ANY mechanical signal so nothing is ever dropped:
+    //   • a deterministic tag ([HP]/[GOLD]/[CAST]/[XP]/…)            → run
+    //   • active enemies (combat awards XP every round + enemy hits land HP) → run
+    //   • a state keyword (damage/heal/gold/loot/level/condition/…)  → run
+    //   • any digit (damage/coin/XP amounts almost always carry one) → run
+    // Only when NONE of these hold is the turn inert — the extractor would return
+    // ZERO_CHANGE anyway, so skipping it saves the call with no gameplay effect.
+    const hasStateTag = /\[[A-Za-z][A-Za-z-]*[:\]]/.test(narrative);
+    const inCombat    = enemiesRef.current.some(e => !e.is_defeated);
+    const STATE_KW = /\b(damage|hp|heals?|healed|healing|hit|hits|strikes?|struck|wound|wounded|bloodied|slain|kills?|killed|dies?|dead|falls?|collapses?|gold|coins?|gp|silver|copper|loot|treasure|reward|potion|scroll|xp|experience|levels?\s*up|poison|cursed?|bless(?:ed)?|inspir|rage|stunned|prone|charmed|frightened|paralyz|grappled|restrained|takes?|gains?|finds?|picks?\s*up|drops?|claims?|grabs?|spell|casts?|slot|gives?\s+you)\b/i;
+    if (!hasStateTag && !inCombat && !/\d/.test(narrative) && !STATE_KW.test(narrative)) {
+      return; // inert turn — nothing for the extractor to find
+    }
     const econ = parseEconomyTags(narrative);
     // Concentration is classified deterministically from the spell cast (see the
     // [CAST] handler in sendToAI). If spells were cast this turn but NONE require
@@ -3304,7 +3417,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       items_lost:     econ.lootTagged ? econ.items_lost     : [],
       weapons_gained: econ.lootTagged ? econ.weapons_gained : [],
       xp_award:       econ.xpTagged   ? econ.xp_award        : 0,
-      status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0, spell_slot_level: 0,
+      status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0, spell_slot_level: 0, spell_cast_name: null,
     });
     fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative }) })
       .then(r => r.json())
@@ -3721,7 +3834,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         body:    JSON.stringify({ text: speech, voice: selectedVoiceRef.current ?? "chronicler", ...(fresh && { fresh: true }) }),
       });
       if (narGenerationRef.current !== myGen) return;
-      if (!res.ok) {
+      // 204 No Content = "nothing worth narrating" (too short / no speakable
+      // text). Expected and frequent — skip silently, never parse a body.
+      if (res.status === 204) {
+        narSlotsRef.current[slot] = "SKIP";
+      } else if (!res.ok) {
         if (res.status === 402) {
           setNarrationEnabled(false);
           narrationEnabledRef.current = false;
@@ -4256,6 +4373,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (/\b(?:the\s+)?(?:enemy|enemies|monster|creature|foe|beast|it|they)\s+(?:[\w,'’-]+\s+){0,3}rolls\b/i.test(scope)) return true;
     // A roll whose stated purpose is to strike a PLAYER → it's the enemy's roll.
     if (/\brolls?\b[^.!?]{0,40}\bto\s+(?:hit|attack|strike)\s+(?:you|your|the\s+(?:party|group))\b/i.test(scope)) return true;
+    // The DM resolving a save/check ITSELF ("I roll his DEX save: 13 — passes DC 12")
+    // is NOT a player roll. When a player casts an OFFENSIVE save spell (Sacred Flame,
+    // Fireball…), the DM adjudicates the enemy's save in prose — but "roll ... save"
+    // otherwise reads as a d20 request, handing the player a PHANTOM d20 for the
+    // enemy's save (the Sacred-Flame bug). Treat a first-person DM self-roll as the
+    // DM's, UNLESS the response also ends with an explicit player imperative ("…Roll a d20.").
+    const dmSelfRoll       = /\bI(?:'ll|\s+will)?\s+roll\b[^.!?]*\b(?:save|saving throw|check|DC)\b/i.test(scope);
+    const endsWithPlayerRoll = /\broll\s+(?:a\s+)?(?:\d+)?d\d+\s*\.?\s*$/i.test(narrative.trim());
+    if (dmSelfRoll && !endsWithPlayerRoll) return true;
     return false;
   }, []);
 
@@ -4643,6 +4769,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setRequiredRollMode(detectedRollMode !== "normal" ? detectedRollMode : null);
       setRollRequestedUserId(targetUserId);
       rollRequestedUserIdRef.current = targetUserId;
+      // No player roll this response (the DM resolved an enemy's roll, or a save-based
+      // cantrip like Sacred Flame that the DM adjudicates itself) → force-close any
+      // dice panel left open from a prior prompt. Without this, an already-open panel
+      // re-renders with a null die type, showing a PHANTOM d20 that can be submitted
+      // against a character whose turn has already passed (the Sacred-Flame bug).
+      if (detectedDieType === null) {
+        setShowDice(false);
+        setPendingDiceShow(false);
+      }
       // Capture the DM's roll-request sentence for the dice screen header
       if (validRollTarget || detectedDieType) {
         const rollSents = full.trim().split(/(?<=[.!?…])\s+/);
@@ -5226,6 +5361,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             charWriteRef.current?.(actingChar.id, { hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) });
             channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: actingChar.id, hp: newHp, ...(fastTempHp !== fastTempHp0 && { class_resources: fastRes }), ...(statusChanged && { status_effects: newStatuses }) } });
           }
+        }
+      }
+
+      // Fast HP detection for NON-acting party members — in couch co-op one client
+      // owns several seats, so an enemy can damage (or an ally can heal) a player
+      // OTHER than the actor in the same response. The acting char is handled above;
+      // here we apply every other member's [HP:Name:±N] tag so a 3–4 person party
+      // where multiple PCs are hit in one round all update live. applyStateChange
+      // skips the extractor's hp_delta whenever an [HP] tag exists (see there), so
+      // this never double-counts.
+      if (!isOpeningScene) {
+        const actingId = characterRef.current?.id;
+        for (const member of campaignPartyRef.current) {
+          if (member.id === actingId) continue;
+          const fn = member.name.split(" ")[0];
+          const mDelta = parseHpTag(full, fn);
+          if (mDelta === 0) continue;
+          if (damageTagShouldBeSuppressed(full, fn, mDelta)) {
+            console.warn(`[fast HP] Suppressed [HP:${fn}:${mDelta}] — narrative shows ${fn} as attacker, not receiver`);
+            continue;
+          }
+          const ib = computeInventoryBonuses(member.inventory?.items ?? [], member.inventory?.weapons ?? []);
+          const tHp0 = member.class_resources?.temp_hp ?? 0;
+          let tHp = tHp0, dd = mDelta;
+          if (mDelta < 0 && tHp > 0) { const dmg = Math.abs(mDelta); const ab = Math.min(tHp, dmg); tHp -= ab; dd = -(dmg - ab); }
+          const newHp = Math.max(0, Math.min(member.max_hp + ib.hpMaxAdd, member.hp + dd));
+          const res = tHp !== tHp0 ? { ...(member.class_resources ?? {}), temp_hp: tHp } : (member.class_resources ?? {});
+          const baseSt = member.status_effects ?? [];
+          const newSt = reconcileUnconscious(baseSt, newHp, dd);
+          const stChanged = newSt !== baseSt;
+          setCampaignParty(prev => prev.map(c => c.id === member.id ? { ...c, hp: newHp, class_resources: res, ...(stChanged && { status_effects: newSt }) } : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === member.id ? { ...c, hp: newHp, class_resources: res, ...(stChanged && { status_effects: newSt }) } : c);
+          charWriteRef.current?.(member.id, { hp: newHp, ...(tHp !== tHp0 && { class_resources: res }), ...(stChanged && { status_effects: newSt }) });
+          channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: member.id, hp: newHp, ...(tHp !== tHp0 && { class_resources: res }), ...(stChanged && { status_effects: newSt }) } });
         }
       }
 
@@ -6575,7 +6744,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             : cnt <= 7 ? "min(88px, 10vw)"
             : "min(74px, 8.5vw)";
           return (
-          <div style={{ position: "absolute", bottom: "60px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: cnt >= 6 ? "7px" : "10px", zIndex: 6, maxWidth: "calc(100% - 28px)", overflowX: "auto", overflowY: "hidden", padding: "4px 4px 6px", justifyContent: "center" }}>
+          <div style={{ position: "absolute", bottom: "60px", left: "50%", transform: "translateX(-50%)", display: "flex", flexWrap: "wrap", gap: cnt >= 6 ? "7px" : "10px", rowGap: cnt >= 6 ? "7px" : "9px", zIndex: 6, maxWidth: "calc(100% - 28px)", maxHeight: "calc(100% - 96px)", padding: "4px 4px 6px", justifyContent: "center", alignContent: "flex-end" }}>
             {visEnemies.map(e => {
               const isTargeted = targetedEnemyId === e.id;
               const cond       = e.condition ?? "healthy";
@@ -6686,14 +6855,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           {/* Font size controls — hidden at narrow widths */}
           <div style={{ display: chatPaneWidth >= 420 ? "flex" : "none", alignItems: "center", gap: "3px", flexShrink: 0 }}>
             <button
-              onClick={() => { const v = Math.max(0.65, parseFloat((chatFontSize - 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
+              onClick={() => setChatFontSize(setFontScaleGlobal(chatFontSize - 0.05))}
               disabled={chatFontSize <= 0.65}
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize <= 0.65 ? "not-allowed" : "pointer", opacity: chatFontSize <= 0.65 ? 0.35 : 1, fontSize: "0.72rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
               onMouseEnter={e => { if (chatFontSize > 0.65) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "#64748b"; hideTooltip(); }}
             >A−</button>
             <button
-              onClick={() => { const v = Math.min(1.35, parseFloat((chatFontSize + 0.05).toFixed(2))); setChatFontSize(v); localStorage.setItem("dnd_chat_font_size", String(v)); }}
+              onClick={() => setChatFontSize(setFontScaleGlobal(chatFontSize + 0.05))}
               disabled={chatFontSize >= 1.35}
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "6px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: chatFontSize >= 1.35 ? "not-allowed" : "pointer", opacity: chatFontSize >= 1.35 ? 0.35 : 1, fontSize: "1rem", fontWeight: "bold", color: "#64748b", transition: "all 0.15s" }}
               onMouseEnter={e => { if (chatFontSize < 1.35) { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#c4b5fd"; } showTooltip(tipBox(MECHANIC_TIPS.FONT_SIZE.title, MECHANIC_TIPS.FONT_SIZE.body, "#64748b"), e); }}
@@ -8524,12 +8693,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <span style={{ fontSize: fs(0.78), color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }}>Currency</span>
                     </div>
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: fs(0.82) }}>
+                      {/* Gold is the only currency the game tracks — pp/ep/sp/cp were
+                          dead fields that always read 0 (looted silver/copper is
+                          converted straight to gold), so only gold is shown. */}
                       {([
-                        { key: "pp" as const, color: "#e2e8f0", amount: character.inventory?.pp ?? 0 },
                         { key: "gp" as const, color: "#fbbf24", amount: character.inventory?.gold ?? 0 },
-                        { key: "ep" as const, color: "#34d399", amount: character.inventory?.ep ?? 0 },
-                        { key: "sp" as const, color: "#94a3b8", amount: character.inventory?.sp ?? 0 },
-                        { key: "cp" as const, color: "#f97316", amount: character.inventory?.cp ?? 0 },
                       ]).map(({ key, color, amount }) => (
                         <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "2px", opacity: amount === 0 ? 0.4 : 1, cursor: "help" }}
                           onMouseEnter={e => showTooltip(
@@ -8935,8 +9103,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           overflow:hidden box. Gated on `sessionStarted` so it never
           appears during the campaign loading screen — only after the
           narrator UI has actually surfaced. Hides instantly when
-          `showChatHint` flips to false (the player clicks "Got it"). */}
-      <ChatHintArrow show={showChatHint && sessionStarted} hintRef={chatHintRef} />
+          `showChatHint` flips to false (the player clicks "Got it").
+          It also only belongs on the MAIN play screen: any modal/overlay
+          (dice roller, roll-pending state, portrait, combat log, backstory)
+          covers the chat input, so suppress the floating arrow while one is
+          open. It is NOT dismissed — it re-appears on the play screen until
+          the player actually hushes it with "Got it". */}
+      <ChatHintArrow
+        show={showChatHint && sessionStarted && !showDice && !pendingDiceShow && !portraitModal && !combatLogOpen && !showBackstory}
+        hintRef={chatHintRef}
+      />
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }

@@ -2,9 +2,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getTheme, setThemeGlobal, onThemeChange, type Theme } from "../lib/theme";
+import { getFontScale, setFontScaleGlobal, onFontScaleChange, FONT_DEFAULT, FONT_STEP } from "../lib/fontScale";
 
 const STEPS = [1, 1.25, 1.5, 1.75] as const;
 const STORAGE_KEY = "dnd_tooltip_font_scale";
+// Reading font-size steps for the always-visible "Text Size" menu control.
+const FONT_STEPS = [0.8, 0.9, 1.0, 1.1, 1.25] as const;
 
 const MENU_HIDE_CLASS = "tooltip-size-toolbar";
 
@@ -17,6 +20,7 @@ export function TooltipSizeControl() {
   const [open, setOpen]       = useState(false);
   const [saving, setSaving]   = useState(false);
   const [theme, setTheme]     = useState<Theme>("dark");
+  const [fontScale, setFontScale] = useState<number>(() => getFontScale());
   const router   = useRouter();
   const pathname = usePathname();
   const isCampaign = pathname?.startsWith("/campaign/");
@@ -39,6 +43,17 @@ export function TooltipSizeControl() {
   }, []);
 
   const toggleTheme = () => setThemeGlobal(theme === "dark" ? "light" : "dark");
+
+  // Reading font size lives here too so it's reachable even when the campaign's
+  // inline A−/A+ buttons are hidden (narrow chat pane). Cycle through readable
+  // steps; each change broadcasts so the campaign page updates its text live.
+  useEffect(() => onFontScaleChange(setFontScale), []);
+  const cycleFont = () => {
+    const i = FONT_STEPS.findIndex(s => Math.abs(s - fontScale) < FONT_STEP / 2);
+    const next = FONT_STEPS[(i + 1) % FONT_STEPS.length];
+    setFontScale(setFontScaleGlobal(next));
+  };
+  const fontIsDefault = Math.abs(fontScale - FONT_DEFAULT) < FONT_STEP / 2;
 
   const cycle = () => {
     const next = (stepIdx + 1) % STEPS.length;
@@ -148,6 +163,23 @@ export function TooltipSizeControl() {
           <span style={{ display: "flex", gap: "3px" }}>
             {STEPS.map((_, i) => (
               <span key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: i <= stepIdx ? (isDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
+            ))}
+          </span>
+        </button>
+
+        {/* Reading text size — always reachable here, even when the campaign's
+            inline A−/A+ controls are hidden on a narrow chat pane. */}
+        <button
+          onClick={cycleFont}
+          title={`Reading text size: ${Math.round(fontScale / FONT_DEFAULT * 100)}% — click to ${fontScale >= FONT_STEPS[FONT_STEPS.length - 1] - FONT_STEP / 2 ? "reset to smallest" : "increase"}`}
+          tabIndex={open ? 0 : -1}
+          style={menuItemStyle(!fontIsDefault)}
+        >
+          <span style={{ fontSize: "0.95rem", lineHeight: 1, fontWeight: 800 }}>A</span>
+          <span style={{ flex: 1, fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>Text Size</span>
+          <span style={{ display: "flex", gap: "3px" }}>
+            {FONT_STEPS.map((s, i) => (
+              <span key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: (fontScale >= s - FONT_STEP / 2) ? (fontIsDefault ? "#475569" : "#8b5cf6") : "rgba(255,255,255,0.1)", transition: "background 0.2s" }} />
             ))}
           </span>
         </button>

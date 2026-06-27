@@ -164,6 +164,33 @@ Return ONLY valid JSON, no other text:
 {"type":"<scene_type>","shouldChange":<bool>,"moved":<bool>,"description":"<2–3 evocative sentences — specific lighting, focal objects, dramatic details unique to this moment>","modifiers":["<word1>","<word2>","<word3>"],"moment":{"tag":"<3_to_5_word_snake_case_unique_id>","description":"<1–2 vivid illustrative sentences of exactly what to depict>"} or null}`;
 }
 
+// Generate one image with the same transient-failure retry the character-portrait
+// route uses (429 rate-limit, 5xx, timeouts). Scene/moment images previously fired
+// a single call and failed silently to no-image on a momentary blip.
+async function genImageB64(openai: OpenAI, prompt: string, size: "1024x1024" | "1536x1024"): Promise<string | null> {
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await openai.images.generate({ model: "gpt-image-1", prompt, size, quality: "medium", n: 1 });
+      const b64 = res.data?.[0]?.b64_json;
+      if (b64) return b64;
+      lastErr = new Error("No image data returned from OpenAI");
+    } catch (e: unknown) {
+      lastErr = e;
+      const err = e as { status?: number; message?: string };
+      const status = err?.status ?? 0;
+      const msg = err?.message ?? "";
+      const transient = status === 429 || (status >= 500 && status < 600) || /rate limit|timeout|timed out|ECONNRESET|fetch failed|network/i.test(msg);
+      if (!transient || attempt === 4) break;
+      const hint = /try again in ([\d.]+)s/i.exec(msg);
+      const waitMs = Math.min(20000, Math.ceil(((hint ? parseFloat(hint[1]) : 2 * attempt) + 1) * 1000));
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+  console.error("[detect-scene] image generation failed:", lastErr instanceof Error ? lastErr.message : lastErr);
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   let currentScene = "wilderness";
   try {
@@ -262,10 +289,7 @@ export async function POST(req: NextRequest) {
           // Truly new scene type with no cached image — generate a bespoke background
           const openai     = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
           const fullPrompt = buildPrompt(sceneType, modifiers, description, isCombat, party, enemies);
-          const imgResponse = await openai.images.generate({
-            model: "gpt-image-1", prompt: fullPrompt, size: "1536x1024", quality: "medium", n: 1,
-          });
-          const b64 = imgResponse.data?.[0]?.b64_json;
+          const b64 = await genImageB64(openai, fullPrompt, "1536x1024");
           if (b64) {
             const storageKey = `${sceneName}.png`;
             const { error: uploadError } = await supabase.storage
@@ -292,10 +316,7 @@ export async function POST(req: NextRequest) {
         // Generate a focused story illustration (1024×1024, portrait)
         const openai        = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         const momentPrompt  = buildMomentPrompt(moment.description, sceneType);
-        const momentRes     = await openai.images.generate({
-          model: "gpt-image-1", prompt: momentPrompt, size: "1024x1024", quality: "medium", n: 1,
-        });
-        const momentB64 = momentRes.data?.[0]?.b64_json;
+        const momentB64 = await genImageB64(openai, momentPrompt, "1024x1024");
         if (momentB64) {
           const momentKey2 = `moment_${moment.tag}.png`;
           const { error: momentUploadErr } = await supabase.storage

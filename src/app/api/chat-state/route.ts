@@ -16,6 +16,7 @@ export type StateChange = {
   status_effects_lost:   string[];
   spell_slots_used:      number;
   spell_slot_level:      number;
+  spell_cast_name:       string | null;
 };
 
 const ZERO_CHANGE: StateChange = {
@@ -23,7 +24,7 @@ const ZERO_CHANGE: StateChange = {
   hp_delta: 0, temp_hp_grant: 0, gold_delta: 0,
   items_gained: [], items_lost: [], weapons_gained: [],
   xp_award: 0, status_effects_gained: [], status_effects_lost: [],
-  spell_slots_used: 0, spell_slot_level: 0,
+  spell_slots_used: 0, spell_slot_level: 0, spell_cast_name: null,
 };
 
 const SYSTEM = `You are a D&D 5e game state extractor. Given a Dungeon Master's narrative, extract character stat changes, XP awards, status effects, and spell slot usage.
@@ -40,8 +41,9 @@ Return ONLY valid JSON matching this exact schema. Use 0 or [] when nothing chan
   "xp_award":              number,    // XP earned — ALWAYS infer from the outcome described (see XP rules below). Never 0 unless nothing happened.
   "status_effects_gained": string[],  // effects gained — use canonical names with optional duration in parens. Format: "Name" or "Name (duration)". Apply EVERY buff/debuff/condition that lands on a PC, including minor ones like Guidance. Conditions: Unconscious, Dead, Poisoned, Blinded, Frightened, Paralyzed, Stunned, Prone, Charmed, Exhausted, Restrained, Petrified, Deafened, Grappled, Invisible, Incapacitated, Burning. Buffs: Blessed, Hasted, Raging, Inspired, Shielded, Concentrating, Flying, Regenerating, Wild Shaped, Bardic Inspiration, Death Ward, Sanctuary, Guidance, Shillelagh, Resistance, Aided, Heroism, Shield of Faith, Protected, Barkskin, Longstrider, Enlarged. Debuffs: Cursed, Hexed, Marked, Silenced, Weakened, Hunter's Mark, Baned, Slowed, Reduced. Diseases: Diseased, Infected, Fevered, Sewer Plague. Enchantments: Attuned, Empowered, Enchanted, Mage Armor, Mirror Image. Use the effect form not the spell name: Bless→Blessed, Bane→Baned, Haste→Hasted, Aid→Aided, Enlarge→Enlarged.
   "status_effects_lost":   string[],  // effects that ended this turn — use same canonical names as gained. [] if none.
-  "spell_slots_used":      number,    // number of leveled spell slots consumed (not cantrips). 0 if none.
-  "spell_slot_level":      number     // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast.
+  "spell_slots_used":      number,    // number of leveled spell slots consumed (NOT cantrips — cantrips are always 0). 0 if none.
+  "spell_slot_level":      number,    // level of the slot consumed (1–9). Match the spell's minimum level or the upcast level if stated. 0 if no spell cast or a cantrip.
+  "spell_cast_name":       string | null // EXACT name of the spell cast this turn (cantrip OR leveled), e.g. "Fire Bolt", "Cure Wounds", "Sacred Flame", "Magic Missile". ALWAYS fill this whenever ANY spell is cast — even a cantrip — so the engine can authoritatively decide slot consumption. null only if no spell was cast.
 }
 
 HP TAG PRIORITY (with damage-direction sanity check):
@@ -78,6 +80,8 @@ HP / LOOT / STATUS RULES (strict — only what DM explicitly states):
 - Status effects: only add when DM explicitly applies an effect to a player character; always set target_name to the affected character. Include duration in parens when the DM states it, e.g. "Poisoned (1 minute)". For status_effects_lost, match the base name exactly as it was gained (e.g. "Poisoned", not "the poison").
 - CONCENTRATING: only add "Concentrating" when a CONCENTRATION spell is cast (e.g. Bless, Hold Person, Hunter's Mark, Faerie Fire, Hex, Web, Haste, Spirit Guardians). NEVER add "Concentrating" for instantaneous spells or cantrips that don't concentrate (e.g. Magic Missile, Fire Bolt, Cure Wounds, Healing Word, Fireball, Sacred Flame, Eldritch Blast, Shield, Misty Step) — those do NOT create a concentration effect. When unsure whether a spell concentrates, do NOT add Concentrating. (The engine also classifies concentration deterministically from the cast, so only add this when the DM's prose clearly describes maintaining concentration.)
 - Spell slots: count whenever a character casts, invokes, channels, unleashes, or uses ANY named leveled spell (not cantrips). This includes paraphrased descriptions — "channels healing energy", "weaves a protective barrier", "calls forth divine light", "unleashes arcane force" are all leveled spell uses. ALWAYS set target_name to the exact CASTER's first name (the one casting), NOT the recipient of healing or buffing. Set spell_slot_level to the spell's minimum level (e.g. Fireball=3, Cure Wounds=1, Misty Step=2, Bless=1, Hold Person=2) or the upcast level if explicitly stated (e.g. "using a 3rd-level slot"). Never leave spell_slot_level at 0 when spell_slots_used > 0. CRITICAL: target_name must be the CASTER, not the person being healed or buffed.
+- WHENEVER any spell is cast (cantrip OR leveled), set spell_cast_name to its exact name. A spell being cast but unnamed in prose ("she weaves a healing light") → still set spell_cast_name to your best identification (e.g. "Cure Wounds") or null if truly unidentifiable.
+- CANTRIPS NEVER consume a slot — for ANY cantrip, spell_slots_used=0 and spell_slot_level=0 (but STILL set spell_cast_name). A damaging cantrip deals damage yet uses NO slot; do NOT confuse "deals damage" with "leveled spell". Known cantrips include: Fire Bolt, Eldritch Blast, Sacred Flame, Ray of Frost, Chill Touch, Poison Spray, Acid Splash, Shocking Grasp, Thorn Whip, Vicious Mockery, Produce Flame, Mage Hand, Minor Illusion, Prestidigitation, Light, Guidance, Resistance, Spare the Dying, Blade Ward, True Strike, Dancing Lights, Druidcraft, Shillelagh, Thaumaturgy, Message, Mending, Friends. (Fire Bolt and Eldritch Blast are the most commonly mis-charged — they are CANTRIPS, never a slot.)
 - HP with "you": when the DM uses "you" / "your character" with no name, set target_name to null — but ONLY do this when a single character is clearly the recipient. For party-wide effects ("each of you") set target_name to null.
 - CRITICAL — items/weapons/gold rules: When the DM names a recipient ("Thorin finds a Potion of Healing"), set target_name to "Thorin". When the DM addresses the acting player as "you"/"your" ("You find a sword in the chest", "You pocket a small ruby"), set target_name to null AND populate items_gained / weapons_gained / gold_delta — the client routes it to the acting player. Only output empty arrays / 0 when the recipient is genuinely unclear (e.g. "the chest contains a sword" with no player addressed at all).
 - ACQUISITION VERBS — Any of these verbs (or paraphrased equivalents) acquiring an item or money MUST populate items_gained / weapons_gained / gold_delta: takes, finds, scoops, scoops up, lifts, picks up, pockets, claims, grabs, gathers, collects, snatches, snags, pries free, retrieves, recovers, swipes, helps himself to, helps herself to, slips into pocket, tucks away, stows, draws (when from chest/body/etc.), comes away with, walks away with, leaves with. Don't be conservative — if the DM narrates a character physically taking possession of an item, weapon, or coin, treat it as an acquisition.
@@ -160,6 +164,7 @@ export async function POST(req: NextRequest) {
       status_effects_lost:   Array.isArray(parsed.status_effects_lost)   ? parsed.status_effects_lost   : [],
       spell_slots_used:      Math.max(0, Number(parsed.spell_slots_used ?? 0)),
       spell_slot_level:      Math.max(0, Number((parsed as { spell_slot_level?: number }).spell_slot_level ?? 0)),
+      spell_cast_name:       typeof parsed.spell_cast_name === "string" && parsed.spell_cast_name.trim() ? parsed.spell_cast_name.trim() : null,
     };
 
     const hasChange =

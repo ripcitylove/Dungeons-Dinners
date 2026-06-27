@@ -89,6 +89,17 @@ export function isRollUnrolled(form: CharForm): boolean {
   return form.statMethod === "roll" && STAT_KEYS.every(k => form.scores[k as keyof AbilityScores] === 0);
 }
 
+/** True when the ability-scores step is NOT yet complete enough to advance.
+ *  Roll → hasn't been rolled. Point Buy → the 27-point budget isn't fully spent
+ *  (leaving points unspent — e.g. the all-8s default — is not a finished build,
+ *  and previously slipped through). Standard Array → always complete (the six
+ *  fixed values are auto-assigned, the player only rearranges). */
+export function isStatStepIncomplete(form: CharForm): boolean {
+  if (form.statMethod === "roll")     return isRollUnrolled(form);
+  if (form.statMethod === "pointbuy") return calcPointBuyCost(form.scores) !== POINT_BUY_BUDGET;
+  return false; // array
+}
+
 /** Does this class actually pick spells at level 1? (Half-casters don't.) */
 export function isSpellcasterForm(form: CharForm): boolean {
   const sc = getSpellCounts(form.class, form.scores);
@@ -314,13 +325,17 @@ function CreationGuide({ step, form, profRequired, spellCounts, onGuideRestart }
   const [rect, setRect] = useState<GuideRect | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // The walkthrough DEFAULTS ON every time the wizard starts — players can Skip.
+  // The walkthrough auto-opens the FIRST time a player creates a character. Once
+  // they Skip or finish it (persisted below), it does NOT pop up again on every
+  // later creation — the Whimsy button still lets them replay it on demand.
   // Also mark mounted so we can portal to <body> (the guide MUST render at the
   // document root — a transformed/filtered ancestor would otherwise trap its
   // position:fixed layers).
   useEffect(() => {
     setMounted(true);
-    setGuideOn(true);
+    let seen = false;
+    try { seen = localStorage.getItem("dndCreationGuideSeen") === "1"; } catch { /* ignore */ }
+    if (!seen) setGuideOn(true);
   }, []);
 
   const stops = buildGuideStops(step, form, profRequired, spellCounts);
@@ -390,7 +405,11 @@ function CreationGuide({ step, form, profRequired, spellCounts, onGuideRestart }
     return () => cancelAnimationFrame(raf);
   }, [guideOn]);
 
-  const finish = () => { setGuideOn(false); };
+  const finish = () => {
+    setGuideOn(false);
+    // Remember the player has dismissed the tour so it won't auto-open next time.
+    try { localStorage.setItem("dndCreationGuideSeen", "1"); } catch { /* ignore */ }
+  };
   const advance = () => { if (guideIdx < stops.length) setGuideIdx(i => i + 1); else finish(); };
   // Replaying ALWAYS wipes every selected field and restarts the tour from the
   // very first field (step 1). onGuideRestart resets the parent-owned form + step.
@@ -493,7 +512,21 @@ export function CharacterSteps({ step, form, patch, showTooltip, hideTooltip, na
     if (method === "pointbuy") { patch({ statMethod: method, scores: { ...POINTBUY_DEFAULT } }); return; }
     if (method === "array") {
       const arranged = { ...scores };
-      STAT_KEYS.forEach((k, i) => { arranged[k as keyof AbilityScores] = STANDARD_ARRAY[i]; });
+      // Assign the highest array values (15,14,…) to the class's most important
+      // stats so the default build is class-appropriate — a Cleric's 15 lands on
+      // WIS, a Wizard's on INT — instead of always STR-first. The player can still
+      // rearrange with the +/- controls. Falls back to raw stat order if a class
+      // has no stat guide. STAT_KEYS (score keys) and STAT_LABELS (STR/DEX/… the
+      // guide is keyed by) are index-aligned.
+      const guide = CLASS_STAT_GUIDES[form.class];
+      const TIER_RANK: Record<string, number> = { primary: 0, secondary: 1, useful: 2, dump: 3 };
+      const order = STAT_KEYS.map((k, i) => ({ k, i }))
+        .sort((a, b) => {
+          const ra = TIER_RANK[guide?.[STAT_LABELS[a.i]]?.tier ?? "useful"] ?? 2;
+          const rb = TIER_RANK[guide?.[STAT_LABELS[b.i]]?.tier ?? "useful"] ?? 2;
+          return ra - rb || a.i - b.i; // stable: equal tiers keep natural order
+        });
+      order.forEach((o, rank) => { arranged[o.k as keyof AbilityScores] = STANDARD_ARRAY[rank]; });
       patch({ statMethod: method, scores: arranged }); return;
     }
     // Roll starts on an empty grid so it never inherits the Array / Point Buy

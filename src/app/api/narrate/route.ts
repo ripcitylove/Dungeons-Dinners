@@ -165,17 +165,20 @@ function normalizeForTTS(raw: string): string {
 async function synthesize(text: string, voice: string, fresh = false): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return new Response("ElevenLabs key not configured", { status: 500 });
-  if (!text?.trim()) return new Response("No text", { status: 400 });
+  // "Nothing to narrate" cases below return 204 No Content (not 400). The client
+  // treats a 204 as "skip this slot" exactly like the old 400, but a 2xx status
+  // does NOT show up in the browser console as a failed-resource error — these
+  // skips are an expected, frequent part of normal play, not faults.
+  if (!text?.trim()) return new Response(null, { status: 204 });
 
   text = numbersToWords(normalizeForTTS(text));
 
-  // Reject short fragments. Given < ~16 chars of context (raised from 4
+  // Skip short fragments. Given < ~16 chars of context (raised from 4
   // after continued reports of slurring), ElevenLabs cannot reliably establish
   // prosody and often produces a moan, hum, or "speaking in tongues" burst.
-  // The client treats a 400 as "skip this slot" — no broken audio plays.
-  if (text.length < 16) return new Response("Text too short to narrate", { status: 400 });
-  // Reject text that's purely punctuation / non-alphanumeric after normalization.
-  if (!/[A-Za-z]/.test(text)) return new Response("No speakable content", { status: 400 });
+  if (text.length < 16) return new Response(null, { status: 204 });
+  // Skip text that's purely punctuation / non-alphanumeric after normalization.
+  if (!/[A-Za-z]/.test(text)) return new Response(null, { status: 204 });
 
   const safeVoice: AllowedVoice = ALLOWED_VOICES.includes(voice as AllowedVoice)
     ? (voice as AllowedVoice)

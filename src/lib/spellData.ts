@@ -758,6 +758,53 @@ export function getSpellLevelLoose(spellName: string): number {
   return _NORM_SPELL_LEVEL[_normSpell(spellName)] ?? 0;
 }
 
+// ── Authoritative cantrip lookup (all classes) ──────────────────────────────────
+// A cantrip NEVER consumes a spell slot. This set is the source of truth used to
+// override a fallback extractor (Haiku) that occasionally mis-charges a slot for a
+// damaging cantrip (Fire Bolt, Eldritch Blast, Sacred Flame, …) when the DM omits
+// its [CAST] tag. Note getSpellLevelLoose returns 0 for BOTH cantrips and unknown
+// names, so "level 0" alone can't prove a cantrip — membership here can.
+const _ALL_CANTRIP_NAMES: Set<string> = new Set(
+  Object.values(CANTRIPS).flatMap(list => (list ?? []).map(e => _normSpell(e.name))),
+);
+/** True if the name is a known D&D 5e cantrip (case/punctuation-insensitive). */
+export function isCantrip(spellName: string): boolean {
+  return _ALL_CANTRIP_NAMES.has(_normSpell(spellName));
+}
+
+// ── Cantrip damage dice (D&D 5e) ────────────────────────────────────────────────
+// The DM is only handed cantrip NAMES; without the die it guesses when calling for a
+// damage roll (e.g. prompting a d6 for Fire Bolt, which is 1d10). This is the
+// authoritative per-cantrip damage die + type. Damage cantrips gain a die at level 5
+// (1→2 dice); the game caps at level 10, so the 11th/17th breakpoints never apply.
+// Eldritch Blast scales by adding BEAMS (separate attack rolls), not dice, so it stays
+// 1d10 "per beam". Non-damaging cantrips (Light, Mage Hand, Guidance, …) return null.
+const _CANTRIP_DMG: Record<string, { faces: number; type: string; perBeam?: boolean }> = {
+  "Fire Bolt":       { faces: 10, type: "fire" },
+  "Eldritch Blast":  { faces: 10, type: "force", perBeam: true },
+  "Sacred Flame":    { faces: 8,  type: "radiant" },
+  "Ray of Frost":    { faces: 8,  type: "cold" },
+  "Chill Touch":     { faces: 8,  type: "necrotic" },
+  "Shocking Grasp":  { faces: 8,  type: "lightning" },
+  "Acid Splash":     { faces: 6,  type: "acid" },
+  "Poison Spray":    { faces: 12, type: "poison" },
+  "Vicious Mockery": { faces: 4,  type: "psychic" },
+  "Thorn Whip":      { faces: 6,  type: "piercing" },
+  "Produce Flame":   { faces: 8,  type: "fire" },
+};
+const _NORM_CANTRIP_DMG: Record<string, { faces: number; type: string; perBeam?: boolean }> =
+  Object.fromEntries(Object.entries(_CANTRIP_DMG).map(([k, v]) => [_normSpell(k), v]));
+/**
+ * Damage-dice expression for a cantrip at a character level (e.g. "1d10 fire",
+ * "2d8 radiant", "1d10 force per beam"), or null if the cantrip deals no damage.
+ */
+export function cantripDamage(name: string, charLevel: number): string | null {
+  const d = _NORM_CANTRIP_DMG[_normSpell(name)];
+  if (!d) return null;
+  const count = charLevel >= 5 ? 2 : 1;
+  return d.perBeam ? `1d${d.faces} ${d.type} per beam` : `${count}d${d.faces} ${d.type}`;
+}
+
 // ── Combined spell lookups across all spell levels ──────────────────────────────
 export const SPELL_LISTS_BY_LEVEL: Record<number, Partial<Record<string, SpellEntry[]>>> = {
   1: LEVEL1_SPELLS, 2: LEVEL2_SPELLS, 3: LEVEL3_SPELLS, 4: LEVEL4_SPELLS, 5: LEVEL5_SPELLS,

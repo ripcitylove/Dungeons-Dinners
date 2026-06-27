@@ -15,7 +15,7 @@ import { armorInventoryEntry } from '../../lib/equipmentData';
 import {
   CharacterSteps, emptyForm, type CharForm,
   D20Icon, STEP_ICONS, STEP_TITLES, STAT_LEGEND,
-  startingHP, isSpellcasterForm, totalStepsForForm, isRollUnrolled,
+  startingHP, isSpellcasterForm, totalStepsForForm, isStatStepIncomplete,
 } from '../../components/CharacterSteps';
 
 export default function CreateCharacter() {
@@ -49,7 +49,7 @@ export default function CreateCharacter() {
   const canProceed =
     (step === 1 && !!form.race) ||
     (step === 2 && !!form.class && form.skillProficiencies.length === profRequired) ||
-    (step === 3 && !isRollUnrolled(form)) ||
+    (step === 3 && !isStatStepIncomplete(form)) ||
     (step === 4 && !!form.weapon) ||
     (step === 5) ||
     (step === 6);

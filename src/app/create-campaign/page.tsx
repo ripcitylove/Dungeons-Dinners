@@ -12,7 +12,7 @@ import { initObjectives } from "../../lib/objectives";
 import { CLASS_PROFICIENCIES } from "../../lib/proficiencyData";
 import { armorInventoryEntry, findEquippedArmor } from "../../lib/equipmentData";
 import { useTooltip, tipBox } from "../../hooks/useTooltip";
-import { CharacterSteps, isRollUnrolled, UNROLLED_SCORES, type CharForm } from "../../components/CharacterSteps";
+import { CharacterSteps, isStatStepIncomplete, UNROLLED_SCORES, type CharForm } from "../../components/CharacterSteps";
 import { STAT_TIPS } from "../../lib/tooltipData";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ export default function CreateCampaignWizard() {
 
   const nextDisabled =
     (phase === "characters" && charStep === 2 && (!draft.class || draft.skillProficiencies.length < profRequired)) ||
-    (phase === "characters" && charStep === 3 && isRollUnrolled(form)) ||
+    (phase === "characters" && charStep === 3 && isStatStepIncomplete(form)) ||
     (phase === "characters" && charStep === 4 && !draft.weapon);
 
   const stepTitle =

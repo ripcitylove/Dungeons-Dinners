@@ -3,7 +3,13 @@ import { NextRequest } from "next/server";
 import { DM_LOOT_GUIDE } from "../../../lib/lootData";
 import { formatMessagesForDM } from "../../../lib/dmMessageFormat";
 import { objectivesForPrompt, currentObjectiveId, type Objective } from "../../../lib/objectives";
-import { getSpellSlots, spellSlotsRemaining } from "../../../lib/spellData";
+import { getSpellSlots, spellSlotsRemaining, cantripDamage } from "../../../lib/spellData";
+
+// Annotate damaging cantrips with their exact damage die so the DM never guesses
+// the wrong die when calling for a roll (e.g. "Fire Bolt (1d10 fire)"). Utility
+// cantrips (Light, Mage Hand) appear name-only.
+const annotateCantrips = (names: string[] | undefined, level: number): string =>
+  (names ?? []).map(n => { const d = cantripDamage(n, level); return d ? `${n} (${d})` : n; }).join(", ");
 import { weaponByName } from "../../../lib/equipmentData";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
@@ -213,7 +219,7 @@ A player rolls ONLY for their OWN character: their own attack rolls, their own a
 
 ENTERING COMBAT — TAG IT SO THE ENEMIES APPEAR ON SCREEN
 The game shows enemy cards (with portraits) only when you signal an encounter. The moment hostile enemies become PRESENT to the party and a fight begins or is clearly about to begin — they draw weapons on the party, attack, ambush, surround them, block the way with hostile intent, or you call for an attack/initiative against them — append the tag [COMBAT] at the very END of that message.
-- Describe the enemies vividly in the prose first (count + what they are: "Three Watchers fill the doorway, blades drawn"), THEN end with [COMBAT]. The engine reads your prose to spawn exactly those foes.
+- Describe the enemies vividly in the prose first — and CRUCIALLY scale their NUMBER to the party size (see the ENCOUNTER SCALING block; the count you narrate is the EXACT count that spawns on screen). A solo/duo meets a few foes; a party of 4+ meets a real group; a party of 6+ meets a sizable force (or a leader with several minions). NEVER throw just 2–3 weak enemies at a large party — that is a non-encounter. State the count in the prose ("Five Watchers spill from the doorway, blades drawn"), THEN end with [COMBAT]. The engine spawns exactly the foes you describe, so make the count match the party.
 - Emit [COMBAT] only ONCE, on the FIRST message where the enemies turn hostile/visible — it STARTS the encounter. Do not repeat it for an ongoing fight.
 - CONCEALMENT EXCEPTION: do NOT emit [COMBAT] for enemies you are deliberately keeping hidden or unrevealed (lurking unseen, watching from shadow, not yet a threat the party can see). Only tag them once they are actually revealed and present. This is the one time enemies may be introduced in prose without appearing on screen.
 - The tag is invisible to players — it is stripped from what they read and hear.
@@ -254,11 +260,24 @@ Use alignment as action: Chaotic bends rules; Lawful follows them even at cost; 
 Show personality through action and reaction — never announce "as a rogue you…"
 
 COMBAT (follow D&D 5e rules exactly)
-- Attack rolls: When a player declares ANY attack (melee, ranged, or spell), your ENTIRE response is "Roll a d20." — one sentence, then stop. Never narrate hitting, missing, or dealing damage before receiving the roll. When the player reports the number, add their ATK bonus and compare to the target AC. Announce with labeled components: "11 + 3 [STR] + 2 [Prof] = 16 — hits AC 14!"
+- Attack rolls: When a player declares ANY attack, your ENTIRE response is "Roll a d20." — one sentence, then stop. This applies EQUALLY to weapon attacks AND spell ATTACK rolls (Fire Bolt, Eldritch Blast, Guiding Bolt, Inflict Wounds, Ray of Frost, Chill Touch, any "make a ranged/melee spell attack" spell). NEVER auto-resolve a spell attack or jump straight to its damage — a spell that rolls to hit gets the same "Roll a d20." prompt as a sword. (Spells that instead force a SAVE — Sacred Flame, Fireball, Burning Hands, etc. — are handled under Spell saves below, not here.) Never narrate hitting, missing, or dealing damage before receiving the roll. When the player reports the number, add their ATK bonus and compare to the target AC. Announce with labeled components: "11 + 3 [STR] + 2 [Prof] = 16 — hits AC 14!"
 - Enemy attacks: you roll d20 + enemy ATK bonus vs. character AC yourself. Announce the attack roll result with EVERY addend labeled ("14 + 5 [ATK] = 19 — hits AC 15!"), then narrate the dramatic outcome. Always emit the HP TAG for damage dealt to a player (see HP TAGS below). If you also show the damage math in prose, label every addend the same way ("14 + 3 [STR] = 17 bludgeoning" — never "14 + 3 = 17").
-- Damage: after a player's weapon hit, say "Roll a d[N]." When the player reports the number, you may state just the total and type ("9 slashing") OR show the breakdown — but if you show ANY breakdown, EVERY addend must be labeled with its source: "6 + 3 [STR] = 9 slashing". A bare "6 + 3 = 9" is never allowed. For enemy hits on player characters, always emit the HP TAG; if you also show the damage math, label every addend.
+- ENEMY PHASE — EVERY ENGAGED ENEMY ATTACKS (critical; do NOT skip foes): the enemies act as a group ONCE PER ROUND (their initiative — resolve it after the party has acted / at round reconciliation, not after every single player turn). When that phase comes, EVERY enemy with a target in reach makes its attack. NEVER roll just one or two and wave the rest off with "the others surge/press forward/close in" — that is the bug that makes a large force harmless. A 12-foe band must produce ~12 attack rolls and land several hits that round.
+  • SPREAD the attacks across DIFFERENT reachable party members — distribute the foes so damage is shared (don't pile every enemy onto one PC). With 10 heroes and 11 minions, roughly each hero gets attacked.
+  • Resolve a large group COMPACTLY as a terse roll-list, not flowing prose: "Soldiers: #1→Aldwin 17 hit 3, #2→Kira 9 miss, #3→Lyra 15 hit 2, #4→Grok 8 miss, #5→Sorcha 16 hit 4 …" — every attacker accounted for, and EVERY hit followed by its [HP:Name:-N] tag (multiple HP tags in one response is expected and required).
+  • This mechanical enemy-attack roll-list is EXEMPT from the per-turn/round word budget below — list ALL of them even if it runs long. The budget governs narrative prose, not the dice resolution; never truncate the attack list to save words.
+- Damage — SINGLE vs MULTI die (critical for the dice UI, which rolls ONE die at a time):
+  • SINGLE-DIE damage (one damage die, e.g. a longsword 1d8, mace 1d6, dagger 1d4): say exactly "Roll a d[N]." and let the player roll that ONE die. Then add their modifier.
+  • USE THE EXACT DIE FOR THE SPELL/WEAPON — never guess. Each damaging cantrip's die is shown beside its name in the caster's stat block, e.g. "Fire Bolt (1d10 fire)", "Sacred Flame (1d8 radiant)", "Ray of Frost (1d8 cold)", "Eldritch Blast (1d10 force per beam)". A Fire Bolt damage roll is a d10, NOT a d6. If the listed cantrip damage is a single die (levels 1–4), prompt that one die; if it shows two dice (level 5+), resolve it yourself as MULTI-die.
+  • MULTI-DIE damage — roll it YOURSELF and state the result in ONE message; do NOT ask the player to roll several dice or to "roll again". This covers: weapons/spells with 2+ damage dice (greatsword 2d6, Guiding Bolt 4d6, Inflict Wounds 3d10, Fireball 8d6, Sneak Attack extra dice, etc.) AND every CRITICAL HIT (a crit doubles the damage dice, so it is always multi-die — resolve the whole crit yourself, never "roll twice"). The single-die player dice flow CANNOT roll N dice in sequence reliably, so never start one.
+  • Either way, when you show a breakdown EVERY addend must be labeled: "6 + 3 [STR] = 9 slashing" (a bare "6 + 3 = 9" is never allowed). Spell damage adds NO ability modifier unless the spell says so (Guiding Bolt is 4d6, no mod). For enemy hits on players, always emit the HP TAG.
 - At 0 HP: the character falls Unconscious (death saving throws apply).
-- Spell saves: say "Roll a d20." You add their save modifier and compare to the DC with labels: "9 + 2 [WIS] + 2 [Prof] = 13 — fails DC 14."
+- Spell saves — WHO saves decides who rolls:
+  • The PLAYER'S character must make a save (an enemy effect targets them) → say "Roll a d20." You add their save modifier and compare to the DC with labels: "9 + 2 [WIS] + 2 [Prof] = 13 — fails DC 14."
+  • A PLAYER casts a save-based spell on an ENEMY (Sacred Flame, Fireball, Burning Hands, Poison Spray, Hold Person, etc.) → YOU roll the enemy's save yourself, exactly like an enemy attack. NEVER say "Roll a d20" — the player does not roll for the enemy's save. Resolve it in one message: "I roll its DEX save: 8 + 0 = 8 — fails DC 13. The flame consumes it." A save-based cantrip aimed at a foe takes NO player dice at all (no d20 to hit, no save roll) — just narrate your adjudication.
+  • CANTRIP CLASSIFICATION — know which cantrips need a player d20 and which you resolve yourself:
+      ATTACK cantrips (player rolls d20 to hit, then damage on a hit): Fire Bolt, Eldritch Blast, Ray of Frost, Chill Touch, Shocking Grasp, Thorn Whip, Produce Flame (when hurled).
+      SAVE cantrips (NO player d20 — YOU roll the TARGET's saving throw): Sacred Flame (DEX), Vicious Mockery (WIS), Poison Spray (CON), Acid Splash (DEX). For these, never ask the caster to roll; roll the enemy's save and compare to the caster's spell DC. Damage applies only on a FAILED save (and remember a save of ≥ DC SUCCEEDS — don't invert the result). e.g. Vicious Mockery → "I roll its WIS save: 9 + 1 = 10 — fails DC 12. The insult lands; 1d4 psychic." Then [HP] the enemy is tracked separately (no player HP tag).
 - ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
 - ALWAYS name the specific character targeted: "The orc swings at Aragorn — 14 + 5 [ATK] = 19 — hits AC 15!"
 
@@ -282,6 +301,12 @@ HP TAGS — mandatory after resolving damage or healing TO a player character:
 
   The single mental check before you emit [HP:Aria:-N]: did Aria's own hit-point pool just go DOWN by N? If yes, emit the tag. If she dealt the N to something else, do NOT emit a tag for her.
   Misusing this tag silently subtracts the number from the player's HP. Player characters losing HP from their own attacks is a critical bug — be exact.
+
+  ⚠ NON-NEGOTIABLE — EVERY enemy hit on a player MUST carry its [HP] tag. Whenever you narrate ANY damage number landing on a player character (after an enemy attack roll, a failed save, a trap, environmental damage, ongoing damage, etc.), the matching [HP:FirstName:-N] tag is REQUIRED in that same response. Damage you describe but do NOT tag is NEVER applied — the player's HP bar stays wrong and combat loses all stakes. If you wrote the number, you MUST write the tag.
+
+  ⚠ MULTI-EVENT TURNS — one response often resolves several HP events at once (a player kills an enemy, THEN two enemies counterattack different party members). Emit a SEPARATE [HP] tag for EACH player who takes damage — never let the player's own offensive damage make you forget the enemies' counterattacks. Tag every hit on every player, every time.
+    Player slays a cultist, then two cultists strike back at Aldric and Kira:
+    "Aldric's bolt incinerates the wounded cultist. The other two lunge — one rakes Aldric's arm (2 piercing [HP:Aldric:-2]), the other's blade skips off Kira's shield, a clean miss." → ONE tag for Aldric (he was hit), NONE for Kira (missed), NONE for the dead cultist (enemy).
 
   Examples (correct): [HP:Aria:-9]  [HP:Thorin:+5]  [HP:Zara:-12]
 
@@ -563,7 +588,7 @@ Every word costs a player real listening time AND real API budget. Spoken narrat
 
 Word budgets (absolute hard limits — the model must never exceed these):
 - Regular turn (any action, combat, dialogue, exploration): 20–32 words. Two short sentences. Three only if the third is the redirect question.
-- Round reconciliation (all players have acted): 45–60 words. Resolve all actions, enemies attack, hand off — concisely.
+- Round reconciliation (all players have acted): 45–60 words of PROSE. Resolve all actions, enemies attack, hand off — concisely. EXCEPTION: the enemy-attack roll-list (every engaged enemy attacks — see ENEMY PHASE in combat rules) does NOT count against this budget; resolve all foes' attacks in a terse roll-list with [HP] tags even if it adds lines.
 - Campaign opening scene only: up to 80 words. The single exception, for setting the entire campaign tone.
 
 Rules with no exceptions:
@@ -625,15 +650,20 @@ function partyScaleHint(partySize: number, avgLevel: number): string {
   const xpPerPlayer = avgLevel <= 2 ? 50 : avgLevel <= 4 ? 150 : avgLevel <= 6 ? 375 : avgLevel <= 8 ? 750 : 1100;
   const totalBudget  = xpPerPlayer * partySize;
 
+  // Encounters use a LEADER + MINIONS structure: a standout elite/boss the party
+  // must focus, backed by a band of weaker minions — far better play than a faceless
+  // swarm, and it keeps the on-screen enemy count in a sane range (the engine caps
+  // spawned enemy cards near 12). Total force should land roughly between party size
+  // and ~12, never a wall of 15–20 trivial bodies.
   let scaleNote: string;
   if (partySize >= 8) {
-    scaleNote = `a large warband — enemies should outnumber or overpower them. Use 12–20 foes, or a multi-wave assault, or 1–2 CR ${Math.max(3, avgLevel - 1)}+ threats flanked by minions. Never pit this many adventurers against 2–3 weak enemies.`;
+    scaleNote = `a large, organized force — lead it from the front: 1 ELITE leader (CR ${Math.max(4, avgLevel + 1)}) or a pair of lieutenants, backed by ${partySize} to ${partySize + 3} minions (whole force ~${partySize + 1}–12 enemies, NOT a 15–20 swarm). The leader is the real fight — give it strong HP, AC, and a signature ability — while the minions pressure the flanks. NEVER pit this many adventurers against just 2–3 weak enemies.`;
   } else if (partySize >= 5) {
-    scaleNote = `a strong party — use 6–12 foes at appropriate CR, or a powerful leader (CR ${avgLevel}) with 4–6 minions.`;
+    scaleNote = `a strong party — field a LEADER (CR ${Math.max(2, avgLevel)}) backed by ${partySize}–${partySize + 2} minions, OR ${partySize}–${partySize + 2} equal foes at appropriate CR. NEVER pit ${partySize} adventurers against just 2–3 weak enemies — that is a non-encounter, not a fight.`;
   } else if (partySize >= 3) {
-    scaleNote = `a standard party — 3–6 foes at CR ${Math.max(1, avgLevel - 2)}–${avgLevel} makes a solid encounter.`;
+    scaleNote = `a standard party — field ${partySize}–${partySize + 2} foes at CR ${Math.max(1, avgLevel - 2)}–${avgLevel}, or a leader with a few minions. Don't field noticeably fewer enemies than there are players unless those enemies are clearly tougher.`;
   } else {
-    scaleNote = `a small party — 1–3 foes near their level, or one meaningful solo threat.`;
+    scaleNote = `a small party — 1–3 foes near their level, or one meaningful solo threat (an elite leader-type works well).`;
   }
 
   return `ENCOUNTER SCALING (${partySize} adventurers, avg level ${avgLevel})
@@ -803,7 +833,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
       const atkLine    = buildAttackLine(c);
       const skillLine  = buildSkillLine(c);
       const profLine   = [saves, skillLine].filter(Boolean).join("\n  ");
-      const cantStr    = c.cantrips_known?.length  ? c.cantrips_known.join(", ")  : "";
+      const cantStr    = c.cantrips_known?.length  ? annotateCantrips(c.cantrips_known, c.level ?? 1)  : "";
       const spellStr   = c.spells_prepared?.length ? c.spells_prepared.join(", ") : "";
       const spellLine  = (cantStr || spellStr)
         ? `\n  Cantrips: ${cantStr || "—"}  |  Spells prepared: ${spellStr || "—"}`
@@ -858,7 +888,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
 
   let spellInfo = "";
   if (char.cantrips_known?.length || char.spells_prepared?.length) {
-    const cantrips  = char.cantrips_known?.join(", ") || "none";
+    const cantrips  = char.cantrips_known?.length ? annotateCantrips(char.cantrips_known, char.level ?? 1) : "none";
     const prepared  = char.spells_prepared?.join(", ") || "none";
     // Present REMAINING / MAX per slot level (computed from the class table minus
     // used), NOT just "used". Without the max the DM can't tell how many are left

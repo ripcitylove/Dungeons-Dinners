@@ -9,7 +9,7 @@ export const CLASS_PROFICIENCIES: Record<string, ClassProficiencies> = {
   Barbarian: {
     savingThrows: ["STR", "CON"],
     skillChoices: { count: 2, skills: ["Animal Handling", "Athletics", "Intimidation", "Nature", "Perception", "Survival"] },
-    armorProficiencies: "Light, Medium, Heavy armor; Shields",
+    armorProficiencies: "Light and Medium armor; Shields",
     weaponProficiencies: "Simple and Martial weapons",
   },
   Bard: {
