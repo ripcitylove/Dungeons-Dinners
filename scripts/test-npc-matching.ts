@@ -131,6 +131,15 @@ rCheck("hooded stranger is anon", isAnonymousDescriptor("Hooded Stranger") && !h
 rCheck("the old man is anon", isAnonymousDescriptor("the old man"));
 rCheck("Garrick Vane is proper", hasProperName("Garrick Vane") && !isAnonymousDescriptor("Garrick Vane"));
 rCheck("the guard is NOT anon-descriptor", !isAnonymousDescriptor("the guard"));
+// captive/condition descriptors now count as anonymous (the "Bound Woman" -> "Sera" bug)
+rCheck("Bound Woman is anon", isAnonymousDescriptor("Bound Woman") && !hasProperName("Bound Woman"));
+rCheck("Wounded Soldier is anon", isAnonymousDescriptor("Wounded Soldier"));
+rCheck("Sera is proper", hasProperName("Sera") && !isAnonymousDescriptor("Sera"));
+{
+  const prev = [{ name: "Bound Woman", desc: "a captive bound to a chair", portrait_url: "f.png" }];
+  const inf = inferRenameFromGoneEnter(prev, [n("Sera", "young woman, ropes cut")], ["Bound Woman"]);
+  rCheck("Bound Woman renames to Sera (gone+enter)", !!inf && inf.from === "Bound Woman" && inf.to === "Sera");
+}
 // gone+enter backstop fires for an anon card replaced by one named NPC
 {
   const prev = [{ name: "Hooded Stranger", desc: "", portrait_url: "f.png" }];

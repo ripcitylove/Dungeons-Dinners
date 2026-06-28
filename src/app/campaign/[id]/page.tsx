@@ -32,6 +32,7 @@ import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
 import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames } from "../../../lib/npcTags";
+import { endsOnCompleteSentence, lastCompleteSentence } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -4563,6 +4564,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           ...(opts?.departedAddresseeName && { departedAddresseeName: opts.departedAddresseeName }),
           ...(turnOrderNames.length > 1 && !opts?.roundSummary?.length && { turnOrder: turnOrderNames }),
           ...(partyLeaderName && { partyLeaderName }),
+          // Current NPC portrait-card labels, so the DM uses the exact label in
+          // [NPC-GONE:]/[NPC-RENAME:] and can correct a placeholder card to a real name.
+          ...(npcsRef.current.length && { onScreenNpcs: npcsRef.current.map(nn => nn.name) }),
         }),
         signal: controller.signal,
       });
@@ -4645,6 +4649,26 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           narBuf = "";
           narDone = true;
         }
+      }
+
+      // Mid-sentence truncation guard: if the model hit its max_tokens ceiling it can
+      // end mid-thought ("…Sera hasn't stopped moving toward") with no terminal
+      // punctuation. Drop that dangling, unfinished sentence so it's never SHOWN or
+      // SPOKEN — the player only ever sees complete sentences. (When the response was
+      // intentionally ended at a roll request, narDone is set and we leave it alone.
+      // A response with NO complete sentence at all falls through to the degenerate
+      // guard below, which retries.)
+      if (!narDone) {
+        if (full.trim() && !endsOnCompleteSentence(full)) {
+          const trimmed = lastCompleteSentence(full);
+          if (trimmed) { // keep the dangling fragment only if there's no complete sentence (degenerate guard retries)
+            console.warn("[sendToAI] trimmed mid-sentence truncation:", JSON.stringify(full.slice(trimmed.length).trim()));
+            full = trimmed;
+          }
+        }
+        // Independently strip any incomplete trailing fragment still sitting in the
+        // un-narrated buffer so the final flush below never speaks it.
+        if (narBuf.trim() && !endsOnCompleteSentence(narBuf)) narBuf = lastCompleteSentence(narBuf);
       }
 
       // Final flush — split anything remaining into sentence-sized chunks so we never

@@ -594,6 +594,7 @@ Word budgets (absolute hard limits — the model must never exceed these):
 - Regular turn (any action, combat, dialogue, exploration): 20–32 words. Two short sentences. Three only if the third is the redirect question.
 - Round reconciliation (all players have acted): 45–60 words of PROSE. Resolve all actions, enemies attack, hand off — concisely. EXCEPTION: the enemy-attack roll-list (every engaged enemy attacks — see ENEMY PHASE in combat rules) does NOT count against this budget; resolve all foes' attacks in a terse roll-list with [HP] tags even if it adds lines.
 - Campaign opening scene only: up to 80 words. The single exception, for setting the entire campaign tone.
+- ALWAYS FINISH YOUR FINAL SENTENCE. Staying under budget is what guarantees this — a response within the word limit will never be cut off. End on a complete, punctuated sentence; never stop mid-thought (e.g. "...moving toward" with nothing after). If you sense you are running long, wrap up the current sentence immediately and stop.
 
 Rules with no exceptions:
 - Zero atmospheric flourishes per response. The music sets the mood — your prose just moves the story.
@@ -677,7 +678,14 @@ Scale up enemy AC, HP, damage, and numbers proportional to party size. Use envir
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 
-function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, defaultTargetEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null, objectives?: Objective[]): string {
+function buildSystemPrompt(char: Character | null, party?: Character[], campaignContext?: { title: string; description: string }, enemies?: ActiveEnemy[], openingScene?: boolean, currentTurnPlayerName?: string, targetedEnemyName?: string, defaultTargetEnemyName?: string, prevActingPlayerName?: string, roundSummary?: { name: string; action: string }[], partyLeaderName?: string, pendingReconciliation?: boolean, isRollResult?: boolean, isTurnSkip?: boolean, skippedPlayerName?: string, isGroupCheckResult?: boolean, turnOrder?: string[], isQuestion?: boolean, resumeRecap?: boolean, departedAddresseeName?: string, suggestedCheck?: { skill: string; ability: string } | null, objectives?: Objective[], onScreenNpcs?: string[]): string {
+  // Current NPC portrait-card labels, so the DM uses the EXACT label in
+  // [NPC-GONE:] / [NPC-RENAME:] and proactively corrects a placeholder card once
+  // it has learned that character's real name (fixes e.g. a "Bound Woman" card that
+  // should now read "Sera").
+  const npcRosterBlock = (onScreenNpcs && onScreenNpcs.length)
+    ? `\nON-SCREEN NPC CARDS (exact current labels): ${onScreenNpcs.join(" | ")}\n- Use these EXACT labels when you emit [NPC-GONE:Label] or [NPC-RENAME:OldLabel:NewName].\n- If a label above is a placeholder/descriptor ("Bound Woman", "Hooded Stranger", "The Old Man", "Wounded Soldier") and you now know that character's real NAME, you MUST emit [NPC-RENAME:ThatExactLabel:RealName] in THIS response to correct the card — do not leave a named character showing a descriptor label, and do not create a second card for them.\n`
+    : "";
   const campaignBlock = campaignContext?.description
     ? `\nCAMPAIGN\nTitle: ${campaignContext.title}\nSetting: ${campaignContext.description}\nStay true to this setting throughout the adventure.\n`
     : "";
@@ -867,7 +875,7 @@ When an enemy's HP reaches 0, narrate their defeat vividly. Award their XP and l
     }).join("\n\n");
 
     return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${npcRosterBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock || pendingReconcileBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 PARTY — CURRENTLY ONLINE (${partySize} adventurers present)
 Do not reference or narrate characters not listed here as if they are present.
 
@@ -924,7 +932,7 @@ ${partyScaleHint(partySize, avgLevel)}`;
   const solPronouns = char.sex === "female" ? "she/her" : char.sex === "non-binary" ? "they/them" : "he/him";
 
   return `${VOICE_AND_RULES}${openingBlock}
-${campaignBlock}${enemyBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
+${campaignBlock}${enemyBlock}${npcRosterBlock}${resumeRecapBlock || reconcileBlock || turnSkipBlock || turnBlock}${questionBlock}${groupCheckBlock}${skillClassificationBlock}${checkBlock}${objectivesBlock}${partyLeaderBlock}${targetBlock}${turnOrderBlock}
 ACTIVE CHARACTER
 ${char.name}${titleStr} — Level ${char.level} ${solSexStr}${char.race} ${char.class} (Proficiency ${pb})
 Pronouns: ${solPronouns}
@@ -942,7 +950,7 @@ STAT BLOCK IS GROUND TRUTH — CHECK IT BEFORE NARRATING CONDITION. The HP, spel
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives } = (await req.json()) as {
+    const { messages, character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs } = (await req.json()) as {
       messages: FrontendMessage[];
       character: Character | null;
       party?: Character[];
@@ -966,6 +974,7 @@ export async function POST(req: NextRequest) {
       departedAddresseeName?: string;
       suggestedCheck?: { skill: string; ability: string } | null;
       objectives?: Objective[];
+      onScreenNpcs?: string[];
     };
 
     // Attribute every player message. Sender-less player messages (campaign
@@ -994,7 +1003,7 @@ export async function POST(req: NextRequest) {
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives),
+      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs),
       messages:   claudeMessages,
       stream:     true,
     });

@@ -219,12 +219,28 @@ const NPC_ANON_DESCRIPTORS = new Set([
   "mysterious", "shadowy", "man", "woman", "person", "traveler", "traveller",
   "newcomer", "visitor", "patron", "boy", "girl", "child", "gentleman", "fellow",
   "individual", "silhouette", "form", "shape", "outsider", "guest", "figurehead",
+  // captive / condition descriptors an unnamed person is labeled by until revealed
+  "bound", "captive", "prisoner", "chained", "caged", "shackled", "wounded",
+  "injured", "dying", "bleeding", "kneeling", "trembling", "weeping", "sobbing",
+  "ragged", "blindfolded", "gagged", "unconscious", "bruised", "beaten",
+  "frightened", "terrified", "huddled", "crumpled", "frail", "gaunt", "pale",
+  "wretched", "battered", "captured", "tied", "hostage", "victim", "survivor",
+  "elderly", "old", "young", "tall", "short", "thin", "lean", "scarred",
 ]);
 
-/** True when a card name is a pure "anonymous person" descriptor (e.g. "Hooded Stranger", "the old man") with no proper name. */
+/**
+ * True when a card name is an "anonymous person" descriptor that is clearly standing
+ * in for an as-yet-unnamed character — e.g. "Hooded Stranger", "the old man", "Bound
+ * Woman", "Wounded Soldier". Requires at least one anonymous descriptor word AND no
+ * proper-name token, so a bare role label ("the guard", "merchant") does NOT qualify
+ * (a guard leaving is a real departure, not an identity reveal).
+ */
 export function isAnonymousDescriptor(name: string): boolean {
   const core = npcCore(name);
-  return core.length > 0 && core.every(t => NPC_ANON_DESCRIPTORS.has(t));
+  if (!core.length) return false;
+  const hasAnon = core.some(t => NPC_ANON_DESCRIPTORS.has(t));
+  const allNonProper = core.every(t => NPC_ANON_DESCRIPTORS.has(t) || NPC_GENERIC_WORDS.has(t));
+  return hasAnon && allNonProper;
 }
 
 /** True when a name carries an actual proper-name token (not just generic role / anon-descriptor words). */
