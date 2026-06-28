@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster } from "../../../lib/npcTags";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -573,54 +573,28 @@ function detectNextTurnPlayer(text: string, partyNames: string[]): string | null
   return detectTurnAddressee(text, partyNames);
 }
 
-// Fades in each chunk of text as it arrives during streaming
-function StreamingText({ text }: { text: string }) {
-  const [chunks, setChunks] = React.useState<Array<{ id: number; content: string }>>([]);
-  const processedRef = React.useRef(0);
-  const idRef        = React.useRef(0);
-
-  React.useEffect(() => {
-    if (text.length > processedRef.current) {
-      const newContent = text.slice(processedRef.current);
-      processedRef.current = text.length;
-      setChunks(prev => [...prev, { id: idRef.current++, content: newContent }]);
-    }
-  }, [text]);
-
-  return (
-    <>
-      {chunks.map(({ id, content }) => (
-        <span key={id} style={{ animation: "streamFadeIn 0.62s ease forwards", opacity: 0, display: "inline" }}>
-          {content}
-        </span>
-      ))}
-    </>
-  );
-}
-
 // Builds an array of sentence-end character positions for the given text.
-// A "sentence end" is the index AFTER a sentence-terminating punctuation
-// (. ! ? or trailing : or ; for clause-level pauses) that is followed by
-// whitespace or end-of-text. The final entry is always text.length so the
-// last (potentially un-punctuated) sentence completes when audio finishes.
-function buildSentenceBoundaries(text: string): number[] {
+// A "word boundary" is the index just AFTER a complete word (the position of the
+// whitespace that follows it, or end-of-text). Revealing the audio-synced text at
+// WORD granularity — rather than whole SENTENCES — makes it flow smoothly in step
+// with the narrator's voice instead of popping in a giant sentence-sized chunk
+// that races ahead of (and is hard to read before) the spoken line. Snapping to a
+// completed word still guarantees no mid-word fragment ("T|") is ever shown. The
+// final entry is always text.length so the last word completes when audio ends.
+function buildWordBoundaries(text: string): number[] {
   const ends: number[] = [];
-  for (let i = 0; i < text.length; i++) {
-    if (/[.!?]/.test(text[i])) {
-      // Real boundary: at end of text OR followed by whitespace.
-      if (i === text.length - 1 || /\s/.test(text[i + 1])) {
-        ends.push(i + 1);
-      }
-    }
+  for (let i = 1; i <= text.length; i++) {
+    const prevIsWord = !/\s/.test(text[i - 1]);
+    const atBreak = i === text.length || /\s/.test(text[i]);
+    if (prevIsWord && atBreak) ends.push(i);
   }
-  if (ends[ends.length - 1] !== text.length) ends.push(text.length);
+  if (ends.length === 0 || ends[ends.length - 1] !== text.length) ends.push(text.length);
   return ends;
 }
 
-// Returns the largest sentence-end position ≤ pos. Used to snap the
-// audio-driven reveal back to the most recent COMPLETED sentence so we never
-// expose mid-word fragments like "T|".
-function snapDownToSentenceEnd(boundaries: number[], pos: number): number {
+// Returns the largest boundary position ≤ pos. Snaps the audio-driven reveal back
+// to the most recent COMPLETED word so we never expose a mid-word fragment.
+function snapDownToBoundary(boundaries: number[], pos: number): number {
   let best = 0;
   for (const b of boundaries) {
     if (b <= pos) best = b;
@@ -652,7 +626,7 @@ function RevealText({ text, isPaused, onComplete, intervalMs = 50, getAudioProgr
   React.useEffect(() => {
     setGroups([]);
     if (!text) return;
-    const sentenceEnds = buildSentenceBoundaries(text);
+    const wordEnds = buildWordBoundaries(text);
     let pos = 0;
     let gid = 0;
     let done = false;
@@ -670,13 +644,13 @@ function RevealText({ text, isPaused, onComplete, intervalMs = 50, getAudioProgr
       const audioProgress = getAudioProgressRef.current?.();
 
       if (typeof audioProgress === "number") {
-        // Audio-synced mode — compute raw target from audio progress, then
-        // SNAP to the most recent completed sentence boundary so we never
-        // show partial words (no "T|" stranded at the end of the reveal).
-        // The reveal advances in sentence-sized chunks, each appearing the
-        // moment its audio completes.
+        // Audio-synced mode — compute raw target from audio progress, then SNAP
+        // DOWN to the most recent completed WORD so the text flows in step with
+        // the voice (word by word) rather than appearing a whole sentence at a
+        // time, while never showing a mid-word fragment. Progress still reaches
+        // 1.0 when the final clip ends, so the last word completes cleanly.
         const raw = Math.min(text.length, Math.round(audioProgress * text.length));
-        targetPos = snapDownToSentenceEnd(sentenceEnds, raw);
+        targetPos = snapDownToBoundary(wordEnds, raw);
         intervalAccumMs = 0;
       } else if (!isPausedRef.current) {
         // Interval fallback — used when no audio is playing. Per-char reveal
@@ -1051,40 +1025,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
     const { entered, gone } = parseNpcTags(narrative);
     const prev = npcsRef.current;
+    // Collapse multiple labels for the SAME character emitted in this one response
+    // ([NPC:Eldrin] + [NPC:the Innkeeper] for one person) so a single turn can't spawn
+    // two cards. Lenient identity matching (sameNpcName) is unit-tested in npcTags.
+    const dedupedEntered = dedupeEnteredNpcs(entered);
     if (sceneReset) {
-      // The scene/location just changed: the on-screen roster is now AUTHORITATIVE —
-      // exactly the NPCs the DM re-affirmed this turn. Anyone not re-emitted was left
-      // behind in the old scene, so their card is dropped. Persisting NPCs keep their
-      // cached portrait by reusing the existing entry for the same name.
-      const next = entered.slice(-6).map(e => {
-        const existing = prev.find(n => n.name.toLowerCase() === e.name.toLowerCase());
-        return existing ? { ...existing, desc: e.desc || existing.desc } : { name: e.name, desc: e.desc };
-      });
+      // The scene/location just changed: the re-emitted NPCs are authoritative; anyone
+      // not re-emitted was left behind. resetNpcRoster reuses the existing entry (cached
+      // portrait) for any re-affirmed character, matched leniently so a relabel doesn't
+      // duplicate or lose the face.
+      const next = resetNpcRoster(prev, dedupedEntered, 6);
       const sameSet = next.length === prev.length
-        && next.every(n => prev.some(p => p.name.toLowerCase() === n.name.toLowerCase()));
+        && next.every(n => prev.some(p => sameNpcName(p.name, n.name)));
       if (!sameSet) commitNpcs(next, broadcast);
       return;
     }
     // Backstop: also despawn any present NPC the narrative clearly says LEFT but the
     // DM didn't tag — unless the SAME response re-affirms them as entering/present.
-    const enteredLower = new Set(entered.map(e => e.name.toLowerCase()));
     const departed = prev
-      .filter(n => !enteredLower.has(n.name.toLowerCase()) && npcLeftInNarrative(narrative, n.name))
+      .filter(n => !dedupedEntered.some(e => sameNpcName(e.name, n.name)) && npcLeftInNarrative(narrative, n.name))
       .map(n => n.name);
     const allGone = departed.length ? [...gone, ...departed] : gone;
-    if (entered.length === 0 && allGone.length === 0) return;
-    let next = [...prev];
-    if (allGone.length) {
-      const goneSet = new Set(allGone.map(g => g.toLowerCase()));
-      next = next.filter(n => !goneSet.has(n.name.toLowerCase()));
-    }
-    for (const e of entered) {
-      const idx = next.findIndex(n => n.name.toLowerCase() === e.name.toLowerCase());
-      if (idx >= 0) next[idx] = { ...next[idx], desc: e.desc || next[idx].desc };
-      else next.push({ name: e.name, desc: e.desc });
-    }
-    next = next.slice(-6); // show at most the 6 most recent present NPCs
-    commitNpcs(next, broadcast);
+    if (dedupedEntered.length === 0 && allGone.length === 0) return;
+    // mergeNpcRoster drops gone NPCs and folds variant-named re-entries into the
+    // existing card instead of duplicating; capped to the 6 most recent present NPCs.
+    commitNpcs(mergeNpcRoster(prev, dedupedEntered, allGone, 6), broadcast);
   }, [commitNpcs]);
 
   // Fetch a portrait for any NPC missing one (cached per name in storage).
@@ -2794,13 +2759,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [isTyping, streamingContent, openingRevealText, narRevealText, messages, suggestions]);
 
   // Fallback: if narRevealText is set but audio never fires canplaythrough (quota, error, disabled mid-flight),
-  // unblock the reveal after 1.5 s so text is never permanently stuck.
+  // unblock the reveal so text is never permanently stuck. Waits 4 s — long enough that
+  // normal TTS clip latency (typically 1–3 s) lets the VOICE take over and drive the
+  // reveal, so text doesn't type ahead of narration during the brief generation gap;
+  // only a genuinely failed/absent clip falls through to the interval reveal.
   useEffect(() => {
     if (!narRevealText || narRevealIntervalMs !== null) return;
     const t = setTimeout(() => {
       setNarRevealIntervalMs(52);
       setNarRevealPaused(false); // no audio coming — let the reveal proceed
-    }, 1500);
+    }, 4000);
     return () => clearTimeout(t);
   }, [narRevealText, narRevealIntervalMs]);
 
@@ -3618,30 +3586,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // pauses too. Returns null when no slot is currently sounding so RevealText
   // can either hold position or fall back to interval mode.
   const getNarrationProgress = useCallback((): number | null => {
-    const slot = narActiveSlotRef.current;
     const slotTexts = narSlotTextsRef.current;
     if (!slotTexts.length) return null;
 
-    // Total raw chars across every slot enqueued so far.
+    // Total raw chars across every slot enqueued so far. (All slots for a response
+    // are enqueued synchronously before the reveal begins, so this is the complete
+    // total and progress reaches 1.0 cleanly when the last clip finishes.)
     let total = 0;
     for (const t of slotTexts) total += t?.length ?? 0;
     if (total <= 0) return null;
 
-    // Raw chars completed by slots that are entirely behind us.
+    // Which slot is sounding RIGHT NOW. Prefer the explicit pointer set in the
+    // onplay handler; if it's still -1 (a timing gap between play() and onplay),
+    // derive it from the play cursor WHILE audio is actually sounding. narPlaySlotRef
+    // points at the NEXT slot to start, so the slot playing now is narPlaySlotRef-1.
+    // Without this fallback the code below counted the in-progress slot as fully
+    // done at its start, dumping a whole sentence-sized chunk of text in at once
+    // (the "giant chunk ahead of the voice" bug) instead of advancing word-by-word.
+    let cur = narActiveSlotRef.current;
+    if (cur < 0 && audioPlayingRef.current) cur = narPlaySlotRef.current - 1;
+
     let done = 0;
-    if (slot < 0) {
-      // No slot sounding right now — return progress based on how many slots
-      // have fully finished playing (narPlaySlotRef advances past each one).
+    if (cur < 0) {
+      // Genuinely between slots (audio silent) — count only fully-finished slots so
+      // the reveal holds position until the next clip actually starts sounding.
       const finished = Math.min(slotTexts.length, narPlaySlotRef.current);
       for (let i = 0; i < finished; i++) done += slotTexts[i]?.length ?? 0;
       return Math.min(1, done / total);
     }
 
-    for (let i = 0; i < slot; i++) done += slotTexts[i]?.length ?? 0;
-
-    // Add the in-progress slot's audio-relative position.
+    // Chars from slots entirely behind us, plus the in-progress slot's audio-relative
+    // position so the text flows IN STEP with the voice rather than jumping ahead.
+    for (let i = 0; i < cur; i++) done += slotTexts[i]?.length ?? 0;
     const el = narAudioRef.current;
-    const currentText = slotTexts[slot] ?? "";
+    const currentText = slotTexts[cur] ?? "";
     if (el && Number.isFinite(el.duration) && el.duration > 0) {
       const ratio = Math.min(1, Math.max(0, el.currentTime / el.duration));
       done += ratio * currentText.length;
@@ -7181,7 +7159,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               <span style={{ fontSize: "0.72rem", color: "#8b5cf6", marginBottom: "3px", fontWeight: "bold" }}>Dungeon Master</span>
               <div style={{ padding: "11px 15px", borderRadius: "12px", fontSize: chatMsgSize, lineHeight: 1.55, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", whiteSpace: "pre-wrap", minWidth: "80px" }}>
                 {streamingContent && !narrationEnabled
-                  ? <><StreamingText text={stripSystemLeaks(streamingContent)} /><span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
+                  ? <>{stripSystemLeaks(streamingContent)}<span style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--primary)", marginLeft: "2px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} /></>
                   : narRevealText
                     ? <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>Narrator is speaking…</span>
                     : <span className="animate-float" style={{ color: "var(--primary)", fontSize: "0.85rem" }}>The DM is thinking...</span>
