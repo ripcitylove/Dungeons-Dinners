@@ -50,6 +50,14 @@ export function damageTagShouldBeSuppressed(text: string, firstName: string, del
   if (delta >= 0) return false; // only validate damage (negative), leave healing alone
   const n = esc(firstName);
 
+  // Strip bracketed system tags ([HP:Grimm:-5], [CAST:Grimm:Eldritch Blast],
+  // [SPELL:..], [ATK], [1d8+3], …) BEFORE any prose analysis. These tags carry the
+  // player's name next to spell names that contain attack words ("Eldritch Blast",
+  // "Fire Bolt") — which the attacker heuristic below would misread as the player
+  // attacking, and wrongly suppress a REAL enemy-damage tag emitted in the same
+  // response (the bug where a caster's own [CAST] tag nullified the damage they took).
+  text = text.replace(/\[[^\]\n]*\]/g, " ");
+
   // ── 1) Is the player the RECEIVER? If so, never suppress. ──
 
   // 1a. Player is the near subject of a receiver verb: "Aria takes 8",
@@ -67,7 +75,15 @@ export function damageTagShouldBeSuppressed(text: string, firstName: string, del
   const nameBeforeReceiver = new RegExp(`\\b${n}\\b[^.!?\\n]{0,60}\\b(?:${RECEIVER})\\b`, "i");
   const playerCarriedReceiver = nameBeforeReceiver.test(text) && !enemyOwnsReceiver.test(text);
 
-  if (playerSubjectReceiver.test(text) || enemyHitsPlayer.test(text) || passiveReceiver.test(text) || playerCarriedReceiver) {
+  // 1e. Enemy-phase roll-list ARROW form: "Sergeant → Grok: 19, hits AC 14",
+  //     "Crossbowman -> Aldwin". The name immediately AFTER an attack arrow is the
+  //     TARGET being struck (a receiver). The terse roll-list omits an enemy-attack
+  //     verb, so without this the guard sees the active player's OWN attack earlier
+  //     in the same response and wrongly suppresses the real enemy-counterattack tag
+  //     — the bug where the acting character's damage applied a turn late.
+  const arrowTarget = new RegExp(`(?:→|⟶|->|—>|–>|=>)\\s*${n}\\b`, "i");
+
+  if (playerSubjectReceiver.test(text) || enemyHitsPlayer.test(text) || passiveReceiver.test(text) || playerCarriedReceiver || arrowTarget.test(text)) {
     return false;
   }
 

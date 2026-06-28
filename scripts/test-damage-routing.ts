@@ -54,6 +54,19 @@ const CASES: Case[] = [
   // ── BOTH IN ONE LINE — player attacks AND takes damage; tag is the damage taken ──
   { name: "Aria",   expect: "apply", text: "Aria slashes the orc but takes 6 in return. [HP:Aria:-6]", note: "carried subject 'but takes'" },
   { name: "Aria",   expect: "apply", text: "Aria and the goblin trade blows; Aria takes 5, the goblin takes 8. [HP:Aria:-5]" },
+
+  // ── ENEMY-PHASE ROLL-LIST (terse arrow form, no verb) — must APPLY ──
+  { name: "Grok",   expect: "apply", text: "Sergeant → Grok: 16 + 3 [ATK] = 19, hits AC 14. [HP:Grok:-6]", note: "unicode arrow target" },
+  { name: "Aldwin", expect: "apply", text: "Crossbowman -> Aldwin: 12 + 2 = 14, hits AC 13. [HP:Aldwin:-4]", note: "ascii arrow target" },
+  // THE BUG: active character attacks on their turn, then the enemy phase hits them
+  // back via the arrow roll-list in the SAME response. Must still apply.
+  { name: "Grok",   expect: "apply", text: "Grok cleaves the nearest soldier — 11 slashing. Enemy phase: Sergeant → Grok: 19, hits AC 14. Soldier #4 → Kira: 9, miss. [HP:Grok:-6]", note: "player attacked AND was hit via arrow" },
+  { name: "Sorcha", expect: "apply", text: "Sorcha hurls Fire Bolt at the cultist for 7 fire. Then Wolf #2 → Sorcha: 18, hits AC 12. [HP:Sorcha:-5]", note: "caster attacks then bitten" },
+
+  // ── [CAST]/[SPELL] TAG POLLUTION — the caster's own cast tag must not suppress
+  //    the enemy-damage tag in the same response (the Eldritch Blast bug) ──
+  { name: "Grimm",  expect: "apply", text: "The beam scorches fog; the hound is inside his guard. 14 + 3 [ATK] = 17 — hits AC 13. The teeth find his forearm — 5 piercing. [HP:Grimm:-5] [CAST:Grimm:Eldritch Blast] [SPELL:Grimm:eldritch_blast] Badly wounded.", note: "[CAST:Grimm:Eldritch Blast] tag must not read as Grimm attacking" },
+  { name: "Aldwin", expect: "apply", text: "Aldwin's bolt sears the cultist. The wolf darts in and bites his leg — 4 piercing. [HP:Aldwin:-4] [CAST:Aldwin:Fire Bolt] [SPELL:Aldwin:fire_bolt]", note: "Fire Bolt cast tag + enemy bite" },
 ];
 
 let pass = 0;
