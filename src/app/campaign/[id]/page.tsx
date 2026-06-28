@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames } from "../../../lib/npcTags";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -1023,16 +1023,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "npcs_sync", payload: { senderId: userId, npcs: next } });
   }, [params.id, userId]);
   const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
-    const { entered, gone } = parseNpcTags(narrative);
+    const { entered, gone, renamed } = parseNpcTags(narrative);
     const partyNames = campaignPartyRef.current.map(c => c.name);
     // A PLAYER must never get a story-NPC card. The DM occasionally tags one anyway
     // ([NPC:Lyra:...] for a party member); drop those tags here, and purge any player
     // already sitting in the roster (covers campaigns saved before this guard).
-    const prev = dropPlayerNpcs(npcsRef.current, partyNames);
+    const prev0 = dropPlayerNpcs(npcsRef.current, partyNames);
     // Collapse multiple labels for the SAME character emitted in this one response
     // ([NPC:Eldrin] + [NPC:the Innkeeper] for one person) so a single turn can't spawn
     // two cards. Lenient identity matching (sameNpcName) is unit-tested in npcTags.
     const dedupedEntered = dropPlayerNpcs(dedupeEnteredNpcs(entered), partyNames);
+    // IDENTITY REVEAL: when an NPC is finally named, rename the EXISTING card (keeping
+    // its portrait) rather than spawning a new one. Explicit [NPC-RENAME:Old:New] tags
+    // are authoritative; if none, a conservative gone+enter backstop infers the rename
+    // only when an anonymous descriptor card ("Hooded Stranger") is replaced by a single
+    // new proper-named NPC in the same turn. After renaming, the [NPC:NewName] re-affirm
+    // in this same response simply updates that card's description in the merge below.
+    const renames = renamed.length ? [...renamed] : (() => {
+      const out = [];
+      const g = inferRenameFromGoneEnter(prev0, dedupedEntered, gone);
+      if (g) out.push(g);
+      // Feature-overlap reveal ("Mira — hood pushed back" links to "Hooded Stranger"),
+      // skipping any pair already covered by the gone+enter inference above.
+      for (const r of inferRevealRenames(prev0, dedupedEntered)) {
+        if (!out.some(x => sameNpcName(x.from, r.from) || sameNpcName(x.to, r.to))) out.push(r);
+      }
+      return out;
+    })();
+    const prev = applyNpcRenames(prev0, renames);
+    const renameApplied = prev.map(n => n.name).join("|") !== prev0.map(n => n.name).join("|");
     if (sceneReset) {
       // The scene/location just changed: the re-emitted NPCs are authoritative; anyone
       // not re-emitted was left behind. resetNpcRoster reuses the existing entry (cached
@@ -1041,7 +1060,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const next = resetNpcRoster(prev, dedupedEntered, 6);
       const sameSet = next.length === prev.length
         && next.every(n => prev.some(p => sameNpcName(p.name, n.name)));
-      if (!sameSet) commitNpcs(next, broadcast);
+      if (!sameSet || renameApplied) commitNpcs(next, broadcast);
       return;
     }
     // Backstop: also despawn any present NPC the narrative clearly says LEFT but the
@@ -1050,7 +1069,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .filter(n => !dedupedEntered.some(e => sameNpcName(e.name, n.name)) && npcLeftInNarrative(narrative, n.name))
       .map(n => n.name);
     const allGone = departed.length ? [...gone, ...departed] : gone;
-    if (dedupedEntered.length === 0 && allGone.length === 0) return;
+    if (dedupedEntered.length === 0 && allGone.length === 0 && !renameApplied) return;
     // mergeNpcRoster drops gone NPCs and folds variant-named re-entries into the
     // existing card instead of duplicating; capped to the 6 most recent present NPCs.
     commitNpcs(mergeNpcRoster(prev, dedupedEntered, allGone, 6), broadcast);
@@ -4276,6 +4295,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[ITEM-?LOST:[^\]]+\]/gi, "")
       .replace(/\[XP:[^\]]+\]/gi, "")
       .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
+      .replace(/\[NPC-RENAME:[^\]]*\]/gi, "")
       .replace(/\[NPC:[^\]]*\]/gi, "")
       .replace(/\[NPC-GONE:[^\]]*\]/gi, "")
       .replace(/\[COMBAT\b[^\]]*\]/gi, "")

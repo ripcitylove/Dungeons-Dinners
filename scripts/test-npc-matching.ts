@@ -2,7 +2,8 @@
 // character referred to by different labels (the duplicate-card bug) while
 // keeping genuinely distinct same-role NPCs separate.
 // Run: `npx tsx scripts/test-npc-matching.ts`
-import { sameNpcName, dedupeEnteredNpcs, mergeNpcRoster, resetNpcRoster, isPlayerName, dropPlayerNpcs } from "../src/lib/npcTags.ts";
+import { sameNpcName, dedupeEnteredNpcs, mergeNpcRoster, resetNpcRoster, isPlayerName, dropPlayerNpcs,
+  parseNpcTags, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, hasProperName } from "../src/lib/npcTags.ts";
 
 type Case = { a: string; b: string; expect: boolean; note?: string };
 
@@ -102,13 +103,81 @@ pCheck("no party = nothing is a player", isPlayerName("Lyra", []), false);
   if (ok) playerPass++; else playerFail.push(`  [dropPlayerNpcs] expected [Bram Hollowcask, Sella] got [${names.join(", ")}]`);
 }
 
+// ── Identity reveal (descriptor -> proper name) ──
+let renamePass = 0;
+const renameFail: string[] = [];
+const rCheck = (label: string, cond: boolean) => { if (cond) renamePass++; else renameFail.push(`  [${label}]`); };
+
+// parse the explicit tag
+{
+  const { renamed } = parseNpcTags("He lowers his hood. [NPC-RENAME:Hooded Stranger:Garrick Vane]");
+  rCheck("parses [NPC-RENAME]", renamed.length === 1 && renamed[0].from === "Hooded Stranger" && renamed[0].to === "Garrick Vane");
+}
+// rename keeps the SAME portrait, only the name changes
+{
+  const prev = [{ name: "Hooded Stranger", desc: "a figure in a dark hood", portrait_url: "face.png" }];
+  const out = applyNpcRenames(prev, [{ from: "Hooded Stranger", to: "Garrick Vane" }]);
+  rCheck("rename updates name", out.length === 1 && out[0].name === "Garrick Vane");
+  rCheck("rename keeps portrait", (out[0] as { portrait_url?: string }).portrait_url === "face.png");
+}
+// renaming onto an existing card collapses the two (no duplicate)
+{
+  const prev = [{ name: "Hooded Stranger", desc: "", portrait_url: "face.png" }, { name: "Garrick", desc: "scarred" }];
+  const out = applyNpcRenames(prev, [{ from: "Hooded Stranger", to: "Garrick Vane" }]);
+  rCheck("rename collapses onto existing", out.length === 1 && out[0].name === "Garrick Vane");
+}
+// anonymous-descriptor / proper-name classification
+rCheck("hooded stranger is anon", isAnonymousDescriptor("Hooded Stranger") && !hasProperName("Hooded Stranger"));
+rCheck("the old man is anon", isAnonymousDescriptor("the old man"));
+rCheck("Garrick Vane is proper", hasProperName("Garrick Vane") && !isAnonymousDescriptor("Garrick Vane"));
+rCheck("the guard is NOT anon-descriptor", !isAnonymousDescriptor("the guard"));
+// gone+enter backstop fires for an anon card replaced by one named NPC
+{
+  const prev = [{ name: "Hooded Stranger", desc: "", portrait_url: "f.png" }];
+  const inf = inferRenameFromGoneEnter(prev, [n("Garrick Vane", "tall swordsman")], ["Hooded Stranger"]);
+  rCheck("backstop infers reveal", !!inf && inf.from === "Hooded Stranger" && inf.to === "Garrick Vane");
+}
+// backstop does NOT fire when a real/role NPC leaves and a named NPC arrives (genuine swap)
+{
+  const prev = [{ name: "Bram Hollowcask", desc: "", portrait_url: "f.png" }];
+  const inf = inferRenameFromGoneEnter(prev, [n("Garrick Vane")], ["Bram Hollowcask"]);
+  rCheck("backstop ignores named departure", inf === null);
+}
+{
+  const prev = [{ name: "the guard", desc: "", portrait_url: "f.png" }];
+  const inf = inferRenameFromGoneEnter(prev, [n("Mira")], ["the guard"]);
+  rCheck("backstop ignores role departure", inf === null);
+}
+// feature-overlap reveal: new named NPC whose desc restates the anon card's feature
+{
+  const prev = [{ name: "Hooded Stranger", desc: "a figure in a dark hood, motionless", portrait_url: "f.png" }];
+  const inf = inferRevealRenames(prev, [n("Mira", "lean woman, scar through one brow, hood pushed back")]);
+  rCheck("feature reveal links by 'hood'", inf.length === 1 && inf[0].from === "Hooded Stranger" && inf[0].to === "Mira");
+  // end-to-end: applying it renames + keeps the portrait
+  const after = applyNpcRenames(prev, inf);
+  rCheck("feature reveal keeps portrait", after.length === 1 && after[0].name === "Mira" && (after[0] as { portrait_url?: string }).portrait_url === "f.png");
+}
+// feature reveal does NOT fire without a shared feature (could be a genuinely new NPC)
+{
+  const prev = [{ name: "Hooded Stranger", desc: "a figure in a dark hood", portrait_url: "f.png" }];
+  const inf = inferRevealRenames(prev, [n("Bram", "a barrel-chested innkeeper with a grey moustache")]);
+  rCheck("feature reveal needs shared feature", inf.length === 0);
+}
+// feature reveal does NOT fire against a NAMED card (only anonymous descriptors)
+{
+  const prev = [{ name: "Bram Hollowcask", desc: "wears a hooded cloak", portrait_url: "f.png" }];
+  const inf = inferRevealRenames(prev, [n("Mira", "hood up")]);
+  rCheck("feature reveal ignores named card", inf.length === 0);
+}
+
 console.log(`\nNPC matching battery: ${pass}/${CASES.length} passed.`);
 console.log(`NPC roster-merge battery: ${rosterPass}/${rosterPass + rosterFail.length} passed.`);
 console.log(`NPC player-guard battery: ${playerPass}/${playerPass + playerFail.length} passed.`);
-if (failures.length || rosterFail.length || playerFail.length) {
+console.log(`NPC identity-reveal battery: ${renamePass}/${renamePass + renameFail.length} passed.`);
+if (failures.length || rosterFail.length || playerFail.length || renameFail.length) {
   console.log(`\nFAILURES:`);
-  console.log([...failures, ...rosterFail, ...playerFail].join("\n"));
+  console.log([...failures, ...rosterFail, ...playerFail, ...renameFail].join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("✓ All NPC identity + roster-merge + player-guard cases resolve correctly.");
+  console.log("✓ All NPC identity + roster-merge + player-guard + identity-reveal cases resolve correctly.");
 }
