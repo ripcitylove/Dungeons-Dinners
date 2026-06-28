@@ -126,6 +126,32 @@ export function sameNpcName(a: string, b: string): boolean {
 export type NpcCardLike = { name: string; desc: string };
 
 /**
+ * True when an [NPC:Name] label actually refers to one of the PARTY's own player
+ * characters. The DM is told never to give a PC an NPC card, but it occasionally
+ * tags a player anyway ("[NPC:Lyra:...]") — which would render that player in the
+ * story-NPC column. We match on full name, prefix (first name vs full name, either
+ * direction), and bare first name, so "Lyra", "Lyra Quickwit", and "Lyra the Bard"
+ * all resolve to the player "Lyra Quickwit".
+ */
+export function isPlayerName(name: string, partyNames: string[]): boolean {
+  const n = name.trim().toLowerCase();
+  if (!n) return false;
+  const nFirst = n.split(/\s+/)[0];
+  return partyNames.some(p => {
+    const pl = (p ?? "").trim().toLowerCase();
+    if (!pl) return false;
+    const pFirst = pl.split(/\s+/)[0];
+    return pl === n || pl.startsWith(n + " ") || n.startsWith(pl + " ") || (!!pFirst && pFirst === nFirst);
+  });
+}
+
+/** Drop any NPC cards/tags that actually name a party player character. */
+export function dropPlayerNpcs<T extends NpcCardLike>(npcs: T[], partyNames: string[]): T[] {
+  if (!partyNames.length) return npcs;
+  return npcs.filter(n => !isPlayerName(n.name, partyNames));
+}
+
+/**
  * Collapse multiple labels for the SAME character emitted in ONE response into a
  * single card (first label wins as canonical; latest non-empty description kept),
  * so a single turn can never spawn two cards for one person.

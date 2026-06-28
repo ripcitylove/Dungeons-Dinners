@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs } from "../../../lib/npcTags";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -1024,11 +1024,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [params.id, userId]);
   const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
     const { entered, gone } = parseNpcTags(narrative);
-    const prev = npcsRef.current;
+    const partyNames = campaignPartyRef.current.map(c => c.name);
+    // A PLAYER must never get a story-NPC card. The DM occasionally tags one anyway
+    // ([NPC:Lyra:...] for a party member); drop those tags here, and purge any player
+    // already sitting in the roster (covers campaigns saved before this guard).
+    const prev = dropPlayerNpcs(npcsRef.current, partyNames);
     // Collapse multiple labels for the SAME character emitted in this one response
     // ([NPC:Eldrin] + [NPC:the Innkeeper] for one person) so a single turn can't spawn
     // two cards. Lenient identity matching (sameNpcName) is unit-tested in npcTags.
-    const dedupedEntered = dedupeEnteredNpcs(entered);
+    const dedupedEntered = dropPlayerNpcs(dedupeEnteredNpcs(entered), partyNames);
     if (sceneReset) {
       // The scene/location just changed: the re-emitted NPCs are authoritative; anyone
       // not re-emitted was left behind. resetNpcRoster reuses the existing entry (cached
@@ -6687,8 +6691,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
               Story characters only (gold). Hostiles/enemies live along the bottom.
               Portraits are AI-generated once per name and cached. ── */}
         {(() => {
-          // Only show NPCs whose portrait has actually generated — never a placeholder.
-          const visNpcs = npcs.filter(n => n.portrait_url);
+          // Only show NPCs whose portrait has actually generated — never a placeholder —
+          // and never a party PLAYER the DM mis-tagged as an NPC (safety net that also
+          // hides players already saved into older campaigns' rosters).
+          const visNpcs = dropPlayerNpcs(npcs.filter(n => n.portrait_url), campaignParty.map(c => c.name));
           if (visNpcs.length === 0) return null;
           // Shrink the cards as more NPCs share the left column so they all fit.
           const npcW = visNpcs.length >= 5 ? "82px" : visNpcs.length >= 3 ? "102px" : "min(122px, 17vw)";

@@ -432,6 +432,7 @@ NPC TAGS — give story characters a face. A NAMED non-combat character the part
   • SCENE / LOCATION CHANGE: when the party moves to a new place, the previous scene's NPC cards are cleared automatically. For any NPC who TRAVELS WITH the party into the new location, RE-EMIT [NPC:Name:desc] so they stay on screen; NPCs you do not re-emit are treated as left behind.
   • REAPPEARANCE: when a previously-departed NPC comes back into a scene where the party can interact with them, emit [NPC:Name:desc] again to bring their card back.
   • Only for genuine characters present in the scene — never for crowds, the party's own player characters, or combat enemies (those use the encounter system). Tags are stripped from display and narration.
+  • NEVER A PLAYER CHARACTER — CRITICAL: the party members listed in this prompt are PLAYERS, not NPCs. Never emit [NPC:...] for any of them (by full name OR first name). Player characters already have their own party cards; tagging one creates a wrong, duplicate "NPC" card of a player. NPC cards are exclusively for DM-controlled story characters the players meet.
 
 TEMP HP TAGS — mandatory after resolving any temporary-HP grant on a player character:
   Append: [THP:FirstName:+N] for N temporary hit points granted (always positive). Use the exact first name from the stat block.

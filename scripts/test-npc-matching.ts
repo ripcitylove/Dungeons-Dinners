@@ -2,7 +2,7 @@
 // character referred to by different labels (the duplicate-card bug) while
 // keeping genuinely distinct same-role NPCs separate.
 // Run: `npx tsx scripts/test-npc-matching.ts`
-import { sameNpcName, dedupeEnteredNpcs, mergeNpcRoster, resetNpcRoster } from "../src/lib/npcTags.ts";
+import { sameNpcName, dedupeEnteredNpcs, mergeNpcRoster, resetNpcRoster, isPlayerName, dropPlayerNpcs } from "../src/lib/npcTags.ts";
 
 type Case = { a: string; b: string; expect: boolean; note?: string };
 
@@ -79,12 +79,36 @@ if (reset[0] && (reset[0] as { portrait_url?: string }).portrait_url !== "x.png"
   rosterFail.push("  [scene reset keeps portrait] portrait_url was lost on relabel");
 } else rosterPass++;
 
+// ── Player-vs-NPC guard (players must never become NPC cards) ──
+const party = ["Lyra Quickwit", "Grimm Hollowvoice"];
+let playerPass = 0;
+const playerFail: string[] = [];
+const pCheck = (label: string, got: boolean, expect: boolean) => {
+  if (got === expect) playerPass++;
+  else playerFail.push(`  [${label}] expected ${expect} got ${got}`);
+};
+pCheck("first name matches player", isPlayerName("Lyra", party), true);
+pCheck("full name matches player", isPlayerName("Lyra Quickwit", party), true);
+pCheck("player + epithet matches", isPlayerName("Lyra the Bard", party), true);
+pCheck("other player first name", isPlayerName("Grimm", party), true);
+pCheck("real NPC not a player", isPlayerName("Bram Hollowcask", party), false);
+pCheck("real NPC first name not a player", isPlayerName("Bram", party), false);
+pCheck("no party = nothing is a player", isPlayerName("Lyra", []), false);
+// Roster filter strips the mis-tagged player while keeping real NPCs.
+{
+  const filtered = dropPlayerNpcs([n("Lyra"), n("Bram Hollowcask"), n("Grimm the Warlock"), n("Sella")], party);
+  const names = filtered.map(x => x.name);
+  const ok = names.length === 2 && names[0] === "Bram Hollowcask" && names[1] === "Sella";
+  if (ok) playerPass++; else playerFail.push(`  [dropPlayerNpcs] expected [Bram Hollowcask, Sella] got [${names.join(", ")}]`);
+}
+
 console.log(`\nNPC matching battery: ${pass}/${CASES.length} passed.`);
 console.log(`NPC roster-merge battery: ${rosterPass}/${rosterPass + rosterFail.length} passed.`);
-if (failures.length || rosterFail.length) {
+console.log(`NPC player-guard battery: ${playerPass}/${playerPass + playerFail.length} passed.`);
+if (failures.length || rosterFail.length || playerFail.length) {
   console.log(`\nFAILURES:`);
-  console.log([...failures, ...rosterFail].join("\n"));
+  console.log([...failures, ...rosterFail, ...playerFail].join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("✓ All NPC identity + roster-merge cases resolve correctly.");
+  console.log("✓ All NPC identity + roster-merge + player-guard cases resolve correctly.");
 }
