@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName } from "../../../lib/npcTags";
 import { endsOnCompleteSentence, lastCompleteSentence } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
@@ -1075,6 +1075,73 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // existing card instead of duplicating; capped to the 6 most recent present NPCs.
     commitNpcs(mergeNpcRoster(prev, dedupedEntered, allGone, 6), broadcast);
   }, [commitNpcs]);
+
+  // ── On-load NPC identity self-heal ──────────────────────────────────────────
+  // A saved campaign can reopen with a placeholder card ("Bound Woman", "Hooded
+  // Stranger") whose character was NAMED later in the story — but only via prose,
+  // so no [NPC-RENAME] tag exists to act on, and resuming just replays a cached
+  // recap (no fresh DM turn). This silently asks a cheap model to read the recent
+  // story and rename any placeholder card that has since been given a proper name,
+  // then applies it (portrait kept). Runs once per page load; in-play reveals are
+  // still handled by the [NPC-RENAME] tag + backstops in applyNpcTagsFromNarrative.
+  const npcReconcileTriggeredRef = useRef(false);
+  const reconcileNpcIdentities = useCallback(async (labels: string[], narrative: string) => {
+    try {
+      const res = await fetch("/api/reconcile-npcs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels, narrative }),
+      });
+      if (!res.ok) return;
+      const { renames } = (await res.json()) as { renames?: { from: string; to: string }[] };
+      if (!Array.isArray(renames) || renames.length === 0) return;
+      const partyNames = campaignPartyRef.current.map(c => c.name);
+      // Never rename a placeholder onto a player's name; only act on cards that exist.
+      const safe = renames.filter(r => r.from && r.to && !isPlayerName(r.to, partyNames)
+        && npcsRef.current.some(n => sameNpcName(n.name, r.from)));
+      if (!safe.length) return;
+      const next = applyNpcRenames(npcsRef.current, safe);
+      if (next.map(n => n.name).join("|") !== npcsRef.current.map(n => n.name).join("|")) {
+        console.log("[reconcile-npcs] healed placeholder card(s):", safe);
+        commitNpcs(next, true); // broadcast so every player's view updates too
+      }
+    } catch (e) { console.warn("[reconcile-npcs]", e); }
+  }, [commitNpcs]);
+
+  useEffect(() => {
+    if (npcReconcileTriggeredRef.current) return;
+    // Read the `npcs` / `messages` STATE from the closure (the effect's deps), not the
+    // refs — the refs are synced in a LATER effect, so they lag by one flush and would
+    // make this bail forever on "msgs: 1".
+    if (npcs.every(n => !isAnonymousDescriptor(n.name))) return;
+    if (messages.length < 2) return; // need story context first
+    npcReconcileTriggeredRef.current = true;
+    const partyNames = campaignPartyRef.current.map(c => c.name);
+
+    // 1) Deterministic, free: apply any [NPC-RENAME] tag already sitting in the saved
+    //    DM history (e.g. the tag was emitted but never applied because the feature
+    //    deployed afterward, or a load replayed a cached recap).
+    const dmHistory = messages.slice(-25).filter(m => m.role === "dm").map(m => m.content).join("\n");
+    const { renamed } = parseNpcTags(dmHistory);
+    const tagSafe = renamed.filter(r => !isPlayerName(r.to, partyNames)
+      && npcs.some(n => sameNpcName(n.name, r.from) && isAnonymousDescriptor(n.name)));
+    if (tagSafe.length) {
+      const next = applyNpcRenames(npcsRef.current, tagSafe);
+      if (next.map(n => n.name).join("|") !== npcsRef.current.map(n => n.name).join("|")) {
+        console.log("[reconcile-npcs] applied saved [NPC-RENAME] tag(s):", tagSafe);
+        commitNpcs(next, true);
+      }
+    }
+
+    // 2) Model fallback: for any card STILL a placeholder, a prose-only reveal
+    //    ("My name is Sera" with no tag) is the only signal — ask the cheap model.
+    const stillAnon = npcsRef.current.filter(n => isAnonymousDescriptor(n.name));
+    if (stillAnon.length) {
+      const recent = messages.slice(-16)
+        .map(m => `${m.role === "dm" ? "DM" : (m.sender || "Player")}: ${m.content}`)
+        .join("\n\n");
+      void reconcileNpcIdentities(stillAnon.map(a => a.name), recent);
+    }
+  }, [npcs, messages, reconcileNpcIdentities, commitNpcs]);
 
   // Fetch a portrait for any NPC missing one (cached per name in storage).
   useEffect(() => {
