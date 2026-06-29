@@ -11,17 +11,22 @@
 
 export type NpcEntered = { name: string; desc: string };
 export type NpcRename = { from: string; to: string };
-export type NpcTags = { entered: NpcEntered[]; gone: string[]; renamed: NpcRename[] };
+//   [NPC-JOIN:Name] — the NPC joins the party as a COMPANION: they travel WITH the
+//       group, so the engine keeps their card across location changes and only an
+//       explicit departure ([NPC-GONE] / "leaves the party") removes them.
+export type NpcTags = { entered: NpcEntered[]; gone: string[]; renamed: NpcRename[]; joined: string[] };
 
 const NPC_RE        = /\[NPC:([^:\]]{1,40}):([^\]]{0,200})\]/gi;
 const NPC_GONE_RE   = /\[NPC-GONE:([^\]]{1,40})\]/gi;
 const NPC_RENAME_RE = /\[NPC-RENAME:([^:\]]{1,40}):([^:\]]{1,40})\]/gi;
+const NPC_JOIN_RE   = /\[NPC-JOIN:([^:\]]{1,40})\]/gi;
 
 export function parseNpcTags(narrative: string): NpcTags {
   const entered: NpcEntered[] = [];
   const gone: string[] = [];
   const renamed: NpcRename[] = [];
-  if (!narrative) return { entered, gone, renamed };
+  const joined: string[] = [];
+  if (!narrative) return { entered, gone, renamed, joined };
 
   let m: RegExpExecArray | null;
   // Rename first so we can also drop any [NPC:NewName] re-affirmation collision later.
@@ -42,12 +47,36 @@ export function parseNpcTags(narrative: string): NpcTags {
     const name = m[1].trim();
     if (name) gone.push(name);
   }
-  return { entered, gone, renamed };
+  NPC_JOIN_RE.lastIndex = 0;
+  while ((m = NPC_JOIN_RE.exec(narrative)) !== null) {
+    const name = m[1].trim();
+    if (name) joined.push(name);
+  }
+  return { entered, gone, renamed, joined };
 }
 
 /** Strip NPC tags from text headed to display / TTS. */
 export function stripNpcTags(text: string): string {
-  return text.replace(NPC_RENAME_RE, "").replace(NPC_RE, "").replace(NPC_GONE_RE, "");
+  return text.replace(NPC_RENAME_RE, "").replace(NPC_RE, "").replace(NPC_GONE_RE, "").replace(NPC_JOIN_RE, "");
+}
+
+// Narration backstop: does the prose say this NPC JOINED / now travels WITH the
+// party, even if the DM forgot the [NPC-JOIN] tag? Conservative — only clear
+// "joins the party / comes with you / travels with you" style phrasing. Used to
+// mark a card sticky so a later scene change can't silently drop a companion.
+export function npcJoinedInNarrative(text: string, name: string): boolean {
+  if (!text || !name) return false;
+  const t = foldName(text);
+  // Core = first non-title token of the name (so "Lady Sera" → "sera").
+  const tokens = foldName(name).split(/\s+/).filter(Boolean);
+  const core = tokens.find(tok => !NPC_TITLE_WORDS.has(tok)) ?? tokens[0] ?? "";
+  if (!core || core.length < 2) return false;
+  const n = core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // "<Name> ... joins/joins the party/comes with/travels with/agrees to come/will accompany/falls in beside you"
+  const JOIN = "(joins?\\s+(?:you|your\\s+(?:party|group|side)|the\\s+(?:party|group))|comes?\\s+(?:along|with\\s+you)|travels?\\s+with\\s+(?:you|the\\s+(?:party|group))|will\\s+(?:come|accompany|join|travel)|agrees?\\s+to\\s+(?:come|join|accompany|travel)|falls?\\s+in\\s+(?:beside|behind|with)|joins?\\s+your\\s+ranks)";
+  // Name within ~40 chars before the join phrase, or the phrase then the name.
+  return new RegExp(`\\b${n}\\b[^.!?\\n]{0,40}?${JOIN}`, "i").test(t)
+      || new RegExp(`${JOIN}[^.!?\\n]{0,20}?\\b${n}\\b`, "i").test(t);
 }
 
 // ── NPC identity resolution ─────────────────────────────────────────────────
@@ -151,7 +180,7 @@ export function sameNpcName(a: string, b: string): boolean {
 // Minimal shape of an on-screen NPC card. The campaign page's SceneNpc (which also
 // carries portrait_url) is assignable to this, so these helpers operate on the real
 // cards and preserve any extra fields via the spread.
-export type NpcCardLike = { name: string; desc: string };
+export type NpcCardLike = { name: string; desc: string; is_companion?: boolean };
 
 /**
  * True when an [NPC:Name] label actually refers to one of the PARTY's own player
@@ -220,10 +249,17 @@ export function dedupeEnteredNpcs<T extends NpcCardLike>(entered: T[]): T[] {
  * of duplicating. Capped to the most recent `max`.
  */
 export function resetNpcRoster<T extends NpcCardLike>(prev: T[], entered: T[], max = 6): T[] {
-  return dedupeEnteredNpcs(entered).slice(-max).map(e => {
+  const reEmitted = dedupeEnteredNpcs(entered).map(e => {
     const existing = prev.find(n => sameNpcName(n.name, e.name));
     return existing ? { ...existing, desc: e.desc || existing.desc } : { ...e };
   });
+  // COMPANIONS travel WITH the party, so a location change must NOT drop them just
+  // because the DM didn't re-emit their [NPC:] tag. Keep any companion from the prior
+  // roster that wasn't re-emitted this turn. Placed last so the `max` cap can't trim
+  // them before non-companion scene NPCs.
+  const keptCompanions = prev.filter(p =>
+    p.is_companion && !reEmitted.some(r => sameNpcName(r.name, p.name)));
+  return [...reEmitted, ...keptCompanions].slice(-max);
 }
 
 /**

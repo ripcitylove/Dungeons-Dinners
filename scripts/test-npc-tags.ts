@@ -4,8 +4,14 @@ import { parseNpcTags, stripNpcTags } from "../src/lib/npcTags.ts";
 let pass = 0;
 const fails: string[] = [];
 const eq = (name: string, got: unknown, want: unknown) => {
-  if (JSON.stringify(got) === JSON.stringify(want)) pass++;
-  else fails.push(`  ✗ ${name}\n      got:  ${JSON.stringify(got)}\n      want: ${JSON.stringify(want)}`);
+  // Subset compare for NpcTags objects: check only the keys the expectation names,
+  // so adding new fields (renamed, joined, …) never breaks these focused cases.
+  let g = got;
+  if (got && want && typeof got === "object" && typeof want === "object" && !Array.isArray(want)) {
+    g = Object.fromEntries(Object.keys(want as object).map(k => [k, (got as Record<string, unknown>)[k]]));
+  }
+  if (JSON.stringify(g) === JSON.stringify(want)) pass++;
+  else fails.push(`  ✗ ${name}\n      got:  ${JSON.stringify(g)}\n      want: ${JSON.stringify(want)}`);
 };
 
 // ── parse entered ──

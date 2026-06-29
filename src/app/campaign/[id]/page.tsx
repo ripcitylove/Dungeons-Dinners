@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName, looksLikeNameReveal } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName, looksLikeNameReveal, npcJoinedInNarrative } from "../../../lib/npcTags";
 import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
@@ -1019,9 +1019,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // ── Story NPCs (non-combat characters present in the scene). Driven by the DM's
   // [NPC:Name:desc] / [NPC-GONE:Name] tags. Portraits are AI-generated once per NPC
   // name and cached in storage. Synced to peers + persisted per campaign. ───────────
-  type SceneNpc = { name: string; desc: string; portrait_url?: string };
+  // is_companion: an NPC who joined the party. Companions travel WITH the group, so
+  // they are never auto-despawned on a location change — only an explicit departure
+  // removes them. (Non-companions are still cleared when the party moves on.)
+  type SceneNpc = { name: string; desc: string; portrait_url?: string; is_companion?: boolean };
   const [npcs, setNpcs] = useState<SceneNpc[]>([]);
   const npcsRef = useRef<SceneNpc[]>([]);
+  // Fast initial paint from this device's cache; the DB roster (campaigns.npcs)
+  // loaded in the main effect is authoritative and overrides this a moment later.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(`dnd_npcs_${params.id}`);
@@ -1033,12 +1038,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const commitNpcs = useCallback((next: SceneNpc[], broadcast = true) => {
     npcsRef.current = next;
     setNpcs(next);
+    // localStorage = fast-paint cache + pre-migration fallback.
     try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
+    // Durable, shared source of truth — the campaign row. Tolerate the column not
+    // existing yet (migration not applied): localStorage above keeps it working.
+    supabase.from("campaigns").update({ npcs: next }).eq("id", params.id).then(({ error }) => {
+      if (error && !/npcs/i.test(error.message)) console.warn("[npcs] persist:", error.message);
+    });
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "npcs_sync", payload: { senderId: userId, npcs: next } });
   }, [params.id, userId]);
   const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
-    const { entered, gone, renamed } = parseNpcTags(narrative);
+    const { entered, gone, renamed, joined } = parseNpcTags(narrative);
     const partyNames = campaignPartyRef.current.map(c => c.name);
+    // COMPANION marking: an NPC the DM tagged [NPC-JOIN:Name] — or whom the prose
+    // clearly shows joining/traveling with the party — becomes sticky (is_companion),
+    // so a later location change can't silently drop them. Mark within a roster.
+    const markCompanions = (roster: SceneNpc[]): SceneNpc[] => {
+      const joinNames = [...joined, ...roster.filter(n => npcJoinedInNarrative(narrative, n.name)).map(n => n.name)];
+      if (joinNames.length === 0) return roster;
+      return roster.map(n => (!n.is_companion && joinNames.some(j => sameNpcName(j, n.name))) ? { ...n, is_companion: true } : n);
+    };
+    const rosterKey = (r: SceneNpc[]) => r.map(n => `${n.name}${n.is_companion ? "*" : ""}`).join("|");
     // A PLAYER must never get a story-NPC card. The DM occasionally tags one anyway
     // ([NPC:Lyra:...] for a party member); drop those tags here, and purge any player
     // already sitting in the roster (covers campaigns saved before this guard).
@@ -1067,14 +1087,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     const prev = applyNpcRenames(prev0, renames);
     const renameApplied = prev.map(n => n.name).join("|") !== prev0.map(n => n.name).join("|");
     if (sceneReset) {
-      // The scene/location just changed: the re-emitted NPCs are authoritative; anyone
-      // not re-emitted was left behind. resetNpcRoster reuses the existing entry (cached
-      // portrait) for any re-affirmed character, matched leniently so a relabel doesn't
-      // duplicate or lose the face.
-      const next = resetNpcRoster(prev, dedupedEntered, 6);
-      const sameSet = next.length === prev.length
-        && next.every(n => prev.some(p => sameNpcName(p.name, n.name)));
-      if (!sameSet || renameApplied) commitNpcs(next, broadcast);
+      // The scene/location just changed: re-emitted NPCs are authoritative and anyone
+      // not re-emitted was left behind — EXCEPT companions, who travel with the party
+      // and are kept by resetNpcRoster. resetNpcRoster reuses the existing entry
+      // (cached portrait) for any re-affirmed character, matched leniently.
+      const next = markCompanions(resetNpcRoster(prev, dedupedEntered, 6));
+      // Commit when the set OR the companion flags changed (not just names).
+      if (rosterKey(next) !== rosterKey(prev) || renameApplied) commitNpcs(next, broadcast);
       return;
     }
     // Backstop: also despawn any present NPC the narrative clearly says LEFT but the
@@ -1083,10 +1102,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .filter(n => !dedupedEntered.some(e => sameNpcName(e.name, n.name)) && npcLeftInNarrative(narrative, n.name))
       .map(n => n.name);
     const allGone = departed.length ? [...gone, ...departed] : gone;
-    if (dedupedEntered.length === 0 && allGone.length === 0 && !renameApplied) return;
     // mergeNpcRoster drops gone NPCs and folds variant-named re-entries into the
     // existing card instead of duplicating; capped to the 6 most recent present NPCs.
-    commitNpcs(mergeNpcRoster(prev, dedupedEntered, allGone, 6), broadcast);
+    const next = markCompanions(mergeNpcRoster(prev, dedupedEntered, allGone, 6));
+    // Nothing to do only when the roster AND companion flags are unchanged.
+    if (rosterKey(next) === rosterKey(prev) && !renameApplied) return;
+    commitNpcs(next, broadcast);
   }, [commitNpcs]);
 
   // ── On-load NPC identity self-heal ──────────────────────────────────────────
@@ -2132,6 +2153,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       setObjectives(loadedObjectives);
       objectivesRef.current = loadedObjectives;
 
+      // NPC roster — durable & shared in campaigns.npcs. The DB is authoritative;
+      // if it's empty but this device has a localStorage roster (a campaign created
+      // before the move off per-device storage), SEED the column from it so the
+      // cards survive. If the column isn't applied yet, keep using localStorage.
+      {
+        const dbNpcs = (campRes.data as { npcs?: unknown } | null)?.npcs;
+        let localNpcs: SceneNpc[] = [];
+        try { const raw = localStorage.getItem(`dnd_npcs_${params.id}`); if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) localNpcs = p; } } catch { /* ignore */ }
+        if (Array.isArray(dbNpcs) && dbNpcs.length > 0) {
+          const roster = dbNpcs as SceneNpc[];
+          setNpcs(roster); npcsRef.current = roster;
+        } else if (Array.isArray(dbNpcs) && dbNpcs.length === 0 && localNpcs.length > 0) {
+          // Column exists but empty → migrate this device's roster into it (no broadcast yet; channel not ready).
+          setNpcs(localNpcs); npcsRef.current = localNpcs;
+          supabase.from("campaigns").update({ npcs: localNpcs }).eq("id", params.id).then(() => {});
+        } else if (Array.isArray(dbNpcs)) {
+          setNpcs(dbNpcs as SceneNpc[]); npcsRef.current = dbNpcs as SceneNpc[];
+        }
+        // dbNpcs === undefined → column missing; the localStorage effect already painted it.
+      }
+
       const loadedLeaderCharId = (campRes.data as { party_leader_id?: string } | null)?.party_leader_id ?? null;
       setPartyLeaderId(loadedLeaderCharId);
       if (campRes.error) console.error("[campaign] title fetch:", campRes.error.message);
@@ -2390,7 +2432,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .on("broadcast", { event: "npcs_sync" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
-        const next = Array.isArray(payload.npcs) ? (payload.npcs as { name: string; desc: string; portrait_url?: string }[]) : [];
+        const next = Array.isArray(payload.npcs) ? (payload.npcs as SceneNpc[]) : [];
         npcsRef.current = next;
         setNpcs(next);
         try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
@@ -4430,6 +4472,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[XP:[^\]]+\]/gi, "")
       .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
       .replace(/\[NPC-RENAME:[^\]]*\]/gi, "")
+      .replace(/\[NPC-JOIN:[^\]]*\]/gi, "")
       .replace(/\[NPC:[^\]]*\]/gi, "")
       .replace(/\[NPC-GONE:[^\]]*\]/gi, "")
       .replace(/\[COMBAT\b[^\]]*\]/gi, "")
