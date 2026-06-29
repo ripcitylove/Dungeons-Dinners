@@ -1871,6 +1871,21 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // remain tethered to the character regardless of which campaign they're in.
     if (Object.keys(globalFields).length > 0) {
       await supabase.from("characters").update(globalFields).eq("id", charId);
+      // MIRROR level/max_hp/xp into campaign_characters too. The merge sources
+      // these from the characters table, so the CC copies are otherwise never
+      // updated and drift stale (e.g. a Lvl-2 character whose CC row still reads
+      // Lvl 1). Keeping both tables consistent removes any chance a future read
+      // of the CC row computes spell slots / HP from a stale level. Only these
+      // three columns exist on campaign_characters — never mirror abilities/name.
+      if (usesCCTableRef.current) {
+        const mirror: Record<string, unknown> = {};
+        for (const k of ["level", "max_hp", "xp"] as const) {
+          if (globalFields[k] !== undefined) mirror[k] = globalFields[k];
+        }
+        if (Object.keys(mirror).length > 0) {
+          await supabase.from("campaign_characters").update(mirror).eq("campaign_id", params.id).eq("character_id", charId);
+        }
+      }
     }
     // Per-campaign session state — HP, inventory, spell slots, status effects,
     // class_resources — goes to whichever table this campaign uses.
