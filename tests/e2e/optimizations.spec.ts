@@ -44,6 +44,45 @@ async function authAndOpenCampaign(page: Page) {
   await page.waitForTimeout(1500); // let state settle after render
 }
 
+test("#NPC — restored companions load from the DB and SURVIVE a location change", async ({ page }) => {
+  test.setTimeout(120000);
+  // Mock NPC portrait generation so cards render instantly (a card only shows once
+  // it has a portrait_url) without real image-gen.
+  await page.route("**/api/generate-npc-portrait", async route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ portraitUrl: "https://placehold.co/200x200/png" }) }));
+  // Block all Supabase REST writes so the real campaign roster is never mutated.
+  await page.route("**/rest/v1/**", async route =>
+    route.request().method() === "GET" ? route.continue() : route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  await authAndOpenCampaign(page);
+
+  // 1) The DB-restored companions render (proves campaigns.npcs load + portrait flow).
+  await expect(page.locator('img[alt="Sera"]').first()).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('img[alt="Daveth"]').first()).toBeVisible({ timeout: 30000 });
+
+  const input = page.locator("[data-chat-input]");
+  if (!(await input.isEnabled().catch(() => false))) { test.skip(true, "input disabled — cannot drive a turn"); return; }
+
+  // 2) Simulate a LOCATION CHANGE: detect-scene reports moved=true, and the DM
+  // response does NOT re-emit Sera/Daveth (it introduces a new scene NPC). Before
+  // the fix this dropped the companions; now they must persist.
+  await page.route("**/api/chat-state", async route => route.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/summarize-history", async route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ summary: "recap" }) }));
+  await page.route("**/api/detect-scene", async route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sceneName: "mountain", imageUrl: null, momentImageUrl: null, sceneType: "mountain", modifiers: [], description: "", shouldChange: true, moved: true }) }));
+  await page.route("**/api/chat", async route =>
+    route.fulfill({ status: 200, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Three days of hard travel bring you to the Obsidian Tower's frozen gate. [NPC:Gate Sentinel:a frost-rimed guardian in black iron] What do you do?" }));
+
+  await input.fill("We travel north to the tower.");
+  await input.press("Enter");
+  await page.waitForTimeout(8000); // process response + scene-reset
+
+  // Companions kept across the move; the new scene NPC appears.
+  await expect(page.locator('img[alt="Sera"]').first(), "Sera (companion) must survive the move").toBeVisible();
+  await expect(page.locator('img[alt="Daveth"]').first(), "Daveth (companion) must survive the move").toBeVisible();
+  await expect(page.locator('img[alt="Gate Sentinel"]').first(), "new scene NPC should appear").toBeVisible({ timeout: 15000 });
+});
+
 test("#2a — suggestions are on-demand: not auto-fetched, fetched on input focus", async ({ page }) => {
   test.setTimeout(120000);
   let suggestCalls = 0;
