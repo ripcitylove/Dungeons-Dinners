@@ -4,6 +4,15 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Existing-Campaign Parity (PARAMOUNT — Non-Negotiable)
+
+Every change MUST take full effect on EXISTING, SAVED, in-progress campaigns — not only on newly created ones. This is the highest-priority correctness rule for this game: **a fix that only works for new campaigns is NOT a fix.** The player must NEVER have to take any action (re-trigger the event, re-engage, manually reload-and-regenerate, start over) to receive a fix.
+
+- **Backfill is part of the change.** When a fix alters how a value is produced (new data shape, newly generated/persisted value, new tag/format), it does NOTHING for rows already written for existing campaigns. The change is INCOMPLETE until those existing rows are corrected. In the SAME unit of work, write and run a migration/backfill that fixes the already-saved data across all affected campaigns. Persisted per-campaign data includes: `campaign_enemies` (incl. portrait_url), `campaign_characters`, `campaign_messages`, NPC rosters, objectives, inventory, scene/portrait URLs, turn state.
+- **Verify against a REAL existing campaign, not a fresh QA one.** Never declare a fix done after testing only a freshly-created test campaign — that hides exactly this class of bug. Inspect the actual saved campaigns' data (Supabase, via service role) BEFORE and AFTER; confirm the specific affected rows in real campaigns are fixed. Quote the before/after row state when reporting.
+- **Durable over ephemeral.** Anything every player must see (enemy/NPC cards, portraits, stats) must live in shared storage (DB) and sync via broadcast — never per-device/per-client ephemeral state, which silently fails for peers and on reload. If a value is generated client-side, persist it so reloads and other players get it without regenerating.
+- This rule outranks brevity and speed. If satisfying it requires a backfill script run against production data, that is expected and required — not optional.
+
 # Qualifying Questions Before Changes (Non-Negotiable)
 
 When the user asks for an update or change to something, and you have any questions or need more context to do the job well, ask exactly **3 qualifying questions** before starting the work. These questions should be the ones whose answers most improve the result — scope, intent, edge cases, affected surfaces, or trade-offs.
