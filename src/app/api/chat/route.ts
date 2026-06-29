@@ -1001,29 +1001,53 @@ export async function POST(req: NextRequest) {
     // Calibrated so a well-formed response always fits but the DM can't ramble.
     const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : resumeRecap ? 360 : isTurnSkip ? 150 : isQuestion ? 220 : 190;
 
-    // PROMPT CACHING: the system prompt always begins with the large static
-    // VOICE_AND_RULES block (~18k tokens) that is byte-identical on every turn.
-    // We split it into its own cached content block so Anthropic charges it at
-    // ~10% after the first turn (5-min ephemeral TTL — stays warm across an
-    // active session, harmlessly rebuilds after a pause). The DYNAMIC tail
-    // (party state, enemies, turn info — different every turn) follows as an
-    // uncached block. Cache matching is prefix-based: because the rules are the
-    // very first bytes, they cache cleanly regardless of what changes after.
-    const fullSystem = buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs);
-    const systemBlocks: Anthropic.TextBlockParam[] = fullSystem.startsWith(VOICE_AND_RULES)
-      ? [
-          { type: "text", text: VOICE_AND_RULES, cache_control: { type: "ephemeral" } },
-          ...(fullSystem.length > VOICE_AND_RULES.length
-            ? [{ type: "text" as const, text: fullSystem.slice(VOICE_AND_RULES.length) }]
-            : []),
-        ]
-      : [{ type: "text", text: fullSystem }];
+    // PROMPT CACHING — two breakpoints, both 5-min ephemeral:
+    //
+    //  (1) STATIC RULES. The system prompt always begins with the ~20.5k-token
+    //      VOICE_AND_RULES block, byte-identical every turn. It is its own cached
+    //      system block → ~10% cost after the first turn.
+    //
+    //  (2) CONVERSATION HISTORY. Caching the history requires that NOTHING which
+    //      changes per-turn sits before it (cache matching is prefix-based). So we
+    //      pull the DYNAMIC tail (party HP, enemies, turn order — different every
+    //      turn) OUT of the system prompt and inject it into the FINAL user message
+    //      instead. The stored conversation is then a stable, append-only prefix:
+    //      we put a cache breakpoint on the last settled history message so
+    //      [rules + history] is read at ~10% and only the small per-turn delta
+    //      (last exchange) + the final (state + action) message bill fresh.
+    //
+    // The dynamic state is NOT persisted into stored history, so it can never
+    // bloat future turns or leave a stale snapshot the DM might read as truth.
+    const fullSystem  = buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs);
+    const hasRules    = fullSystem.startsWith(VOICE_AND_RULES);
+    const staticRules = hasRules ? VOICE_AND_RULES : fullSystem;
+    const dynamicTail = hasRules ? fullSystem.slice(VOICE_AND_RULES.length) : "";
+
+    const systemBlocks: Anthropic.TextBlockParam[] = [
+      { type: "text", text: staticRules, cache_control: { type: "ephemeral" } },
+    ];
+
+    const lastIdx = claudeMessages.length - 1;
+    const outMessages: Anthropic.MessageParam[] = claudeMessages.map((m, i) => {
+      if (i === lastIdx) {
+        // Final turn → carry the authoritative per-turn state, then the action.
+        const text = dynamicTail
+          ? `${dynamicTail}\n\n=== THE CURRENT ACTION / PROMPT FOLLOWS ===\n${m.content}`
+          : m.content;
+        return { role: m.role, content: text };
+      }
+      if (i === lastIdx - 1) {
+        // Last settled history message → cache breakpoint for [rules + history].
+        return { role: m.role, content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }] };
+      }
+      return { role: m.role, content: m.content };
+    });
 
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
       system:     systemBlocks,
-      messages:   claudeMessages,
+      messages:   outMessages,
       stream:     true,
     });
 

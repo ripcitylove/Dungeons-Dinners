@@ -5616,7 +5616,10 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // requests would be in-flight with the same stale currentScene — the newer one (reconciliation)
       // would win and could revert the scene if it got stale data. Only run detection on the
       // substantive reconciliation response.
-      if (!opts?.isRollResult && !opts?.allActed) {
+      // Also skip [NO-TURN] responses (a refusal / clarification): the action did
+      // NOT happen, so the scene cannot have changed and there is no story moment —
+      // running the classifier would only waste a Haiku call.
+      if (!opts?.isRollResult && !opts?.allActed && !/\[NO-?TURN\]/i.test(full)) {
         const isCombatNow = enemiesRef.current.some(e => !e.is_defeated);
         const partySnap   = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class }));
         const enemySnap   = enemiesRef.current.filter(e => !e.is_defeated).map(e => ({ name: e.name }));
