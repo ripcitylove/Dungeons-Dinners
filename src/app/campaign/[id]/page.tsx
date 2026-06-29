@@ -6846,10 +6846,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           );
         })()}
         {/* ── Enemy / hostile cards — lifted off the BOTTOM of the scene. Click to target.
-              Only enemies whose portrait has generated are shown (never a placeholder),
-              and the cards shrink as more enemies appear so a full party's worth fits. ── */}
+              Shown the MOMENT combat engages so every player can see and target enemies
+              immediately — the portrait fills in when it finishes generating (a clear
+              placeholder shows until then). Cards shrink as more enemies appear. ── */}
         {(() => {
-          const visEnemies = enemies.filter(e => !e.is_defeated && e.condition !== "defeated" && e.portrait_url);
+          const visEnemies = enemies.filter(e => !e.is_defeated && e.condition !== "defeated");
           if (visEnemies.length === 0) return null;
           const cnt = visEnemies.length;
           // Shrink card width as the enemy count climbs (dynamic 1–10 encounters).
@@ -6871,7 +6872,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   onMouseLeave={hideTooltip}
                   style={{ width: enemyW, cursor: "pointer", flexShrink: 0, background: "rgba(12,8,10,0.66)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", border: `2px solid ${isTargeted ? "rgba(239,68,68,0.9)" : "rgba(239,68,68,0.3)"}`, borderRadius: "12px", padding: cnt >= 6 ? "6px" : "8px", boxShadow: isTargeted ? "0 0 24px rgba(239,68,68,0.5)" : "0 6px 22px rgba(0,0,0,0.55)", animation: isTargeted ? "targetedEnemy 1.6s ease-in-out infinite" : undefined, transition: "border-color 0.25s, box-shadow 0.25s" }}>
                   <div style={{ width: "100%", aspectRatio: "1", borderRadius: "9px", overflow: "hidden", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.07)", marginBottom: "6px" }}>
-                    <img src={e.portrait_url!} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    {e.portrait_url
+                      ? <img src={e.portrait_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <div title="Enemy — portrait loading…" style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(circle at 50% 40%, rgba(120,28,28,0.55), rgba(18,8,10,0.92))", color: "rgba(252,165,165,0.85)", fontSize: cnt >= 6 ? "1.1rem" : "1.5rem", animation: "pulseGlow 1.6s ease-in-out infinite" }} aria-label={`${e.name} (portrait loading)`}>⚔</div>}
                   </div>
                   <div style={{ fontSize: cnt >= 6 ? "0.62rem" : "0.72rem", fontWeight: 700, color: isTargeted ? "#fca5a5" : "#fecaca", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 3px black" }}>{e.name}</div>
                   <div style={{ fontSize: "0.55rem", color: "#d8b4b4", textAlign: "center", marginBottom: "5px", letterSpacing: "0.02em" }}>CR {e.cr} · AC {e.ac}</div>
@@ -9230,6 +9233,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
       <style>{`
         @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes pulseGlow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
         @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         @keyframes streamFadeIn { from { opacity: 0; filter: blur(3px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
