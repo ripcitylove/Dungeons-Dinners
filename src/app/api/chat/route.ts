@@ -1001,10 +1001,28 @@ export async function POST(req: NextRequest) {
     // Calibrated so a well-formed response always fits but the DM can't ramble.
     const maxTokens = roundSummary?.length ? 260 : openingScene ? 300 : resumeRecap ? 360 : isTurnSkip ? 150 : isQuestion ? 220 : 190;
 
+    // PROMPT CACHING: the system prompt always begins with the large static
+    // VOICE_AND_RULES block (~18k tokens) that is byte-identical on every turn.
+    // We split it into its own cached content block so Anthropic charges it at
+    // ~10% after the first turn (5-min ephemeral TTL — stays warm across an
+    // active session, harmlessly rebuilds after a pause). The DYNAMIC tail
+    // (party state, enemies, turn info — different every turn) follows as an
+    // uncached block. Cache matching is prefix-based: because the rules are the
+    // very first bytes, they cache cleanly regardless of what changes after.
+    const fullSystem = buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs);
+    const systemBlocks: Anthropic.TextBlockParam[] = fullSystem.startsWith(VOICE_AND_RULES)
+      ? [
+          { type: "text", text: VOICE_AND_RULES, cache_control: { type: "ephemeral" } },
+          ...(fullSystem.length > VOICE_AND_RULES.length
+            ? [{ type: "text" as const, text: fullSystem.slice(VOICE_AND_RULES.length) }]
+            : []),
+        ]
+      : [{ type: "text", text: fullSystem }];
+
     const stream = await anthropic.messages.create({
       model:      "claude-sonnet-4-6",
       max_tokens: maxTokens,
-      system:     buildSystemPrompt(character, party, campaignContext, enemies, openingScene, currentTurnPlayerName, targetedEnemyName, defaultTargetEnemyName, prevActingPlayerName, roundSummary, partyLeaderName, pendingReconciliation, isRollResult, isTurnSkip, skippedPlayerName, isGroupCheckResult, turnOrder, isQuestion, resumeRecap, departedAddresseeName, suggestedCheck, objectives, onScreenNpcs),
+      system:     systemBlocks,
       messages:   claudeMessages,
       stream:     true,
     });
@@ -1014,12 +1032,24 @@ export async function POST(req: NextRequest) {
     const writer = writable.getWriter();
 
     void (async () => {
+      // Capture cache usage so we can confirm the rules block is being cached.
+      // message_start carries input + cache_creation/cache_read counts; the
+      // delta carries output. Logged once per turn for cost observability.
+      let cacheCreate = 0, cacheRead = 0, inputTok = 0, outputTok = 0;
       try {
         for await (const event of stream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          if (event.type === "message_start") {
+            const u = event.message.usage;
+            inputTok    = u.input_tokens ?? 0;
+            cacheCreate = u.cache_creation_input_tokens ?? 0;
+            cacheRead   = u.cache_read_input_tokens ?? 0;
+          } else if (event.type === "message_delta") {
+            outputTok = event.usage?.output_tokens ?? outputTok;
+          } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             await writer.write(encoder.encode(event.delta.text));
           }
         }
+        console.log(`[api/chat] tokens in=${inputTok} cacheWrite=${cacheCreate} cacheRead=${cacheRead} out=${outputTok}`);
       } finally {
         try { await writer.close(); } catch { /* already closed */ }
       }

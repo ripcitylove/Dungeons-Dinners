@@ -35,6 +35,7 @@ import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcR
 import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
+import { isFullyTagCovered } from "../../../lib/extractorGate";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks, looksLikeRollRequest } from "../../../lib/narration";
@@ -2456,13 +2457,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
           if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
         }
-        // Generate suggestions for this player if it's now their turn
-        const order = turnOrderRef.current;
-        const isMyTurnNow = order.length <= 1 || order[currentTurnIndexRef.current] === characterRef.current?.id;
-        if (isMyTurnNow && characterRef.current) {
-          fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(payload.content as string, characterRef.current)) })
-            .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-        }
+        // Suggestions are generated on-demand when the player focuses the chat
+        // input (see requestSuggestions) — not auto-fetched on every turn.
       })
       .on("broadcast", { event: "dm_typing" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
@@ -2489,19 +2485,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const turnPartyIdx = campaignPartyRef.current.findIndex(c => c.id === turnCharId);
           if (turnPartyIdx >= 0) setActiveCharIdx(turnPartyIdx);
         }
-        // Generate suggestions if the turn just landed on this player
-        const order = turnOrderRef.current;
-        const isNowMyTurn = order.length <= 1 || order[newIdx] === characterRef.current?.id;
-        if (isNowMyTurn && characterRef.current) {
-          const lastDmMsg = [...messagesRef.current].reverse().find(m => m.role === "dm");
-          if (lastDmMsg) {
-            fetch("/api/suggest-actions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(buildSuggestActionsBody(lastDmMsg.content, characterRef.current)),
-            }).then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-          }
-        }
+        // Suggestions are generated on-demand on input focus (see
+        // requestSuggestions) — not auto-fetched when the turn lands.
       })
       .on("broadcast", { event: "turn_order_swap" }, ({ payload }) => {
         if (payload.userId === userIdRef.current) return;
@@ -2922,19 +2907,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     return () => clearTimeout(t);
   }, [narrating, narHeartbeat]);
 
-  // Guarantee: whenever it's my turn, the DM isn't busy, and suggestions are empty,
-  // fetch them from the last DM message. Covers resume, turn changes, and silent fetch failures.
+  // ON-DEMAND suggestions: rather than spending a Haiku call automatically every
+  // turn (most of which the player never reads — they just type), we generate
+  // suggestions ONLY when the player focuses the chat input. The input is
+  // disabled when it isn't the player's turn / the DM is busy, so onFocus can't
+  // fire in those states. A per-DM-message guard means clicking in and out
+  // repeatedly for the same prompt costs at most one call.
   const suggestionFetchInFlightRef = useRef(false);
-  useEffect(() => {
-    const myTurn = rollRequestedUserId ? rollRequestedUserId === userId
-      : (turnOrder.length <= 1 || turnOrder[currentTurnIndex] === character?.id);
-    const busy = isTyping || narrating;
-    if (!sessionStarted || !myTurn || busy || suggestions.length > 0) return;
+  const suggestionsForMsgRef = useRef<string | null>(null);
+  const requestSuggestions = useCallback(() => {
+    if (!sessionStarted || isTyping || narrating) return;
     if (suggestionFetchInFlightRef.current) return;
     const char   = characterRef.current;
     const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
     if (!char || !lastDm) return;
+    // Already have suggestions for this exact DM message — don't refetch.
+    if (suggestions.length > 0 && suggestionsForMsgRef.current === lastDm.content) return;
     suggestionFetchInFlightRef.current = true;
+    suggestionsForMsgRef.current = lastDm.content;
     fetch("/api/suggest-actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2944,9 +2934,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .then(({ suggestions: s }) => { if (s?.length) setSuggestions(s); })
       .catch(() => {})
       .finally(() => { suggestionFetchInFlightRef.current = false; });
-  // messages.length re-checks after each new DM message arrives
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionStarted, rollRequestedUserId, userId, turnOrder, currentTurnIndex, character?.id, isTyping, narrating, suggestions.length, messages.length]);
+  }, [sessionStarted, isTyping, narrating, suggestions.length, buildSuggestActionsBody]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet, then PERSIST + BROADCAST
@@ -3498,6 +3486,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       return; // inert turn — nothing for the extractor to find
     }
     const econ = parseEconomyTags(narrative);
+    // TOKEN SAVER — skip the Haiku extractor when the turn is FULLY covered by
+    // deterministic tags (see isFullyTagCovered for the exact, conservative
+    // conditions — it never skips when a status effect / forgotten HP / untagged
+    // spell could be in play). HP is applied by the fast-[HP]-tag path regardless,
+    // so economy tags alone (via econOnlyChange) fully cover such a turn.
+    const fullyTagCovered = isFullyTagCovered(narrative, inCombat);
     // Concentration is classified deterministically from the spell cast (see the
     // [CAST] handler in sendToAI). If spells were cast this turn but NONE require
     // concentration, the extractor must not invent a "Concentrating" badge — strip
@@ -3518,6 +3512,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       xp_award:       econ.xpTagged   ? econ.xp_award        : 0,
       status_effects_gained: [], status_effects_lost: [], spell_slots_used: 0, spell_slot_level: 0, spell_cast_name: null,
     });
+    // TOKEN SAVER (see above): when the turn is fully covered by deterministic
+    // tags, apply the tagged economy and skip the Haiku extractor entirely.
+    if (fullyTagCovered) {
+      applyStateChange(gateConcentration(econOnlyChange()), narrative);
+      return;
+    }
     fetch("/api/chat-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative }) })
       .then(r => r.json())
       .then((rawChange: StateChange) => {
@@ -4061,11 +4061,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       supabase.from("campaign_messages").insert([{ campaign_id: params.id, role: "dm", content: full, sender: null }])
         .then(({ error }) => { if (error) console.error("[party event]", error); });
       channelRef.current?.send({ type: "broadcast", event: "dm_response", payload: { senderId: userIdRef.current, content: full, actingCharId: characterRef.current?.id ?? null } });
-      const isPartyEventMyTurn = turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === characterRef.current?.id;
-      if (isPartyEventMyTurn && characterRef.current) {
-        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(full, characterRef.current)) })
-          .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-      }
+      // Suggestions generate on-demand when the player focuses the input.
     } catch { /* best effort */ } finally {
       setIsTyping(false); isTypingRef.current = false;
       setStreamingContent("");
@@ -5585,18 +5581,8 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         }
       }
 
-      // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
-      const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-      const nextTurnChar   = (nextTurnCharId && campaignPartyRef.current.find(c => c.id === nextTurnCharId))
-        || characterRef.current;
-      // Local = solo play, OR the character whose turn it is belongs to this user
-      const isLocalTurn = turnOrderRef.current.length <= 1
-        || !nextTurnCharId
-        || nextTurnChar?.user_id === userId;
-      if (isLocalTurn && !opts?.allActed && nextTurnChar) {
-        fetch("/api/suggest-actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildSuggestActionsBody(full, nextTurnChar)) })
-          .then(r => r.json()).then(({ suggestions: s }) => setSuggestions(s ?? [])).catch(() => {});
-      }
+      // Suggestions generate on-demand when the player focuses the chat input
+      // (see requestSuggestions) — no per-turn auto-fetch.
 
       // Round management: reconcile when every party member has acted (count-based, not position-based)
       if (opts?.trackRound && !validRollTarget) {
@@ -7472,6 +7458,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             <input
               type="text" value={input}
               data-chat-input
+              onFocus={requestSuggestions}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={isTyping || narrating || !isMyTurn || showDice || pendingDiceShow}

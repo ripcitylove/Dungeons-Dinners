@@ -142,9 +142,15 @@ export async function POST(req: NextRequest) {
     const response = await anthropic.messages.create({
       model:      "claude-haiku-4-5-20251001",
       max_tokens: 300,
-      system:     SYSTEM,
+      // The ~4k-token extractor instructions are identical on every call, so we
+      // cache them (5-min ephemeral) — after the first call each turn they bill
+      // at ~10%. Only the per-turn narrative (the user message) is paid fresh.
+      system:     [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       messages:   [{ role: "user", content: narrative }],
     });
+
+    const u = response.usage;
+    console.log(`[api/chat-state] tokens in=${u.input_tokens} cacheWrite=${u.cache_creation_input_tokens ?? 0} cacheRead=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens}`);
 
     const raw   = response.content[0].type === "text" ? response.content[0].text : "";
     const match = raw.match(/\{[\s\S]*\}/);
