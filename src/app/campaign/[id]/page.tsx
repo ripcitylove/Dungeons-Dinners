@@ -2646,6 +2646,14 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         enemiesRef.current = spawned;
         setCombatActive(true);
       })
+      .on("broadcast", { event: "enemy_portrait" }, ({ payload }) => {
+        const { id, portrait_url } = payload as { id: string; portrait_url: string };
+        setEnemies(prev => {
+          const updated = prev.map(en => en.id === id ? { ...en, portrait_url } : en);
+          enemiesRef.current = updated;
+          return updated;
+        });
+      })
       .on("broadcast", { event: "enemies_updated" }, ({ payload }) => {
         const { changes, combat_ended } = payload as {
           changes: { name: string; condition: EnemyCondition; is_defeated: boolean; status_effects_gained: string[]; status_effects_lost: string[] }[];
@@ -2926,11 +2934,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   }, [sessionStarted, rollRequestedUserId, userId, turnOrder, currentTurnIndex, character?.id, isTyping, narrating, suggestions.length, messages.length]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
-  // Fetch AI portraits for enemies that don't have one yet
+  // Fetch AI portraits for enemies that don't have one yet, then PERSIST + BROADCAST
+  // them. Persisting to campaign_enemies is what makes portraits durable: on the next
+  // reload the enemy loads WITH its portrait and the card shows it instantly — no
+  // regeneration, no waiting, and no dependency on the client fetch succeeding. The
+  // broadcast updates every other player's view live, so all clients converge on the
+  // same image instead of each regenerating their own.
+  const enemyPortraitTriedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const needsPortrait = enemies.filter(e => !e.portrait_url && !e.is_defeated);
+    const needsPortrait = enemies.filter(e => !e.portrait_url && !e.is_defeated && !enemyPortraitTriedRef.current.has(e.id));
     if (!needsPortrait.length) return;
     needsPortrait.forEach(e => {
+      enemyPortraitTriedRef.current.add(e.id);
       fetch("/api/generate-enemy-portrait", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2938,11 +2953,16 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
         .then(r => r.json())
         .then(({ portraitUrl }: { portraitUrl: string | null }) => {
-          if (portraitUrl) {
-            setEnemies(prev => prev.map(en => en.id === e.id ? { ...en, portrait_url: portraitUrl } : en));
-          }
+          if (!portraitUrl) { enemyPortraitTriedRef.current.delete(e.id); return; } // allow a retry next render
+          setEnemies(prev => {
+            const updated = prev.map(en => en.id === e.id ? { ...en, portrait_url: portraitUrl } : en);
+            enemiesRef.current = updated;
+            return updated;
+          });
+          supabase.from("campaign_enemies").update({ portrait_url: portraitUrl }).eq("id", e.id).then(() => {});
+          channelRef.current?.send({ type: "broadcast", event: "enemy_portrait", payload: { id: e.id, portrait_url: portraitUrl } });
         })
-        .catch(() => {});
+        .catch(() => { enemyPortraitTriedRef.current.delete(e.id); });
     });
   }, [enemies.map(e => e.id).join(",")]);
 
