@@ -22,6 +22,7 @@ if (verr) { console.error("verifyOtp:", verr.message); process.exit(1); }
 console.log("Minted session for", v.user.email);
 
 const extra = process.env.OPT_HEADED ? ["--headed"] : [];
+if (process.env.PWGREP) extra.push("--grep", process.env.PWGREP);
 const r = spawnSync("npx", ["playwright", "test", "tests/e2e/optimizations.spec.ts", "--project=chromium", "--reporter=list", "--workers=1", ...extra], {
   stdio: "inherit",
   shell: true,

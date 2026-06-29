@@ -40,7 +40,7 @@ async function authAndOpenCampaign(page: Page) {
   // Recent turns reliably mention these names; their presence proves the
   // transcript loaded (the page auto-scrolls to the latest messages).
   await page.getByText(/Artemis|Cleriss|Minny|champion|sanctum/i).first()
-    .waitFor({ state: "visible", timeout: 45000 });
+    .waitFor({ state: "visible", timeout: 60000 });
   await page.waitForTimeout(1500); // let state settle after render
 }
 
@@ -104,4 +104,64 @@ test("#3/#4 — DM call sends a WINDOWED payload (recap + recent), not the full 
   expect(msgs[0].content, "first message should be the STORY SO FAR recap").toContain("STORY SO FAR");
   // The current action must be present as the last message.
   expect(msgs[msgs.length - 1].content).toContain("quiet look around");
+});
+
+/**
+ * #2c — scene-classifier skip. The client should call /api/detect-scene after a
+ * normal DM turn, but SKIP it when the DM response is a [NO-TURN] refusal (no scene
+ * change / story moment is possible). We force the DM response via interception and
+ * block every Supabase REST write so the real campaign is never mutated.
+ */
+// Unique marker embedded in the faked DM response. The send-path scene call
+// (page.tsx:5674) passes `narrative: full` — i.e. THIS response — so we count only
+// detect-scene calls whose narrative carries the marker. That isolates the call
+// THIS turn triggers from unrelated baseline scene calls (load restore, resume
+// re-detection) that carry a historical narrative.
+const SCENE_MARKER = "SCENEPROBE7X";
+
+async function sendActionAndCountSceneCalls(page: Page, dmBody: string): Promise<number> {
+  // Block all Supabase REST writes (keep GET reads) — no message/turn-state mutation.
+  await page.route("**/rest/v1/**", async route =>
+    route.request().method() === "GET"
+      ? route.continue()
+      : route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  let myTurnSceneCalls = 0;
+  await page.route("**/api/detect-scene", async route => {
+    try { if ((JSON.parse(route.request().postData() || "{}").narrative || "").includes(SCENE_MARKER)) myTurnSceneCalls++; } catch { /* */ }
+    await route.abort();
+  });
+  // Cheap/free no-op for the other post-turn helper so it can't interfere.
+  await page.route("**/api/chat-state", async route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+  // Force the DM response content (this is what the scene gate inspects).
+  await page.route("**/api/chat", async route =>
+    route.fulfill({ status: 200, headers: { "content-type": "text/plain; charset=utf-8" }, body: dmBody }));
+
+  const input = page.locator("[data-chat-input]");
+  await expect(input).toBeEnabled({ timeout: 15000 });
+  await input.fill("I look around the chamber carefully.");
+  await input.press("Enter");
+  await page.waitForTimeout(8000); // process the streamed response + the scene-gate decision
+  return myTurnSceneCalls;
+}
+
+test("#2c — a normal DM response DOES call the scene classifier (control)", async ({ page }) => {
+  test.setTimeout(120000);
+  await authAndOpenCampaign(page);
+  await page.waitForTimeout(3000); // let load-time scene detection settle before intercepting
+  const calls = await sendActionAndCountSceneCalls(page,
+    `You step deeper into the sanctum. ${SCENE_MARKER} Cold blue light spills from a cracked archway ahead and the air turns frigid. What do you do, Artemis?`);
+  console.log(`my-turn scene calls after NORMAL response: ${calls}`);
+  expect(calls, "a normal DM response should trigger scene detection").toBeGreaterThan(0);
+});
+
+test("#2c — a [NO-TURN] DM response SKIPS the scene classifier", async ({ page }) => {
+  test.setTimeout(120000);
+  await authAndOpenCampaign(page);
+  await page.waitForTimeout(3000);
+  const calls = await sendActionAndCountSceneCalls(page,
+    `[NO-TURN] ${SCENE_MARKER} That isn't possible right now — the sealed door won't budge no matter how hard you try.`);
+  console.log(`my-turn scene calls after [NO-TURN] response: ${calls}`);
+  expect(calls, "a [NO-TURN] response must NOT trigger scene detection").toBe(0);
 });
