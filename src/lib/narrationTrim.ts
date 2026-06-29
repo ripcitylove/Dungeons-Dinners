@@ -4,8 +4,11 @@
 // trims any dangling, unterminated final sentence down to the last COMPLETE one.
 
 // A sentence is "complete" when it ends in . ! ? or … (optionally followed by a
-// closing quote/bracket). Trailing whitespace is ignored.
-const ENDS_CLEAN = /[.!?…]["'')\]]*$/;
+// closing quote/bracket). The closing class includes CURLY quotes (" ' » ) so a
+// line ending in dialogue like `…Run.”` is not mistaken for a truncation. Trailing
+// whitespace is ignored.
+const CLOSERS = `["'')\\]”’»]*`;
+const ENDS_CLEAN = new RegExp(`[.!?…]${CLOSERS}$`);
 
 /** True when the text ends on a complete, punctuated sentence. */
 export function endsOnCompleteSentence(text: string): boolean {
@@ -23,7 +26,7 @@ export function lastCompleteSentence(text: string): string {
   if (!s) return "";
   if (ENDS_CLEAN.test(s)) return s;
   let last = -1;
-  const re = /[.!?…]["'')\]]*(?=\s|$)/g;
+  const re = new RegExp(`[.!?…]${CLOSERS}(?=\\s|$)`, "g");
   let m: RegExpExecArray | null;
   while ((m = re.exec(s)) !== null) last = m.index + m[0].length;
   return last > 0 ? s.slice(0, last).replace(/\s+$/, "") : "";
@@ -32,7 +35,7 @@ export function lastCompleteSentence(text: string): string {
 // A saved DM message can legitimately END in a bracketed system tag ([NPC:…],
 // [HP:…]) rather than punctuation — that is NOT a truncation, so treat a trailing
 // "]" as a clean ending and leave the content untouched.
-const ENDS_CLEAN_OR_TAG = /[.!?…)"'\]]$/;
+const ENDS_CLEAN_OR_TAG = /[.!?…)"'\]”’»]$/;
 
 /**
  * Heal a STORED DM message (loaded from history) that an earlier session left

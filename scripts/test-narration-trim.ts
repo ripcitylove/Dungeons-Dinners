@@ -16,6 +16,9 @@ const CASES: Case[] = [
   { text: "The blade sings — and bites deep!", expect: "The blade sings — and bites deep!", note: "exclamation" },
   { text: "It trails off into the dark…", expect: "It trails off into the dark…", note: "ellipsis is a complete end" },
   { text: "He whispers, \"Run.\"", expect: "He whispers, \"Run.\"", note: "closing quote after period" },
+  { text: "He whispers, “Run.”", expect: "He whispers, “Run.”", note: "CURLY closing quote — not a truncation" },
+  { text: "She turns. ‘We’re leaving.’", expect: "She turns. ‘We’re leaving.’", note: "curly single quotes" },
+  { text: "“Wait,” she says. The door creaks open and he steps", expect: "“Wait,” she says.", note: "curly mid + dangling tail" },
   { text: "Narration line.   ", expect: "Narration line.", note: "trailing whitespace trimmed" },
   // No complete sentence at all → "" (caller treats as degenerate / retry).
   { text: "Sera hasn't stopped moving toward", expect: "", note: "single unfinished fragment" },

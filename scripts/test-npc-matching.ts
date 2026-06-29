@@ -187,6 +187,33 @@ rCheck("cue: introduces himself", looksLikeNameReveal("She introduces herself as
 rCheck("cue: plain narration has no reveal", looksLikeNameReveal("The stranger watches from the corner, silent.") === false);
 rCheck("cue: quoted command is not a name", looksLikeNameReveal('"Run!" he shouts, drawing his blade.') === false);
 
+// ── Punctuation / odd-character hardening (names must not break matching) ──
+// curly vs straight apostrophe in the SAME name
+rCheck("curly vs straight apostrophe", sameNpcName("D’Arvit", "D'Arvit") === true);
+// diacritics fold (Zoë == Zoe) for variant matching + reveal linking
+rCheck("diacritic fold same name", sameNpcName("Zoë", "Zoe") === true);
+rCheck("diacritic fold first/full", sameNpcName("Zoë", "Zoë Vale") === true);
+// non-ASCII base letters still tokenize (not blanked) and stay distinct
+rCheck("accented names stay distinct", sameNpcName("Søren", "Sera") === false);
+rCheck("smart-quoted role still anon", isAnonymousDescriptor("“Hooded” Stranger") === true);
+// hyphen/space equivalence
+rCheck("hyphen vs space name", sameNpcName("Jean-Luc", "Jean Luc") === true);
+// player guard folds diacritics: NPC "Zoe" resolves to player "Zoë Strand"
+rCheck("player guard folds accent", isPlayerName("Zoe", ["Zoë Strand"]) === true);
+rCheck("player guard curly apostrophe", isPlayerName("D'Argo", ["D’Argo Vex"]) === true);
+// rename with odd chars keeps the display name and matches the placeholder
+{
+  const out = applyNpcRenames([{ name: "Hooded Stranger", desc: "", portrait_url: "f.png" }],
+    [{ from: "Hooded Stranger", to: "Zoë Vale" }]);
+  rCheck("rename to accented name", out.length === 1 && out[0].name === "Zoë Vale"
+    && (out[0] as { portrait_url?: string }).portrait_url === "f.png");
+}
+// reveal cue with accented name + curly quotes
+rCheck("cue: accented quoted name", looksLikeNameReveal("“Zoë,” she answers.") === true);
+rCheck("cue: curly-quote name + says", looksLikeNameReveal("‘Daveth,’ he says quietly.") === true);
+// punctuation in a real name doesn't false-match a different one
+rCheck("punctuated names distinct", sameNpcName("Mr. Black", "Mr. White") === false);
+
 console.log(`\nNPC matching battery: ${pass}/${CASES.length} passed.`);
 console.log(`NPC roster-merge battery: ${rosterPass}/${rosterPass + rosterFail.length} passed.`);
 console.log(`NPC player-guard battery: ${playerPass}/${playerPass + playerFail.length} passed.`);

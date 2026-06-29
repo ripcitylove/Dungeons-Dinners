@@ -87,10 +87,25 @@ const NPC_GENERIC_WORDS = new Set([
   "owner", "captain", "lord", "lady", "elder",
 ]);
 
-function npcTokens(name: string): string[] {
-  return name
+// Single normalization chokepoint that protects EVERY NPC match/rename from
+// punctuation and odd characters in a name. Folds curly quotes/apostrophes to
+// straight ('Zoë' / "smart quotes" / D’Arvit), strips combining diacritics so
+// "Zoë" matches "Zoe", lowercases, and trims. Base non-ASCII letters (ø, ñ, ß)
+// are preserved so foreign names still tokenize instead of being blanked.
+export function foldName(s: string): string {
+  return (s || "")
+    .replace(/[‘’ʼ`´]/g, "'") // ' ' ʼ ` ´  → '
+    .replace(/[“”«»]/g, '"')       // " " « »    → "
+    .normalize("NFKD").replace(/[̀-ͯ]/g, "") // drop combining accent marks
     .toLowerCase()
-    .replace(/[^a-z0-9'\-\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function npcTokens(name: string): string[] {
+  return foldName(name)
+    .replace(/[^\p{L}\p{N}'\s-]/gu, " ") // keep unicode letters/digits, apostrophe, hyphen
+    .replace(/-+/g, " ")                  // hyphens separate tokens (Jean-Luc → jean luc)
     .split(/\s+/)
     .filter(Boolean);
 }
@@ -114,8 +129,8 @@ function npcCore(name: string): string[] {
  * Two distinct same-role NPCs ("Tom the Guard" / "Bob the Guard") do NOT match.
  */
 export function sameNpcName(a: string, b: string): boolean {
-  const al = a.trim().toLowerCase();
-  const bl = b.trim().toLowerCase();
+  const al = foldName(a);
+  const bl = foldName(b);
   if (!al || !bl) return false;
   if (al === bl) return true;
 
@@ -147,13 +162,13 @@ export type NpcCardLike = { name: string; desc: string };
  * all resolve to the player "Lyra Quickwit".
  */
 export function isPlayerName(name: string, partyNames: string[]): boolean {
-  const n = name.trim().toLowerCase();
+  const n = foldName(name);
   if (!n) return false;
-  const nFirst = n.split(/\s+/)[0];
+  const nFirst = n.split(" ")[0];
   return partyNames.some(p => {
-    const pl = (p ?? "").trim().toLowerCase();
+    const pl = foldName(p ?? "");
     if (!pl) return false;
-    const pFirst = pl.split(/\s+/)[0];
+    const pFirst = pl.split(" ")[0];
     return pl === n || pl.startsWith(n + " ") || n.startsWith(pl + " ") || (!!pFirst && pFirst === nFirst);
   });
 }
@@ -173,10 +188,13 @@ export function dropPlayerNpcs<T extends NpcCardLike>(npcs: T[], partyNames: str
  */
 export function looksLikeNameReveal(text: string): boolean {
   if (!text) return false;
+  // Fold curly quotes/apostrophes to straight so the patterns are punctuation-proof.
+  const t = text.replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"');
   // Explicit naming phrases.
-  if (/\b(?:my name is|name'?s|call me|i'?m called|i am called|named|introduces?\s+(?:him|her|them)?sel(?:f|ves)\s+as|goes by|they call (?:me|him|her|them)|you can call me|the name'?s)\b/i.test(text)) return true;
+  if (/\b(?:my name is|name'?s|call me|i'?m called|i am called|named|introduces?\s+(?:him|her|them)?sel(?:f|ves)\s+as|goes by|they call (?:me|him|her|them)|you can call me|the name'?s)\b/i.test(t)) return true;
   // A short quoted Capitalized word answered with a speech verb: "Daveth," he says.
-  if (/["“'][A-Z][a-z'’-]{2,15}["”'.,]*\s*[—–-]?\s*(?:he|she|they|the\b[^.!?\n]{0,24})?\s*(?:says?|said|replies|replied|rasps?|murmurs?|answers?|offers?|mutters?|breathes?|whispers?|growls?|adds?|finally)\b/i.test(text)) return true;
+  // \p{Lu}/\p{Ll} (u flag) so accented names like "Zoë" / "Søren" are caught too.
+  if (/["'][\p{Lu}][\p{Ll}'-]{1,20}["'.,]*\s*[—–-]?\s*(?:he|she|they|the\b[^.!?\n]{0,24})?\s*(?:says?|said|replies|replied|rasps?|murmurs?|answers?|offers?|mutters?|breathes?|whispers?|growls?|adds?|finally)\b/iu.test(t)) return true;
   return false;
 }
 
