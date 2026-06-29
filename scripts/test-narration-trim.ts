@@ -1,7 +1,7 @@
 // Verifies the mid-sentence truncation guard: a response cut off at the token
 // ceiling must never be shown/spoken with a dangling, unfinished sentence.
 // Run: `npx tsx scripts/test-narration-trim.ts`
-import { endsOnCompleteSentence, lastCompleteSentence } from "../src/lib/narrationTrim.ts";
+import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../src/lib/narrationTrim.ts";
 
 type Case = { text: string; expect: string; note?: string };
 
@@ -31,11 +31,28 @@ for (const c of CASES) {
   else failures.push(`  expected ${JSON.stringify(c.expect)} got ${JSON.stringify(got)}${c.note ? `  (${c.note})` : ""}`);
 }
 
+// ── trimSavedDangling: healing already-saved history messages on resume ──
+let savedPass = 0;
+const savedFail: string[] = [];
+const sCheck = (input: string, expect: string, note?: string) => {
+  const got = trimSavedDangling(input);
+  if (got === expect) savedPass++;
+  else savedFail.push(`  expected ${JSON.stringify(expect)} got ${JSON.stringify(got)}${note ? `  (${note})` : ""}`);
+};
+sCheck("The water is rising. Sera hasn't stopped moving toward", "The water is rising.", "reported truncation");
+sCheck("[RECAP]\n\nThe room is cold. He turns toward", "[RECAP]\n\nThe room is cold.", "recap truncation");
+sCheck("You enter the hall. Torches gutter.", "You enter the hall. Torches gutter.", "complete → unchanged");
+sCheck("What do you do, Kael?", "What do you do, Kael?", "question → unchanged");
+sCheck("She smiles warmly. [NPC:Mira:a kind innkeeper]", "She smiles warmly. [NPC:Mira:a kind innkeeper]", "ends in tag → unchanged");
+sCheck("He vanishes into the mist…", "He vanishes into the mist…", "ellipsis → unchanged");
+sCheck("Bound Woman tugs at her ropes", "Bound Woman tugs at her ropes", "no complete sentence → leave as-is");
+
 console.log(`\nNarration-trim battery: ${pass}/${CASES.length} passed.`);
-if (failures.length) {
-  console.log(`\n${failures.length} FAILURES:`);
-  console.log(failures.join("\n"));
+console.log(`Saved-message heal battery: ${savedPass}/${savedPass + savedFail.length} passed.`);
+if (failures.length || savedFail.length) {
+  console.log(`\nFAILURES:`);
+  console.log([...failures, ...savedFail].join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("✓ Mid-sentence truncations are trimmed to the last complete sentence.");
+  console.log("✓ Mid-sentence truncations are trimmed (new responses + resumed saved history).");
 }

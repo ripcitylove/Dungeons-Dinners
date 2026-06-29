@@ -32,7 +32,7 @@ import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
 import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName } from "../../../lib/npcTags";
-import { endsOnCompleteSentence, lastCompleteSentence } from "../../../lib/narrationTrim";
+import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -2232,7 +2232,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
 
       if (historyRes.data && historyRes.data.length > 0) {
-        const hist = historyRes.data as (Message & { created_at?: string })[];
+        const rawHist = historyRes.data as (Message & { created_at?: string })[];
+        // Heal any DM message a PRIOR session left truncated mid-sentence ("…moving
+        // toward" with no end): the generation-time guard only protects NEW responses,
+        // so without this a resumed/saved campaign keeps displaying AND speaking the
+        // dangling fragment. Trims the stored content back to its last complete sentence.
+        const hist = rawHist.map(m => m.role === "dm" ? { ...m, content: trimSavedDangling(m.content) } : m);
         setMessages([...OPENING_MESSAGES, ...hist]);
         setLogEntries(hist.map((m, i) => ({
           id: `hist-${i}`, timestamp: m.created_at ? new Date(m.created_at) : new Date(),

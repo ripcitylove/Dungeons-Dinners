@@ -28,3 +28,24 @@ export function lastCompleteSentence(text: string): string {
   while ((m = re.exec(s)) !== null) last = m.index + m[0].length;
   return last > 0 ? s.slice(0, last).replace(/\s+$/, "") : "";
 }
+
+// A saved DM message can legitimately END in a bracketed system tag ([NPC:…],
+// [HP:…]) rather than punctuation — that is NOT a truncation, so treat a trailing
+// "]" as a clean ending and leave the content untouched.
+const ENDS_CLEAN_OR_TAG = /[.!?…)"'\]]$/;
+
+/**
+ * Heal a STORED DM message (loaded from history) that an earlier session left
+ * truncated mid-sentence — the generation-time guard only protects new responses,
+ * so a resumed campaign would otherwise display/speak the dangling fragment. Leaves
+ * the message untouched when it ends on punctuation OR a system tag, and only trims
+ * a genuine dangling prose fragment ("…moving toward") back to its last complete
+ * sentence. Returns the original content when there is no complete sentence to fall
+ * back to (rare) so nothing is ever blanked.
+ */
+export function trimSavedDangling(content: string): string {
+  const s = (content || "").replace(/\s+$/, "");
+  if (!s || ENDS_CLEAN_OR_TAG.test(s)) return content;
+  const trimmed = lastCompleteSentence(s);
+  return trimmed || content;
+}
