@@ -36,6 +36,7 @@ import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from 
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { isFullyTagCovered } from "../../../lib/extractorGate";
+import { planHistoryWindow, MIN_TO_SUMMARIZE, type HistorySummary } from "../../../lib/historyWindow";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
 import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks, looksLikeRollRequest } from "../../../lib/narration";
@@ -54,6 +55,17 @@ type CampaignCharacterRow = {
 };
 type LogEntry = { id: string; timestamp: Date; role: MsgRole; sender?: string; content: string };
 type DroppedItem   = { id: string; name: string; type: "item" | "weapon"; fromCharacter: string; fromUserId: string; meta?: NonNullable<Character["inventory"]["item_meta"]>[string] };
+
+// LIGHT history summarization (see src/lib/historyWindow.ts) — the running recap of
+// aged-out turns is persisted per device in localStorage. It is a derivable DM-payload
+// optimization (not player-visible shared state), so per-device caching is fine: the
+// worst case is a one-time regeneration on another device.
+function loadHistSummary(campaignId: string): HistorySummary | null {
+  try { const raw = localStorage.getItem(`dnd_histsum_${campaignId}`); return raw ? (JSON.parse(raw) as HistorySummary) : null; } catch { return null; }
+}
+function saveHistSummary(campaignId: string, s: HistorySummary): void {
+  try { localStorage.setItem(`dnd_histsum_${campaignId}`, JSON.stringify(s)); } catch { /* quota/private mode — non-fatal */ }
+}
 
 type Character = {
   id: string; user_id?: string; name: string; race: string; class: string; level: number;
@@ -4655,11 +4667,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         const weakest = active.filter(e => (RANK[e.condition] ?? 3) === low);
         return weakest[Math.floor(Math.random() * weakest.length)] ?? null;
       })() : null;
+      // LIGHT history summarization — for long campaigns, compress turns older than
+      // the recent window into a single running recap so we stop resending the whole
+      // transcript to the DM. Fully fail-safe: any error sends the full history.
+      let messagesForDM: Message[] = allMessages;
+      try {
+        if (allMessages.length > MIN_TO_SUMMARIZE) {
+          const cached = loadHistSummary(params.id);
+          const plan   = planHistoryWindow(allMessages.length, cached);
+          if (plan.mode === "summarized") {
+            let summary = cached?.summary ?? "";
+            if (plan.needsRegen) {
+              const toFold = allMessages.slice(plan.regenFrom, plan.throughCount)
+                .map(m => ({ role: m.role, content: m.content, sender: m.sender }));
+              const r = await fetch("/api/summarize-history", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ priorSummary: summary, messages: toFold }),
+              }).then(res => (res.ok ? res.json() : null)).catch(() => null);
+              if (r?.summary) { summary = r.summary as string; saveHistSummary(params.id, { summary, throughCount: plan.throughCount }); }
+            }
+            if (summary) {
+              // Recap rides as a sender-less player message → "[SYSTEM]: …" so the DM
+              // treats it as established history (and the array still starts with a user turn).
+              const recap: Message = { role: "player", content: `[STORY SO FAR — established earlier history the DM should treat as canon]:\n${summary}` };
+              messagesForDM = [recap, ...allMessages.slice(plan.throughCount)];
+            }
+          }
+        }
+      } catch { messagesForDM = allMessages; }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: allMessages, character: charForDM, party: partyForDM,
+          messages: messagesForDM, character: charForDM, party: partyForDM,
           campaignContext: campaignCtx,
           enemies: activeEnemiesForDM.length ? activeEnemiesForDM : undefined,
           ...(isOpeningScene && { openingScene: true }),
