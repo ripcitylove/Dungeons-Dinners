@@ -2928,7 +2928,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const suggestionFetchInFlightRef = useRef(false);
   const suggestionsForMsgRef = useRef<string | null>(null);
   const requestSuggestions = useCallback(() => {
-    if (!sessionStarted || isTyping || narrating) return;
+    // No sessionStarted gate here (unlike the old auto-fetch effect): this only
+    // fires from the chat input's onFocus, which can't happen until the input is
+    // interactable, and the char + lastDm checks below already ensure there's a
+    // DM prompt to suggest against. Keeping it gate-free also means focusing during
+    // the brief pre-"session started" window still produces suggestions.
+    if (isTyping || narrating) return;
     if (suggestionFetchInFlightRef.current) return;
     const char   = characterRef.current;
     const lastDm = [...messagesRef.current].reverse().find(m => m.role === "dm");
@@ -2946,7 +2951,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .then(({ suggestions: s }) => { if (s?.length) setSuggestions(s); })
       .catch(() => {})
       .finally(() => { suggestionFetchInFlightRef.current = false; });
-  }, [sessionStarted, isTyping, narrating, suggestions.length, buildSuggestActionsBody]);
+  }, [isTyping, narrating, suggestions.length, buildSuggestActionsBody]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet, then PERSIST + BROADCAST
