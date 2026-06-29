@@ -4299,25 +4299,38 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     || /\b(?:blades?|weapons?|swords?|axes?|spears?|daggers?|bows?)\s+(?:are\s+)?drawn\b/i.test(text)
     || /\b(?:draws?|drawing|unsheathe[sd]?|raise[sd]?|level[sd]?)\s+(?:their|its|his|her)\s+(?:blades?|swords?|weapons?|axes?|spears?|daggers?|bows?)\b/i.test(text)
     || /\b(?:lunges?|charges?|rushes?|descend[s]?|closes?\s+in|sets?\s+upon|falls?\s+upon|attacks?|swings?\s+at)\s+(?:at\s+|toward\s+|on\s+|upon\s+)?(?:you|the\s+party|the\s+group)\b/i.test(text)
-    || /\b(?:ambush(?:es|ed)?|surround(?:s|ed)?\s+(?:you|the\s+party)|spring(?:s)?\s+(?:the\s+)?(?:trap|ambush)|block(?:s|ing)?\s+the\s+(?:door|doorway|exit|path)[^.!?]*\bdrawn\b)\b/i.test(text);
+    || /\b(?:ambush(?:es|ed)?|surround(?:s|ed)?\s+(?:you|the\s+party)|spring(?:s)?\s+(?:the\s+)?(?:trap|ambush)|block(?:s|ing)?\s+the\s+(?:door|doorway|exit|path)[^.!?]*\bdrawn\b)\b/i.test(text)
+    // Reinforcements / a fresh wave / a boss stepping in — a second group of foes
+    // arriving counts as a (new) encounter onset for the empty-board branch.
+    || /\b(?:reinforcements?\s+(?:arrive|pour|flood|charge|rush)|a\s+(?:second|fresh|new)\s+wave|more\s+(?:foes|enemies|guards|soldiers|cultists|raiders)\s+(?:pour|flood|charge|rush|arrive|appear))\b/i.test(text);
 
-  const spawnEnemies = useCallback(async (context: string) => {
+  // additive = a NEW foe joined a fight already on the board (reinforcements / a boss
+  // appearing mid-combat). We pass the live roster so the builder only returns genuinely
+  // new enemies, then APPEND them instead of replacing — so the existing cards (and their
+  // portraits/condition) are preserved and the new foe simply shows up.
+  const spawnEnemies = useCallback(async (context: string, additive = false) => {
     const party = campaignPartyRef.current.map(c => ({ name: c.name, race: c.race, class: c.class, level: c.level }));
     if (!party.length) return;
+    const liveNames = enemiesRef.current.filter(e => !e.is_defeated).map(e => e.name);
+    const isAdditive = additive && liveNames.length > 0;
     try {
       const res = await fetch("/api/enemies/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign_id: params.id, party, context }),
+        body: JSON.stringify({ campaign_id: params.id, party, context, ...(isAdditive ? { existing: liveNames } : {}) }),
       });
       const { enemies: spawned } = await res.json() as { enemies: CampaignEnemy[] };
       if (!spawned.length) return;
-      setEnemies(spawned);
-      enemiesRef.current = spawned;
+      const roster = isAdditive ? [...enemiesRef.current, ...spawned] : spawned;
+      setEnemies(roster);
+      enemiesRef.current = roster;
       setCombatActive(true);
-      channelRef.current?.send({ type: "broadcast", event: "enemies_spawned", payload: { enemies: spawned } });
-      // Immediately switch to combat music without waiting for scene image generation
-      const combatSceneName = currentSceneRef.current.replace(/_combat$/, "") + "_combat";
-      (window as Window).__dndSetMusicScene?.(combatSceneName);
+      // Broadcast the FULL roster so every player's board converges on the same enemies.
+      channelRef.current?.send({ type: "broadcast", event: "enemies_spawned", payload: { enemies: roster } });
+      if (!isAdditive) {
+        // Immediately switch to combat music without waiting for scene image generation
+        const combatSceneName = currentSceneRef.current.replace(/_combat$/, "") + "_combat";
+        (window as Window).__dndSetMusicScene?.(combatSceneName);
+      }
     } catch (err) {
       console.error("[spawnEnemies]", err);
     }
@@ -5104,10 +5117,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         isGroupCheckRollRef.current = true;
       }
 
-      // Enemy combat: spawn enemies when combat starts, or update existing enemy states
+      // Enemy combat: spawn enemies when combat starts, update existing states, AND
+      // spawn reinforcements/bosses that join a fight already in progress. The DM emits
+      // [COMBAT] whenever NEW foes become present (including mid-fight) — so even while
+      // enemies are already on the board, a [COMBAT] tag means "more foes just appeared",
+      // and we add them without wiping the current cards.
       const activeEnemies = enemiesRef.current.filter(e => !e.is_defeated);
       if (activeEnemies.length > 0) {
         updateEnemyStates(full);
+        if (COMBAT_TAG_RE.test(full)) spawnEnemies(full, true);
       } else if (COMBAT_TAG_RE.test(full) || detectCombatStart(full)) {
         spawnEnemies(full);
       }

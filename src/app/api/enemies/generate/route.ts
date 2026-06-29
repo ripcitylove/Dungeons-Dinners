@@ -65,11 +65,16 @@ function parseEnemyObjects(raw: string): Record<string, unknown>[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const { campaign_id, party, context } = (await req.json()) as {
+    const { campaign_id, party, context, existing } = (await req.json()) as {
       campaign_id: string;
       party: { name: string; race: string; class: string; level: number }[];
       context: string;
+      // When present, this is an ADDITIVE spawn mid-combat (reinforcements / a boss
+      // joining a fight that's already on the board): we do NOT wipe, and we tell the
+      // model which foes are already carded so it returns ONLY the genuinely NEW ones.
+      existing?: string[];
     };
+    const additive = Array.isArray(existing) && existing.length > 0;
 
     const avgLevel  = Math.round(party.reduce((s, c) => s + c.level, 0) / party.length);
     const partySize = party.length;
@@ -86,10 +91,14 @@ export async function POST(req: NextRequest) {
     // XP reference by CR for the prompt
     const xpRef = "CR 1/8=25, 1/4=50, 1/2=100, 1=200, 2=450, 3=700, 4=1100, 5=1800, 6=2300, 7=2900, 8=3900";
 
+    const alreadyBlock = additive
+      ? `\nALREADY ON THE BATTLEFIELD (do NOT recreate these — they already have cards): ${existing!.join(", ")}\nReturn ONLY foes the narrative introduces that are NOT already listed above. If the narrative introduces no genuinely new foe, return an empty array [].\n`
+      : "";
+
     const prompt = `You are a D&D 5e encounter builder. The Dungeon Master has just narrated enemies becoming present for a fight. Turn EXACTLY the foes the DM described into stat-blocked cards — be FAITHFUL to the prose, do NOT rebalance the count.
 
 Party (${partySize} adventurers, avg level ${avgLevel}): ${partyDesc}
-
+${alreadyBlock}
 DM narrative — spawn exactly the enemies it describes:
 """
 ${context.slice(0, 1500)}
@@ -130,7 +139,12 @@ Return ONLY a valid JSON array, no markdown, no explanation. Schema per enemy:
 
     const raw    = res.content[0].type === "text" ? res.content[0].text : "";
     const parsed = parseEnemyObjects(raw) as Partial<CampaignEnemy & { loot: object }>[];
-    if (parsed.length === 0) throw new Error("No parseable enemies in response");
+    // In additive mode an empty result is VALID (no genuinely new foe this turn) — just
+    // return nothing rather than throwing/500ing on a normal combat turn.
+    if (parsed.length === 0) {
+      if (additive) return Response.json({ enemies: [] });
+      throw new Error("No parseable enemies in response");
+    }
     const rows = parsed.map(e => ({
       campaign_id,
       name:           String(e.name          ?? "Unknown Enemy"),
@@ -149,11 +163,17 @@ Return ONLY a valid JSON array, no markdown, no explanation. Schema per enemy:
       is_defeated:    false,
     }));
 
-    // Each encounter is a FRESH set. Spawning only happens when no enemies are
-    // active (the client gates it), so wipe any leftover rows for this campaign
-    // first — otherwise non-defeated stragglers from a past fight accumulate in
-    // the DB and re-appear (wrong enemy count) on resume.
-    await supabase.from("campaign_enemies").delete().eq("campaign_id", campaign_id);
+    // A FRESH encounter wipes any leftover rows first so stragglers from a past fight
+    // don't accumulate. An ADDITIVE spawn (reinforcements / a boss joining an ongoing
+    // fight) must NOT wipe — it appends the new foes to the live board, and we drop any
+    // the model echoed that already exist by name (case-insensitive) as a safety net.
+    if (!additive) {
+      await supabase.from("campaign_enemies").delete().eq("campaign_id", campaign_id);
+    } else {
+      const have = new Set(existing!.map(n => n.toLowerCase()));
+      for (let i = rows.length - 1; i >= 0; i--) if (have.has(rows[i].name.toLowerCase())) rows.splice(i, 1);
+      if (rows.length === 0) return Response.json({ enemies: [] });
+    }
 
     const { data, error } = await supabase
       .from("campaign_enemies")
