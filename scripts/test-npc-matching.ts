@@ -3,7 +3,8 @@
 // keeping genuinely distinct same-role NPCs separate.
 // Run: `npx tsx scripts/test-npc-matching.ts`
 import { sameNpcName, dedupeEnteredNpcs, mergeNpcRoster, resetNpcRoster, isPlayerName, dropPlayerNpcs,
-  parseNpcTags, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, hasProperName } from "../src/lib/npcTags.ts";
+  parseNpcTags, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, hasProperName,
+  looksLikeNameReveal } from "../src/lib/npcTags.ts";
 
 type Case = { a: string; b: string; expect: boolean; note?: string };
 
@@ -178,6 +179,13 @@ rCheck("Sera is proper", hasProperName("Sera") && !isAnonymousDescriptor("Sera")
   const inf = inferRevealRenames(prev, [n("Mira", "hood up")]);
   rCheck("feature reveal ignores named card", inf.length === 0);
 }
+// prose name-reveal cue detection (the "Daveth" bug — DM names in prose, no tag)
+rCheck("cue: quoted name + says", looksLikeNameReveal('He glances at her. "Daveth," he says quietly.') === true);
+rCheck("cue: my name is", looksLikeNameReveal('The woman rasps, "My name is Sera."') === true);
+rCheck("cue: call me", looksLikeNameReveal('"Call me Garrick," he offers.') === true);
+rCheck("cue: introduces himself", looksLikeNameReveal("She introduces herself as Mira.") === true);
+rCheck("cue: plain narration has no reveal", looksLikeNameReveal("The stranger watches from the corner, silent.") === false);
+rCheck("cue: quoted command is not a name", looksLikeNameReveal('"Run!" he shouts, drawing his blade.') === false);
 
 console.log(`\nNPC matching battery: ${pass}/${CASES.length} passed.`);
 console.log(`NPC roster-merge battery: ${rosterPass}/${rosterPass + rosterFail.length} passed.`);

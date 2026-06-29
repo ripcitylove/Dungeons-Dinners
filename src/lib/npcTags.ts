@@ -165,6 +165,22 @@ export function dropPlayerNpcs<T extends NpcCardLike>(npcs: T[], partyNames: str
 }
 
 /**
+ * Cheap gate: does this DM narration look like it REVEALS a character's name in prose
+ * (no tag)? — "'Daveth,' he says", "My name is Sera", "Call me Garrick". Used to decide
+ * whether to run the (model-backed) reconciler this turn when a placeholder card is
+ * still on screen but the DM emitted no [NPC-RENAME] tag. Permissive on purpose: a
+ * false positive just makes the reconciler return nothing; a miss is caught on reload.
+ */
+export function looksLikeNameReveal(text: string): boolean {
+  if (!text) return false;
+  // Explicit naming phrases.
+  if (/\b(?:my name is|name'?s|call me|i'?m called|i am called|named|introduces?\s+(?:him|her|them)?sel(?:f|ves)\s+as|goes by|they call (?:me|him|her|them)|you can call me|the name'?s)\b/i.test(text)) return true;
+  // A short quoted Capitalized word answered with a speech verb: "Daveth," he says.
+  if (/["“'][A-Z][a-z'’-]{2,15}["”'.,]*\s*[—–-]?\s*(?:he|she|they|the\b[^.!?\n]{0,24})?\s*(?:says?|said|replies|replied|rasps?|murmurs?|answers?|offers?|mutters?|breathes?|whispers?|growls?|adds?|finally)\b/i.test(text)) return true;
+  return false;
+}
+
+/**
  * Collapse multiple labels for the SAME character emitted in ONE response into a
  * single card (first label wins as canonical; latest non-empty description kept),
  * so a single turn can never spawn two cards for one person.

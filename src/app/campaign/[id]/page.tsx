@@ -31,7 +31,7 @@ import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
 import { computeRefund } from "../../../lib/optimisticCharge";
 import { parseHpEvents, summarizeHpCause, combatLogTotals, type CombatLogEntry } from "../../../lib/combatLog";
-import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName } from "../../../lib/npcTags";
+import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcRoster, dropPlayerNpcs, applyNpcRenames, inferRenameFromGoneEnter, inferRevealRenames, isAnonymousDescriptor, isPlayerName, looksLikeNameReveal } from "../../../lib/npcTags";
 import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
@@ -5517,6 +5517,20 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       applyActiveEffectsFromNarrative(full);
       recordCombatLogFromNarrative(full);
       applyNpcTagsFromNarrative(full);
+
+      // Per-turn name-reveal backstop: the DM sometimes discloses an on-screen
+      // anonymous NPC's name in PROSE ("'Daveth,' he says") with NO [NPC-RENAME] tag.
+      // When a placeholder card is still showing after tag processing and the prose
+      // looks like a name reveal, run the reconciler NOW (it renames the card, keeping
+      // the portrait) instead of waiting for the next load.
+      if (!/\[NPC-RENAME:/i.test(full)) {
+        const anon = npcsRef.current.filter(n => isAnonymousDescriptor(n.name));
+        if (anon.length && looksLikeNameReveal(stripSystemLeaks(full))) {
+          const recent = messagesRef.current.slice(-6)
+            .map(m => `${m.role === "dm" ? "DM" : (m.sender || "Player")}: ${m.content}`).join("\n\n");
+          void reconcileNpcIdentities(anon.map(n => n.name), `${recent}\n\nDM: ${full}`);
+        }
+      }
 
       // Determine whose turn it is NOW (post-advance) to decide if suggestions should appear here
       const nextTurnCharId = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
