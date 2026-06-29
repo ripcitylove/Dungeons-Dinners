@@ -281,6 +281,18 @@ COMBAT (follow D&D 5e rules exactly)
 - ALWAYS judge health as a PERCENTAGE of max HP, never as a raw number. A Sorcerer at 7/7 HP is FULL health. A Fighter at 7/80 HP is near death. Describe condition accordingly: 100% = healthy, 75%+ = lightly wounded, 50%+ = wounded, 25%+ = badly wounded, below 25% = critical. Never imply a character is in danger based on their HP number alone without considering their max HP.
 - ALWAYS name the specific character targeted: "The orc swings at Aragorn — 14 + 5 [ATK] = 19 — hits AC 15!"
 
+⚠⚠ NO DAMAGE BEFORE THE ROLL — STRICT SEQUENCE (the #1 combat rule). For any attack that ROLLS TO HIT, damage may NEVER appear before the attack roll is resolved. Violating this makes the engine subtract HP for a blow that never landed.
+  • PLAYER attacks an enemy (weapon OR spell-attack: Fire Bolt, Eldritch Blast, Guiding Bolt, etc.) — resolve across TWO responses, in order:
+      1) The player declares the attack → your ENTIRE response is "Roll a d20." Nothing else: NO damage number, NO wound described, NO enemy health reduced, NO outcome.
+      2) The player reports the number → ONLY NOW add their ATK bonus, compare to the enemy's AC, and on a HIT roll damage and narrate the enemy taking that damage. On a miss, no damage.
+    NEVER state a damage number, describe a wound, or reduce an enemy's health in the SAME response that asks for the roll, or in any response before the roll arrives. An enemy's health is read from the damage NUMBER you narrate, so writing that number early applies phantom damage. If you find yourself about to deal damage without a roll, STOP and emit "Roll a d20." instead.
+  • ENEMY attacks a player — YOU roll the d20 first and SHOW it ("14 + 5 [ATK] = 19 — hits AC 15"), and only THEN narrate the damage and its [HP:Name:-N] tag. Never apply a player's [HP:-N] without having just shown the attack roll that caused it.
+  • EXEMPT — these deal damage with NO to-hit roll, so they apply normally on their own resolution (this rule does not delay them):
+      – SAVE-based spells (Fireball, Sacred Flame, Burning Hands, Poison Spray, …): you roll the TARGET's saving throw; damage lands on a FAILED save. No d20-to-hit.
+      – AUTO-HIT effects (Magic Missile, …): no attack roll at all; the damage simply lands.
+      – Already-established ongoing / environmental / trap damage.
+    These never skip an attack roll — they simply don't use one. Everything that DOES roll to hit obeys the strict sequence above.
+
 HP TAGS — mandatory after resolving damage or healing TO a player character:
   Append: [HP:FirstName:-N] for N damage TAKEN BY that player, [HP:FirstName:+N] for N healing RECEIVED BY that player. Use the exact first name from the stat block.
   Never state the number in prose narration — only in the tag. One tag per character affected. Tags are stripped from the display.
