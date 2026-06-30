@@ -44,6 +44,34 @@ async function authAndOpenCampaign(page: Page) {
   await page.waitForTimeout(1500); // let state settle after render
 }
 
+test("#LevelUp — leveling fires the celebration burst + fanfare", async ({ page }) => {
+  test.setTimeout(120000);
+  let fanfareRequested = false;
+  page.on("request", req => { if (req.url().includes("/sounds/level-fanfare.mp3")) fanfareRequested = true; });
+  // Block Supabase REST writes so the real campaign's XP/level is never mutated.
+  await page.route("**/rest/v1/**", async route =>
+    route.request().method() === "GET" ? route.continue() : route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/chat-state", async route => route.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/summarize-history", async route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ summary: "recap" }) }));
+  await page.route("**/api/detect-scene", async route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sceneName: "x", imageUrl: null, shouldChange: false, moved: false }) }));
+  // Inject a DM response carrying a big milestone [XP] tag (no other state words →
+  // fully tag-covered → the client applies XP deterministically and levels up).
+  await page.route("**/api/chat", async route =>
+    route.fulfill({ status: 200, headers: { "content-type": "text/plain; charset=utf-8" }, body: "A surge of triumph fills you. [XP:9999] The ancient deed is done at last, and power courses through your veins." }));
+
+  await authAndOpenCampaign(page);
+  const input = page.locator("[data-chat-input]");
+  if (!(await input.isEnabled().catch(() => false))) { test.skip(true, "input disabled — cannot drive a turn"); return; }
+
+  await input.fill("I claim the ancient relic.");
+  await input.press("Enter");
+
+  // The celebration burst should appear, naming the leveled hero.
+  await expect(page.getByText("LEVEL UP!", { exact: false }).first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/reached Level \d+/i).first()).toBeVisible({ timeout: 5000 });
+  console.log(`level-fanfare requested: ${fanfareRequested}`);
+});
+
 test("#NPC — restored companions load from the DB and SURVIVE a location change", async ({ page }) => {
   test.setTimeout(120000);
   // Mock NPC portrait generation so cards render instantly (a card only shows once

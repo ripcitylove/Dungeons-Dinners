@@ -881,6 +881,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [tutorialStep,     setTutorialStep]       = useState<number | null>(null);
   const [character,        setCharacter]         = useState<Character | null>(null);
   const [stateNotice,      setStateNotice]       = useState<string | null>(null);
+  // Level-up celebration — a center-screen burst naming every character who leveled
+  // this turn, with a one-shot fanfare. Shared across the party via broadcast.
+  const [levelUps,         setLevelUps]          = useState<{ name: string; level: number }[] | null>(null);
+  const levelFanfareRef    = useRef<HTMLAudioElement | null>(null);
+  const levelCelebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const celebrateLevelUpsRef = useRef<((ups: { name: string; level: number }[], broadcast?: boolean) => void) | null>(null);
   const [turnSkipBanner,   setTurnSkipBanner]    = useState<string | null>(null);
   const [userId,           setUserId]            = useState<string | null>(null);
   const [partyChangePending, setPartyChangePending] = useState(false);
@@ -1048,6 +1054,22 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     });
     if (broadcast) channelRef.current?.send({ type: "broadcast", event: "npcs_sync", payload: { senderId: userId, npcs: next } });
   }, [params.id, userId]);
+
+  // Fire the level-up celebration: play the fanfare ONCE and raise the center-screen
+  // burst naming everyone who leveled this turn. Shared with the whole party via the
+  // level_up_celebration broadcast (receiver calls this with broadcast=false).
+  const celebrateLevelUps = useCallback((ups: { name: string; level: number }[], broadcast = true) => {
+    if (!ups?.length) return;
+    let el = levelFanfareRef.current;
+    if (!el) { el = new Audio("/sounds/level-fanfare.mp3"); el.volume = 0.7; levelFanfareRef.current = el; }
+    el.currentTime = 0;
+    void el.play().catch(() => { /* autoplay not yet unlocked — ignore */ });
+    setLevelUps(ups);
+    if (levelCelebrationTimerRef.current) clearTimeout(levelCelebrationTimerRef.current);
+    levelCelebrationTimerRef.current = setTimeout(() => setLevelUps(null), 4200);
+    if (broadcast) channelRef.current?.send({ type: "broadcast", event: "level_up_celebration", payload: { senderId: userId, ups } });
+  }, [userId]);
+  useEffect(() => { celebrateLevelUpsRef.current = celebrateLevelUps; }, [celebrateLevelUps]);
   const applyNpcTagsFromNarrative = useCallback((narrative: string, broadcast = true, sceneReset = false) => {
     const { entered, gone, renamed, joined } = parseNpcTags(narrative);
     const partyNames = campaignPartyRef.current.map(c => c.name);
@@ -2473,6 +2495,11 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setNpcs(next);
         try { localStorage.setItem(`dnd_npcs_${params.id}`, JSON.stringify(next)); } catch { /* ignore */ }
       })
+      .on("broadcast", { event: "level_up_celebration" }, ({ payload }) => {
+        if (payload.senderId === userIdRef.current) return; // the originator already celebrated
+        const ups = Array.isArray(payload.ups) ? (payload.ups as { name: string; level: number }[]) : [];
+        if (ups.length) celebrateLevelUpsRef.current?.(ups, false); // play + show, don't re-broadcast
+      })
       .on("broadcast", { event: "dm_response" }, ({ payload }) => {
         if (payload.senderId === userIdRef.current) return;
         // Skip empty broadcasts — these occur when the sender suppressed a degenerate response
@@ -3393,6 +3420,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     let newLevel = char.level;
     let newMaxHp = char.max_hp;
     let leveledUp = false;
+    // Collect EVERY character who levels this turn (acting char + XP-share members)
+    // so the celebration fires ONCE with the whole list (one banner, one fanfare).
+    const leveledThisTurn: { name: string; level: number }[] = [];
 
     let totalHpGain = 0;
     if (xpShare > 0 && isMemberAlive(char, newHp)) {
@@ -3409,6 +3439,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (leveledUp) {
         newMaxHp = char.max_hp + totalHpGain;
         parts.push(`⬆ LEVEL UP → ${newLevel}! +${totalHpGain} max HP`);
+        leveledThisTurn.push({ name: char.name.split(" ")[0], level: newLevel });
       }
     }
 
@@ -3517,9 +3548,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         charWrite(m.id, mDb);
         channelRef.current?.send({ type: "broadcast", event: "character_sync",
           payload: { charId: m.id, xp: mXp, ...(mLeveled && { level: mLevel, max_hp: mMaxHp, hp: mHp }) } });
-        if (mLeveled) setLogEntries(prev => [...prev, { id: makeLogId("state"), timestamp: new Date(), role: "system", content: `⚡ ${m.name.split(" ")[0]} ⬆ LEVEL UP → ${mLevel}!` }]);
+        if (mLeveled) {
+          setLogEntries(prev => [...prev, { id: makeLogId("state"), timestamp: new Date(), role: "system", content: `⚡ ${m.name.split(" ")[0]} ⬆ LEVEL UP → ${mLevel}!` }]);
+          leveledThisTurn.push({ name: m.name.split(" ")[0], level: mLevel });
+        }
       }
     }
+    // One celebration for the whole turn — fanfare once, banner names everyone, and
+    // the broadcast lets every player share the moment.
+    if (leveledThisTurn.length) celebrateLevelUpsRef.current?.(leveledThisTurn);
 
     // Enrich DM-awarded loot that isn't in the static catalog so players see real
     // tooltips and values for invented items. Only the recipient enriches —
@@ -9437,6 +9474,47 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
       <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
 
+      {/* Level-up celebration — center-screen burst (non-blocking; auto-dismisses) */}
+      {levelUps && levelUps.length > 0 && (() => {
+        const names = levelUps.map(u => u.name);
+        const nameList = names.length === 1 ? names[0]
+          : names.length === 2 ? `${names[0]} & ${names[1]}`
+          : `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
+        const allSameLevel = levelUps.every(u => u.level === levelUps[0].level);
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+            <div style={{ position: "relative", textAlign: "center", padding: "32px 56px", borderRadius: "20px", overflow: "hidden",
+              background: "radial-gradient(ellipse at center, rgba(251,191,36,0.16), rgba(30,22,54,0.94))",
+              border: "1.5px solid rgba(251,191,36,0.55)", boxShadow: "0 0 60px rgba(251,191,36,0.5), 0 0 140px rgba(251,191,36,0.22)",
+              animation: "levelUpBurst 0.55s cubic-bezier(0.2,0.9,0.3,1.5) both" }}>
+              <div aria-hidden style={{ position: "absolute", inset: "-60%", zIndex: 0, borderRadius: "50%", filter: "blur(3px)",
+                background: "conic-gradient(from 0deg, rgba(251,191,36,0), rgba(251,191,36,0.20) 12%, rgba(251,191,36,0) 25%, rgba(251,191,36,0) 50%, rgba(251,191,36,0.20) 62%, rgba(251,191,36,0) 75%)",
+                animation: "levelUpRays 7s linear infinite" }} />
+              <div style={{ position: "relative", zIndex: 1 }}>
+                <div style={{ fontSize: "2.8rem", lineHeight: 1, marginBottom: "4px", animation: "levelUpPop 0.65s ease-out both" }}>⭐✨</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 900, letterSpacing: "0.1em", color: "#fde68a", textShadow: "0 2px 22px rgba(251,191,36,0.75)" }}>LEVEL UP!</div>
+                {allSameLevel ? (
+                  <div style={{ marginTop: "10px", fontSize: "1.7rem", fontWeight: 800, color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.55)" }}>
+                    {nameList} <span style={{ color: "#a5b4fc" }}>reached Level {levelUps[0].level}!</span>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                    {levelUps.map((u, i) => (
+                      <div key={i} style={{ fontSize: "1.45rem", fontWeight: 800, color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.55)" }}>
+                        {u.name} <span style={{ color: "#a5b4fc" }}>→ Level {u.level}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ marginTop: "10px", fontSize: "0.95rem", color: "#fcd34d", fontWeight: 600, letterSpacing: "0.05em" }}>
+                  {names.length > 1 ? "Your heroes grow stronger!" : "A hero grows stronger!"}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Campaign complete — celebratory finale overlay */}
       {campaignComplete && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "radial-gradient(ellipse at center, rgba(76,29,149,0.55), rgba(3,2,12,0.94))", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", overflowY: "auto" }}>
@@ -9635,6 +9713,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         @keyframes pulseGlow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 0.75; } }
         @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes levelUpBurst { 0% { opacity: 0; transform: scale(0.6) translateY(12px); } 60% { opacity: 1; transform: scale(1.06); } 100% { opacity: 1; transform: scale(1); } }
+        @keyframes levelUpPop { 0% { transform: scale(0.3) rotate(-12deg); } 70% { transform: scale(1.25) rotate(7deg); } 100% { transform: scale(1) rotate(0); } }
+        @keyframes levelUpRays { to { transform: rotate(360deg); } }
         @keyframes streamFadeIn { from { opacity: 0; filter: blur(3px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
         @keyframes dicePulse { from { transform: scale(1); box-shadow: 0 0 10px rgba(251,191,36,0.4), 0 0 20px rgba(251,191,36,0.15); } to { transform: scale(1.1); box-shadow: 0 0 22px rgba(251,191,36,0.75), 0 0 44px rgba(251,191,36,0.3); } }
         @keyframes hintArrowPulse {
