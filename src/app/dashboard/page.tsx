@@ -25,7 +25,7 @@ type Character = {
   title?: string | null;
   background?: string | null;
 };
-type Campaign = { id: string; title: string; description: string; created_at: string; isOwned: boolean };
+type Campaign = { id: string; title: string; description: string; created_at: string; isOwned: boolean; status?: string | null };
 type CampaignMember = { id: string; name: string; race: string; class: string; level: number; portrait_url?: string | null; campaign_id: string };
 
 const CLASS_COLORS: Record<string, string> = {
@@ -379,7 +379,7 @@ export default function Dashboard() {
           .select("id, name, race, class, level, hp, max_hp, sex, strength, dexterity, constitution, intelligence, wisdom, charisma, inventory, portrait_url, campaign_id")
           .eq("user_id", user.id),
         supabase.from("campaigns")
-          .select("id, title, description, created_at")
+          .select("id, title, description, created_at, status")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
       ]);
@@ -398,7 +398,7 @@ export default function Dashboard() {
       if (joinedIds.length > 0) {
         const { data: joinedData } = await supabase
           .from("campaigns")
-          .select("id, title, description, created_at")
+          .select("id, title, description, created_at, status")
           .in("id", joinedIds);
         if (joinedData) {
           allCamps = [...allCamps, ...joinedData.map(c => ({ ...c, isOwned: false }))];
@@ -750,6 +750,7 @@ export default function Dashboard() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px" }}>
                 {campaigns.map((camp) => {
                   const members = campaignMembers[camp.id] ?? [];
+                  const completed = camp.status === "completed";
                   return (
                     <div
                       key={camp.id}
@@ -767,7 +768,12 @@ export default function Dashboard() {
 
                       {/* Title + description */}
                       <div style={{ paddingRight: camp.isOwned ? 0 : 64 }}>
-                        <h3 style={{ fontSize: "1.72rem", fontWeight: 700, marginBottom: "8px" }}>{camp.title}</h3>
+                        <h3 style={{ fontSize: "1.72rem", fontWeight: 700, marginBottom: "8px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                          <span>{camp.title}</span>
+                          {completed && (
+                            <span style={{ fontSize: "1.05rem", background: "rgba(251,191,36,0.16)", color: "#f59e0b", border: "1px solid rgba(251,191,36,0.45)", borderRadius: "20px", padding: "2px 10px", fontWeight: 700, letterSpacing: "0.08em" }}>✓ COMPLETED</span>
+                          )}
+                        </h3>
                         <p style={{ color: "var(--subtle)", fontSize: "1.61rem", lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                           {camp.description}
                         </p>
@@ -816,7 +822,7 @@ export default function Dashboard() {
                         )}
                         <Link href={`/campaign/${camp.id}`} style={{ marginLeft: "auto", textDecoration: "none" }}>
                           <button className="btn-primary" style={{ padding: "10px 22px" }}>
-                            Resume
+                            {completed ? "View" : "Resume"}
                           </button>
                         </Link>
                       </div>

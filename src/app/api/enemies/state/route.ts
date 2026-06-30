@@ -43,8 +43,8 @@ Return valid JSON only:
 Condition values, from best to worst: healthy → wounded → bloodied → critical → defeated.
 - "wounded"  — minor hit, slight stumble, glancing blow
 - "bloodied" — clearly hurt, bleeding, staggering, notably damaged
-- "critical"  — barely standing, gravely wounded, on one knee, near death
-- "defeated"  — falls, dies, flees permanently, rendered incapacitated
+- "critical"  — barely standing, gravely wounded, on one knee, near death, reeling, staggering — but STILL ALIVE AND FIGHTING. A critical enemy is NOT defeated; its card MUST stay on the board.
+- "defeated"  — ONLY when the enemy is unambiguously OUT of the fight: killed / slain / dead, drops lifeless, collapses and stops moving, is destroyed, surrenders, or flees the battle entirely. If there is ANY doubt, use "critical", NOT "defeated".
 
 CRITICAL — DAMAGE ONLY ACCUMULATES. An enemy's condition NEVER improves on its own:
 - An enemy's HP does not regenerate between turns. Wounds do not close on their own.
@@ -54,7 +54,7 @@ CRITICAL — DAMAGE ONLY ACCUMULATES. An enemy's condition NEVER improves on its
 
 Rules:
 - Only include enemies explicitly named or clearly referenced in THIS narrative; omit the rest.
-- Set is_defeated: true when the enemy definitively falls, dies, surrenders, or is stopped.
+- Set is_defeated: true ONLY when the narrative EXPLICITLY states THIS enemy died, was slain/killed, dropped lifeless, collapsed and stopped moving, was destroyed, surrendered, or fled the battle. Being merely hurt, staggered, reeling, bloodied, critical, stunned, knocked prone, disarmed, or "nearly finished" is NOT defeat — keep is_defeated false (the card stays). Removing an enemy that is still alive and fighting is a critical error.
 - combat_ended: true only when the fight has clearly concluded (all enemies defeated, fled, or peace restored).
 - Return valid JSON only. No markdown, no explanation.`;
 
@@ -106,6 +106,29 @@ ${narrative.slice(0, 1200)}`;
         const esc = c.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const healed = new RegExp(`\\b${esc}\\b[^.!?]{0,90}\\b(?:${HEAL})\\b|\\b(?:${HEAL})\\b[^.!?]{0,90}\\b${esc}\\b`, "i").test(narrative);
         if (!healed) c.condition = prior;               // clamp: no auto-heal
+      }
+    }
+
+    // ── Defeat guard — never let a card vanish before the enemy is truly out ─────
+    // The classifier sometimes flags is_defeated / "defeated" for an enemy that is
+    // only badly hurt ("reels", "on one knee"). Deterministically require an EXPLICIT
+    // defeat phrase near THAT enemy's name (or anywhere, when it is the only enemy);
+    // otherwise demote to "critical" so the card stays until the enemy is vanquished.
+    // Defeat-specific phrasing only — bare "drops"/"falls" are excluded because
+    // "drops to one knee" / "falls back" are NOT defeats (they require a death/
+    // ground context). Erring toward leaving a card up one extra turn is far better
+    // than removing a still-fighting enemy.
+    const DEFEAT = "die[sd]?|dying|dead|slain|slay[s]?|kill(?:s|ed)?|fell(?!\\s+back)|falls?\\s+(?:dead|lifeless|limp|silent|still|to\\s+the\\s+(?:ground|floor|dirt))|drops?\\s+(?:dead|lifeless|limp|to\\s+the\\s+(?:ground|floor))|collapse[sd]?|crumple[sd]?|perish\\w*|destroy(?:s|ed)?|defeat\\w*|vanquish\\w*|cut\\s+down|struck\\s+down|lifeless|motionless|stops?\\s+moving|breathes?\\s+(?:its|his|her|their)\\s+last|flee[sd]?|flees|fled|rout(?:s|ed)?|surrender(?:s|ed)?|yield[sd]?|goes\\s+down|out\\s+of\\s+the\\s+fight";
+    const defeatAnywhere = new RegExp(`\\b(?:${DEFEAT})\\b`, "i");
+    const soleEnemy = enemies.length === 1;
+    for (const c of changes) {
+      if (!(c.is_defeated || c.condition === "defeated")) continue;
+      const esc = c.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const named = new RegExp(`\\b${esc}\\b[^.!?]{0,120}\\b(?:${DEFEAT})\\b|\\b(?:${DEFEAT})\\b[^.!?]{0,120}\\b${esc}\\b`, "i");
+      const explicitDefeat = soleEnemy ? defeatAnywhere.test(narrative) : named.test(narrative);
+      if (!explicitDefeat) {
+        c.is_defeated = false;
+        if (c.condition === "defeated") c.condition = "critical";
       }
     }
 

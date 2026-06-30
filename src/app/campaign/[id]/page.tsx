@@ -15,6 +15,7 @@ import { getXpToNextLevel, SPELLCASTING_CLASSES, getSpellSlots, computeAC, CLASS
 import {
   getItemByName, getAllCatalogItems, computeInventoryBonuses, getEffectiveStat, rollDiceFormula,
   buildItemEffectsSummary, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS,
+  isQuestItemType, isOneTimeUseType,
   type LootItem,
 } from "../../../lib/lootData";
 import { tipBox, tipBoxNode, TooltipPortal } from "../../../hooks/useTooltip";
@@ -38,7 +39,7 @@ import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
 import { isFullyTagCovered } from "../../../lib/extractorGate";
 import { planHistoryWindow, MIN_TO_SUMMARIZE, type HistorySummary } from "../../../lib/historyWindow";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
-import { type Objective, normalizeObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
+import { type Objective, normalizeObjectives, initObjectives, parseObjectiveTags, applyObjectiveTags, visibleObjectives, currentObjectiveId, hasNewlyRevealed } from "../../../lib/objectives";
 import { sanitizeForTts, hasSpeakableContent, sliceThroughRollRequest, expandRollRequestForSpeech, shouldSpeakTailChunk, pullNarrationChunks, looksLikeRollRequest } from "../../../lib/narration";
 
 type MsgRole  = "dm" | "player" | "system";
@@ -1556,6 +1557,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // Set to the character whose removal would empty (and thus delete) the campaign,
   // so we can warn before the last adventurer leaves.
   const [confirmFinalLeave, setConfirmFinalLeave] = useState<{ id: string; name: string } | null>(null);
+  // Campaign completion (the DM emitted [CAMPAIGN-COMPLETE] at the finale, or the
+  // campaign was already finished when opened). Shows the celebratory ending overlay.
+  const [campaignComplete, setCampaignComplete] = useState(false);
+  const [completionRewards, setCompletionRewards] = useState<Array<{ name: string; rewards: string[] }>>([]);
+  const [restarting, setRestarting] = useState(false);
+  const campaignCompleteRef = useRef(false);
   const [claimLeaderOpen,  setClaimLeaderOpen]    = useState(false);
   const [claimingLeaderId, setClaimingLeaderId]   = useState<string | null>(null);
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
@@ -1734,6 +1741,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // so the loading screen clears much faster.
   useEffect(() => {
     if (sessionStarted || campaignLoading) return;
+    if (campaignCompleteRef.current) return; // completed campaign shows the ending overlay, not a fresh opening
     if (!userId || !character || !campaignParty.length) return;
     const isNew = !messagesRef.current.some(m => m.role === "dm" || m.role === "player");
     if (!isNew) return;
@@ -2152,6 +2160,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const loadedObjectives = normalizeObjectives((campRes.data as { objectives?: unknown } | null)?.objectives);
       setObjectives(loadedObjectives);
       objectivesRef.current = loadedObjectives;
+
+      // Already-completed campaign → show the ending overlay (restart or return),
+      // and don't kick off a fresh opening scene over the top of it.
+      const loadedStatus = (campRes.data as { status?: string } | null)?.status;
+      if (loadedStatus === "completed") {
+        campaignCompleteRef.current = true;
+        setCampaignComplete(true);
+      }
+
+      // BACKSTOP — every campaign must have an objective spine (clear start → end).
+      // Legacy campaigns (created before objectives, or where seeding failed) load
+      // with none; generate + persist a spine so the tracker, pacing, and finale all
+      // work. Fire-and-forget so it never blocks the load. Skip completed campaigns.
+      if (loadedObjectives.length === 0 && loadedStatus !== "completed") {
+        const partyForGen = ((partyRes.data ?? []) as Character[]).map(c => ({ name: c.name, race: c.race, cls: c.class }));
+        if (partyForGen.length) {
+          fetch("/api/generate-campaign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characters: partyForGen }) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+              const spine: string[] = Array.isArray(d?.objectives) && d.objectives.length ? d.objectives
+                : ["Discover why the party was brought together", "Investigate the strange events nearby", "Find the source of the disturbance", "Confront the force behind it", "Resolve the threat and claim your reward"];
+              const objs = initObjectives(spine);
+              objectivesRef.current = objs; setObjectives(objs);
+              supabase.from("campaigns").update({ objectives: objs }).eq("id", params.id).then(() => {});
+            })
+            .catch(() => {});
+        }
+      }
 
       // NPC roster — durable & shared in campaigns.npcs. The DB is authoritative;
       // if it's empty but this device has a localStorage roster (a campaign created
@@ -2994,6 +3030,19 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .catch(() => {})
       .finally(() => { suggestionFetchInFlightRef.current = false; });
   }, [isTyping, narrating, suggestions.length, buildSuggestActionsBody]);
+
+  // Auto-surface suggestions once the DM finishes narrating — restores the
+  // "suggestions appear after narration" behavior players expect. The on-focus
+  // path (requestSuggestions) remains as a fallback; its per-DM-message and
+  // in-flight guards mean this costs at most ONE Haiku call per prompt (a no-op
+  // if already fetched for the current message). A short delay lets the final
+  // narration chunk land and the layout settle. The display gate (isMyTurn /
+  // !showDice / !dmBusy) still decides when the fetched panel is actually shown.
+  useEffect(() => {
+    if (narrating || isTyping) return;
+    const t = setTimeout(() => { requestSuggestions(); }, 200);
+    return () => clearTimeout(t);
+  }, [narrating, isTyping, messages, requestSuggestions]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet, then PERSIST + BROADCAST
@@ -3221,7 +3270,17 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       if (idx >= 0) { lostQueue.splice(idx, 1); return false; }
       return true;
     });
-    const newItems   = isEffectiveTarget ? [...keptItems, ...change.items_gained] : (char.inventory?.items ?? []);
+    // Block spurious duplicates of UNIQUE quest items: if an item the player already
+    // holds is a quest-type item (key/lore/plot), don't add it again — this is
+    // almost always the extractor re-reading a later mention of an item still in the
+    // bag. Ordinary items (potions, torches, etc.) may still stack freely.
+    const heldByLower = new Map((char.inventory?.items ?? []).map(i => [i.trim().toLowerCase(), i] as const));
+    const gainedItems = change.items_gained.filter(g => {
+      const heldName = heldByLower.get(g.trim().toLowerCase());
+      if (!heldName) return true; // not already held → always add
+      return !isQuestItemType(char.inventory?.item_meta?.[heldName]?.type); // held quest item → skip re-add
+    });
+    const newItems   = isEffectiveTarget ? [...keptItems, ...gainedItems] : (char.inventory?.items ?? []);
     const newWeapons = isEffectiveTarget ? [...(char.inventory?.weapons ?? []), ...change.weapons_gained] : (char.inventory?.weapons ?? []);
 
     // Status effects — unconscious tracks HP for any effective target; named conditions require explicit target.
@@ -3614,6 +3673,97 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       })
       .catch(() => { if (econ.any) applyStateChange(econOnlyChange(), narrative); });
   }, [applyStateChange, charNameMatches]);
+
+  // ── Campaign completion (the DM finale) ──────────────────────────────────────
+  // Fires when a DM response carries [CAMPAIGN-COMPLETE]. Marks the campaign
+  // "completed", persists each hero's session inventory/gold to the GLOBAL roster
+  // (so the finale rewards travel into future campaigns), swells the music to the
+  // epic finale theme, and raises the celebratory ending overlay.
+  const handleCampaignComplete = useCallback(async (narrative: string) => {
+    if (campaignCompleteRef.current) return; // once per session
+    campaignCompleteRef.current = true;
+
+    // Build a per-hero reward summary from the finale's loot/gold tags for the overlay.
+    const rewardsByName = new Map<string, string[]>();
+    const add = (name: string | undefined, reward: string) => {
+      const k = (name && name.trim()) || "The party";
+      if (!rewardsByName.has(k)) rewardsByName.set(k, []);
+      rewardsByName.get(k)!.push(reward);
+    };
+    let m: RegExpExecArray | null;
+    const lootRe = /\[(?:LOOT|WEAPON):(?:([A-Za-z][\w'\- ]*?):)?([^\]]+)\]/gi;
+    while ((m = lootRe.exec(narrative)) !== null) add(m[1], m[2].trim());
+    const goldRe = /\[GOLD:(?:([A-Za-z][\w'\- ]*?):)?\+?(\d+)\]/gi;
+    while ((m = goldRe.exec(narrative)) !== null) add(m[1], `${m[2]} gold`);
+
+    // GUARANTEED REWARD — the DM reliably narrates the finale but often doesn't TAG
+    // any loot. If no reward tags were emitted, bestow a legendary keepsake + gold on
+    // each hero so the promised "extravagant reward you keep" always happens. Written
+    // to per-campaign inventory now; the roster-copy below carries it onto the global
+    // character so it travels into future campaigns.
+    if (rewardsByName.size === 0) {
+      const crest = `${campaignTitle || "Champion"}'s Crest`;
+      await Promise.all(campaignPartyRef.current.map(async c => {
+        const inv = c.inventory ?? { gold: 0, items: [], weapons: [] };
+        const newInv = {
+          ...inv,
+          gold: (inv.gold ?? 0) + 1000,
+          items: [...(inv.items ?? []), crest],
+          item_meta: { ...(inv.item_meta ?? {}), [crest]: { type: "valuable", rarity: "legendary" as const, value_gp: 5000, description: `A legendary token of triumph for completing ${campaignTitle || "the campaign"} — carried with pride into any future adventure.` } },
+        };
+        add(c.name, crest); add(c.name, "1000 gold");
+        setCampaignParty(prev => prev.map(p => p.id === c.id ? { ...p, inventory: newInv } : p));
+        campaignPartyRef.current = campaignPartyRef.current.map(p => p.id === c.id ? { ...p, inventory: newInv } : p);
+        await charWriteRef.current?.(c.id, { inventory: newInv });
+      }));
+    }
+    setCompletionRewards([...rewardsByName.entries()].map(([name, rewards]) => ({ name, rewards })));
+
+    // Mark the campaign completed.
+    await supabase.from("campaigns").update({ status: "completed" }).eq("id", params.id);
+
+    // Swell to the epic finale theme.
+    try { (window as Window).__dndSetMusicScene?.("victory", undefined, []); } catch { /* ignore */ }
+
+    // After the finale's reward tags have applied to per-campaign inventory, copy
+    // each hero's inventory onto the GLOBAL characters row so the loot persists onto
+    // the roster and into future campaigns. (No-op for non-CC campaigns — already global.)
+    setTimeout(async () => {
+      try {
+        const { data: ccRows } = await supabase.from("campaign_characters").select("character_id,inventory").eq("campaign_id", params.id);
+        await Promise.all((ccRows ?? []).map(r =>
+          r.inventory ? supabase.from("characters").update({ inventory: r.inventory }).eq("id", r.character_id) : Promise.resolve(),
+        ));
+      } catch (e) { console.warn("[campaign-complete] roster persist failed:", e); }
+    }, 2500);
+
+    setCampaignComplete(true);
+  }, [params.id]);
+
+  // Reset a completed campaign's STORY so it can be replayed from the opening —
+  // wipes messages/enemies/objectives/NPCs/turn state and clears transient per-session
+  // combat flags (full HP, no spent slots/statuses) while KEEPING each hero's level,
+  // XP, and inventory (incl. the finale reward). Then reloads the campaign fresh.
+  const restartCampaign = useCallback(async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      await supabase.from("campaign_messages").delete().eq("campaign_id", params.id);
+      await supabase.from("campaign_enemies").delete().eq("campaign_id", params.id);
+      // Clear transient per-session combat state but keep progression + inventory.
+      const { data: ccRows } = await supabase.from("campaign_characters").select("character_id,max_hp").eq("campaign_id", params.id);
+      await Promise.all((ccRows ?? []).map(r =>
+        supabase.from("campaign_characters")
+          .update({ hp: r.max_hp, spell_slots_used: {}, status_effects: [], class_resources: {} })
+          .eq("campaign_id", params.id).eq("character_id", r.character_id),
+      ));
+      await supabase.from("campaigns")
+        .update({ status: "active", objectives: [], npcs: [], turn_order: [], current_turn_index: 0 })
+        .eq("id", params.id);
+    } catch (e) { console.error("[restart] failed:", e); }
+    // Hard reload the campaign so the opening scene regenerates cleanly from empty state.
+    window.location.href = `/campaign/${params.id}`;
+  }, [params.id, restarting]);
 
   // ── Resume-loot reconciliation ────────────────────────────────────────────────
   // On resume, the DM's most recent message is loaded from the DB but its state
@@ -4471,6 +4621,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       .replace(/\[ITEM-?LOST:[^\]]+\]/gi, "")
       .replace(/\[XP:[^\]]+\]/gi, "")
       .replace(/\[OBJECTIVE-(?:NEW|DONE):[^\]]*\]/gi, "")
+      .replace(/\[CAMPAIGN-COMPLETE\]/gi, "")
       .replace(/\[NPC-RENAME:[^\]]*\]/gi, "")
       .replace(/\[NPC-JOIN:[^\]]*\]/gi, "")
       .replace(/\[NPC:[^\]]*\]/gi, "")
@@ -5650,6 +5801,27 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // reveal/complete milestones. Skip on a [NO-TURN] refusal (nothing happened).
       if (!/\[NO-?TURN\]/i.test(full)) {
         applyObjectiveTagsFromNarrative(full);
+        // Campaign finale — the user's core rule: once the FINAL objective is
+        // accomplished, the campaign ends. Three signals, most-to-least direct:
+        //   1. The DM emitted [CAMPAIGN-COMPLETE] (primary, fast).
+        //   2. Every objective is now done.
+        //   3. The party is ON the last objective and the DM narrated a clear ending
+        //      — confirmed by the finale classifier (the DM reliably WRITES the
+        //      finale but doesn't reliably TAG it). Only runs on the final objective.
+        const objs = objectivesRef.current;
+        const allObjectivesDone = objs.length > 0 && objs.every(o => o.status === "done");
+        const onFinalObjective = objs.length > 0
+          && objs[objs.length - 1]?.status === "active"
+          && objs.slice(0, -1).every(o => o.status === "done");
+        if (/\[CAMPAIGN-COMPLETE\]/i.test(full) || allObjectivesDone) {
+          handleCampaignComplete(full);
+        } else if (onFinalObjective && !isOpeningScene && !campaignCompleteRef.current) {
+          const finalGoal = objs[objs.length - 1].text;
+          fetch("/api/detect-finale", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narrative: full, finalGoal }) })
+            .then(r => r.json())
+            .then(({ complete }) => { if (complete) handleCampaignComplete(full); })
+            .catch(() => {});
+        }
       }
       // Backstop: surface any buff/debuff the DM narrates as active on a party member.
       applyActiveEffectsFromNarrative(full);
@@ -6201,6 +6373,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     setStateNotice(notice);
     setTimeout(() => setStateNotice(null), 5000);
     setLogEntries(prev => [...prev, { id: makeLogId("use"), timestamp: new Date(), role: "system", content: `🧪 ${notice}` }]);
+  }, [charWrite]);
+
+  // One-time-use items (keys) are removed from the bag the instant they're used —
+  // conserving room — and the caller then prefills "I use my <item>." so the DM
+  // narrates what it opened. Removes a single copy + tidies its item_meta.
+  const consumeOneTimeItem = useCallback(async (itemName: string) => {
+    const char = characterRef.current;
+    if (!char) return;
+    let removed = false;
+    const newItems = char.inventory.items.filter(i => {
+      if (!removed && i === itemName) { removed = true; return false; }
+      return true;
+    });
+    if (!removed) return;
+    const stillHas = newItems.includes(itemName) || char.inventory.weapons.includes(itemName);
+    const newMeta: Character["inventory"]["item_meta"] = { ...(char.inventory.item_meta ?? {}) };
+    if (!stillHas) delete newMeta[itemName];
+    const newInv: Character["inventory"] = {
+      ...char.inventory, items: newItems,
+      ...(Object.keys(newMeta).length > 0 ? { item_meta: newMeta } : { item_meta: undefined }),
+    };
+    const updatedChar: Character = { ...char, inventory: newInv };
+    setCharacter(updatedChar); characterRef.current = updatedChar;
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updatedChar : c));
+    await charWrite(char.id, { inventory: newInv });
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: char.id, inventory: newInv } });
+    setStateNotice(`Used ${itemName} · (consumed)`);
+    setTimeout(() => setStateNotice(null), 5000);
+    setLogEntries(prev => [...prev, { id: makeLogId("use"), timestamp: new Date(), role: "system", content: `🔑 Used ${itemName} (consumed)` }]);
   }, [charWrite]);
 
   // ── Party management ─────────────────────────────────────────────────────────
@@ -8962,10 +9163,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       ))}
                     </div>
                   </div>
-                  {[
-                    ...(character.inventory?.weapons ?? []).map(w => ({ name: w, slot: "weapon" as const })),
-                    ...(character.inventory?.items   ?? []).map(i => ({ name: i, slot: "item"   as const })),
-                  ].map(({ name, slot }, idx) => {
+                  {(() => {
+                    // Group the bag: weapons + normal items first, then quest items
+                    // (key/lore/plot, by AI item type) under their own header so plot
+                    // pieces don't crowd everyday gear.
+                    const rows = [
+                      ...(character.inventory?.weapons ?? []).map(w => ({ name: w, slot: "weapon" as const })),
+                      ...(character.inventory?.items   ?? []).map(i => ({ name: i, slot: "item"   as const })),
+                    ].map(r => ({ ...r, quest: r.slot === "item" && isQuestItemType(character.inventory?.item_meta?.[r.name]?.type) }));
+                    rows.sort((a, b) => (a.quest === b.quest ? 0 : a.quest ? 1 : -1));
+                    const out: React.ReactNode[] = [];
+                    let questHeaderShown = false;
+                    rows.forEach(({ name, slot, quest }, idx) => {
                     const catalogItem: LootItem | undefined = getItemByName(name);
                     const dmMeta      = character.inventory?.item_meta?.[name];
                     const metaRarity  = dmMeta?.rarity ?? "common";
@@ -8980,7 +9189,15 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         : (slot === "weapon" ? "⚔" : "🎒");
                     const isHovered   = hoveredItem === `${slot}-${idx}`;
                     const itemKey     = `${slot}-${idx}`;
-                    return (
+                    if (quest && !questHeaderShown) {
+                      questHeaderShown = true;
+                      out.push(
+                        <div key="quest-items-header" style={{ display: "flex", alignItems: "center", gap: "6px", margin: "12px 0 6px 0", paddingTop: "8px", borderTop: "1px solid rgba(251,191,36,0.18)", color: "#fbbf24", fontSize: fs(0.72), fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          📜 Quest Items
+                        </div>,
+                      );
+                    }
+                    out.push(
                       <div key={itemKey} style={{ marginBottom: "4px" }}>
                         <div style={{ position: "relative" }}>
                           <div
@@ -9035,6 +9252,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                                 onClick={e => {
                                   e.stopPropagation();
                                   if (catalogItem?.consumable) { handleUseItem(name); return; }
+                                  // One-time-use (a key): remove it now to conserve room; the
+                                  // chat prefill below still lets the DM narrate what it opened.
+                                  if (isOneTimeUseType(dmMeta?.type)) consumeOneTimeItem(name);
                                   const prefill = `I use my ${name}.`;
                                   setInput(prev => {
                                     const trimmed = prev.trim();
@@ -9091,7 +9311,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       </div>
                     );
-                  })}
+                    });
+                    return out;
+                  })()}
                 </div>
 
                 {/* Party Leadership */}
@@ -9203,6 +9425,40 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           permission to hidden elements. Positioned off-screen instead. */}
       <audio ref={narAudioRef}     preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
       <audio ref={previewAudioRef} preload="none" style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} />
+
+      {/* Campaign complete — celebratory finale overlay */}
+      {campaignComplete && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "radial-gradient(ellipse at center, rgba(76,29,149,0.55), rgba(3,2,12,0.94))", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", overflowY: "auto" }}>
+          <div style={{ maxWidth: "560px", width: "100%", textAlign: "center", background: "linear-gradient(180deg, rgba(30,22,54,0.96), rgba(18,12,36,0.98))", border: "1px solid rgba(251,191,36,0.5)", borderRadius: "18px", padding: "32px 28px", boxShadow: "0 0 60px rgba(251,191,36,0.35), 0 20px 60px rgba(0,0,0,0.6)" }}>
+            <div style={{ fontSize: "3rem", lineHeight: 1, marginBottom: "8px" }}>🏆✨</div>
+            <h1 style={{ fontSize: "2rem", fontWeight: 800, letterSpacing: "0.02em", margin: "0 0 6px", color: "#fde68a", textShadow: "0 2px 18px rgba(251,191,36,0.5)" }}>Campaign Complete!</h1>
+            <p style={{ fontSize: "1.15rem", color: "#c4b5fd", fontWeight: 600, margin: "0 0 18px" }}>{campaignTitle || "Your adventure"}</p>
+            <p style={{ fontSize: "1rem", color: "#e2e8f0", lineHeight: 1.6, margin: "0 0 20px" }}>
+              Victory! {campaignParty.map(c => c.name).join(", ")} {campaignParty.length === 1 ? "has" : "have"} seen the story through to its end. Your heroes — and the rewards they earned — are yours to keep and carry into future campaigns.
+            </p>
+            {completionRewards.length > 0 && (
+              <div style={{ textAlign: "left", background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "12px", padding: "14px 16px", margin: "0 0 22px" }}>
+                <div style={{ fontSize: "0.78rem", color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: "bold", marginBottom: "8px" }}>🎁 Legendary Rewards</div>
+                {completionRewards.map((r, i) => (
+                  <div key={i} style={{ fontSize: "0.95rem", color: "#e2e8f0", lineHeight: 1.5, marginBottom: "3px" }}>
+                    <span style={{ color: "#c4b5fd", fontWeight: 600 }}>{r.name}:</span> {r.rewards.join(", ")}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+              <button onClick={() => router.push("/dashboard")}
+                style={{ padding: "12px 24px", borderRadius: "10px", border: "1px solid rgba(251,191,36,0.6)", background: "linear-gradient(180deg, #f59e0b, #d97706)", color: "#1a1206", fontWeight: 800, fontSize: "1rem", cursor: "pointer", boxShadow: "0 6px 20px rgba(245,158,11,0.4)" }}>
+                Return to Roster
+              </button>
+              <button onClick={restartCampaign} disabled={restarting}
+                style={{ padding: "12px 24px", borderRadius: "10px", border: "1px solid rgba(139,92,246,0.5)", background: "rgba(139,92,246,0.15)", color: "#c4b5fd", fontWeight: 700, fontSize: "1rem", cursor: restarting ? "wait" : "pointer", opacity: restarting ? 0.6 : 1 }}>
+                {restarting ? "Restarting…" : "Restart Campaign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Final-adventurer warning — removing the last character deletes the campaign */}
       {confirmFinalLeave && (

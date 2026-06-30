@@ -25,6 +25,21 @@ export type ItemType =
 
 export type ItemRarity = "common" | "uncommon" | "rare" | "very_rare" | "legendary" | "cursed";
 
+// ── Quest / one-time-use classification (by the AI-assigned item_meta.type) ──────
+// Quest items (keys, lore notes, plot tokens, objectives) are grouped in their own
+// inventory section and de-duped — a player should never accidentally hold two of a
+// unique quest item.
+export const QUEST_ITEM_TYPES = new Set(["quest", "quest_item", "questitem", "key", "lore", "plot", "objective"]);
+export function isQuestItemType(type?: string | null): boolean {
+  return !!type && QUEST_ITEM_TYPES.has(type.toLowerCase());
+}
+// One-time-use items (a key) are consumed and removed from the bag the instant
+// they're used, to conserve inventory room.
+export const ONE_TIME_USE_TYPES = new Set(["key"]);
+export function isOneTimeUseType(type?: string | null): boolean {
+  return !!type && ONE_TIME_USE_TYPES.has(type.toLowerCase());
+}
+
 export type LootItem = {
   name: string;
   type: ItemType;

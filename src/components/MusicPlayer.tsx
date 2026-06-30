@@ -209,6 +209,8 @@ const SCENE_TO_AMBIANCE_POOL: Record<string, string> = {
 };
 
 const SCENE_TO_POOL: Record<string, string> = {
+  // Campaign finale — triumphant epic theme
+  victory: "epic", triumph: "epic", finale: "epic",
   // All combat variants → combat pool
   tavern_combat: "combat", dungeon_combat: "combat", forest_combat: "combat",
   cave_combat: "combat", ruins_combat: "combat", castle_combat: "combat",

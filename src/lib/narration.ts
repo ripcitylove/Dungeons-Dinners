@@ -74,6 +74,12 @@ export function sanitizeForTts(text: string): string {
     .replace(/\s*&\s*/g, " and ")   // ampersand → spoken "and"
     .replace(/\s*\/\s*/g, " ")       // slash → space, never "slash" or a garble
     .replace(/\\+/g, " ");           // stray backslashes
+  // ── Initialisms — keep TTS from choking on the periods between letters ──
+  // "L.V." / "L.V.," / "U.S.A." → spaced letters ("L V" / "U S A") so ElevenLabs
+  // voices each letter cleanly instead of stumbling on the dots (and any trailing
+  // comma/period becomes a normal pause). Only runs of 2+ single-letter "X."
+  // groups match, so ordinary sentence-ending periods are never affected.
+  out = out.replace(/\b(?:[A-Za-z]\.){2,}/g, m => m.replace(/\./g, " ").replace(/\s{2,}/g, " ").trim());
   // Collapse punctuation runs that confuse prosody, and tidy spacing.
   out = out
     .replace(/\.{3,}/g, "…")          // ... -> ellipsis

@@ -372,6 +372,17 @@ export default function CreateCampaignWizard() {
       const { title: aiTitle, description: aiDescription, objectives: aiObjectives } = genRes.ok
         ? await genRes.json()
         : { title: "Shadows of the Forgotten Realm", description: "A perilous adventure awaits.", objectives: [] };
+      // EVERY campaign must have an objective spine (a clear start → definitive end).
+      // If generation failed or returned none, fall back to a generic spine so the
+      // tracker, difficulty pacing, and finale always have something to work with.
+      const FALLBACK_SPINE = [
+        "Discover why the party was brought together",
+        "Investigate the strange events nearby",
+        "Find the source of the disturbance",
+        "Confront the force behind it",
+        "Resolve the threat and claim your reward",
+      ];
+      const spine: string[] = Array.isArray(aiObjectives) && aiObjectives.length ? aiObjectives : FALLBACK_SPINE;
 
       const { data: campData, error: campErr } = await supabase
         .from("campaigns")
@@ -384,7 +395,7 @@ export default function CreateCampaignWizard() {
       // campaign — the party must have a goal in the tracker before the first turn.
       // Error-tolerant: a missing `objectives` column (migration not yet applied)
       // logs a warning but never blocks campaign creation. Null-safe downstream.
-      const objectives = initObjectives(aiObjectives);
+      const objectives = initObjectives(spine);
       if (objectives.length) {
         const { error: objErr } = await supabase.from("campaigns").update({ objectives }).eq("id", campData.id);
         if (objErr) console.warn("[campaign] objectives not saved (migration pending?):", objErr.message);

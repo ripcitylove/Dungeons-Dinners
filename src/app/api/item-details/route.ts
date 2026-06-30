@@ -21,7 +21,14 @@ Return ONLY valid JSON in this exact shape (no markdown, no prose):
       "description": string,  // 1–2 sentence flavor + mechanical note. ≤ 180 chars. Be evocative but practical.
       "value_gp":    number,  // approximate gold piece value. Mundane: 1–50. Trinkets/curios: 5–25. Magical: 100–5000+. Use 0 for items with no resale value (personal letters, lore notes, plot tokens).
       "rarity":      string,  // one of: "common", "uncommon", "rare", "very_rare", "legendary". Mundane things like rations, rope, pouches, parchment → "common". Subtly magical / minor enchantments → "uncommon". Notable magical items → "rare" or above.
-      "type":        string   // short category lowercased: "potion", "scroll", "weapon", "armor", "trinket", "consumable", "container", "tool", "valuable", "key", "lore", "wondrous"
+      "type":        string   // short category lowercased: "potion", "scroll", "weapon", "armor", "trinket", "consumable", "container", "tool", "valuable", "key", "lore", "quest", "wondrous"
+      // QUEST CLASSIFICATION (important — drives the Quest Items tab + dedup):
+      //   "key"   = a single-use key/keycard/sigil that opens ONE thing then is spent.
+      //   "lore"  = letters, journals, maps, notes, ritual pages — readable plot info.
+      //   "quest" = a plot/objective item the party must carry, deliver, or turn in
+      //             (an amulet the quest is about, a stolen relic, a prisoner's token).
+      // Use "key"/"lore"/"quest" for anything story/objective-bound; reserve the
+      // generic types (potion/weapon/trinket/valuable/wondrous) for ordinary loot.
     }
   ]
 }
