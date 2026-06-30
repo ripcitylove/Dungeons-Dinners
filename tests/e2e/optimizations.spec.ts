@@ -83,32 +83,33 @@ test("#NPC — restored companions load from the DB and SURVIVE a location chang
   await expect(page.locator('img[alt="Gate Sentinel"]').first(), "new scene NPC should appear").toBeVisible({ timeout: 15000 });
 });
 
-test("#2a — suggestions are on-demand: not auto-fetched, fetched on input focus", async ({ page }) => {
+test("#2a — suggestions appear (auto on your turn / on focus) and don't refetch-spam", async ({ page }) => {
   test.setTimeout(120000);
   let suggestCalls = 0;
   page.on("request", req => { if (req.url().includes("/api/suggest-actions")) suggestCalls++; });
 
   await authAndOpenCampaign(page);
-  await page.waitForTimeout(3000); // give any (old) auto-fetch a chance to fire
-
-  const autoCalls = suggestCalls;
-  expect(autoCalls, "should NOT auto-fetch suggestions before focus").toBe(0);
 
   const input = page.locator("[data-chat-input]");
   const enabled = await input.isEnabled().catch(() => false);
-  test.skip(!enabled, "Chat input disabled (not this player's turn) — focus path can't be exercised");
+  test.skip(!enabled, "Chat input disabled (not this player's turn)");
 
-  // sessionStarted flips true only once the campaign finishes loading (a 28s
-  // fallback covers headless, where audio/scene never signal). Poll the focus path
-  // until that gate opens and the on-demand fetch fires.
+  // Suggestions should be fetched for the current prompt — either auto-surfaced
+  // after narration on your turn, or via the on-focus fallback. Poll (focusing as a
+  // backstop) until one lands.
   await expect.poll(async () => {
     await input.blur().catch(() => {});
     await input.focus();
     await page.waitForTimeout(2500);
     return suggestCalls;
-  }, { timeout: 40000, intervals: [3000], message: "on-focus should fetch suggestions once loaded" }).toBeGreaterThan(0);
+  }, { timeout: 40000, intervals: [3000], message: "suggestions should be fetched (auto or on focus)" }).toBeGreaterThan(0);
 
-  console.log(`suggest-actions calls — before focus: ${autoCalls}, after focus: ${suggestCalls}`);
+  // Per-DM-message guard: once fetched for the current prompt, repeated focus/idle
+  // must NOT keep refetching it — that's the per-turn cost we reconciled away.
+  const afterFirst = suggestCalls;
+  for (let i = 0; i < 3; i++) { await input.blur().catch(() => {}); await input.focus(); await page.waitForTimeout(1500); }
+  console.log(`suggest-actions calls: first=${afterFirst}, after repeated focus=${suggestCalls}`);
+  expect(suggestCalls - afterFirst, "repeated focus must not refetch the same prompt (per-message guard)").toBeLessThanOrEqual(1);
 });
 
 test("#3/#4 — DM call sends a WINDOWED payload (recap + recent), not the full 290-message history", async ({ page }) => {

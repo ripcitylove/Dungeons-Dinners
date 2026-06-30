@@ -3036,13 +3036,24 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   // path (requestSuggestions) remains as a fallback; its per-DM-message and
   // in-flight guards mean this costs at most ONE Haiku call per prompt (a no-op
   // if already fetched for the current message). A short delay lets the final
-  // narration chunk land and the layout settle. The display gate (isMyTurn /
-  // !showDice / !dmBusy) still decides when the fetched panel is actually shown.
+  // narration chunk land and the layout settle.
+  //
+  // COST GATE: only auto-fetch when it's actually THIS player's turn — that is the
+  // only state in which the panel is shown (see the isMyTurn display gate). Without
+  // this, every player's client fetched suggestions on every DM message even when
+  // the panel could never show (another player's turn), re-introducing the per-turn
+  // Haiku cost the on-demand change removed. On your turn the fetch is intended (the
+  // panel appears); off your turn it's pure waste. Solo play (turnOrder ≤ 1) always
+  // counts as your turn, so suggestions still auto-appear there.
   useEffect(() => {
     if (narrating || isTyping) return;
+    const myTurn = rollRequestedUserId
+      ? rollRequestedUserId === userIdRef.current
+      : (turnOrderRef.current.length <= 1 || turnOrderRef.current[currentTurnIndexRef.current] === characterRef.current?.id);
+    if (!myTurn) return;
     const t = setTimeout(() => { requestSuggestions(); }, 200);
     return () => clearTimeout(t);
-  }, [narrating, isTyping, messages, requestSuggestions]);
+  }, [narrating, isTyping, messages, rollRequestedUserId, requestSuggestions]);
   useEffect(() => { if (sidebarTab === "log") logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries, sidebarTab]);
 
   // Fetch AI portraits for enemies that don't have one yet, then PERSIST + BROADCAST
