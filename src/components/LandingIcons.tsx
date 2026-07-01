@@ -490,7 +490,29 @@ export type LandingIconName =
   | "map"
   | "spellbook";
 
+// Icons with hand-generated chibi-character art (public/landing/<name>.png) in the
+// hero-illustration style — rendered as transparent images that float on the dark
+// cards. The rest fall back to the original SVG until their art is generated
+// (scripts/gen-landing-icons.mjs is resumable — it only fills in the missing files).
+const PAINTED_ICONS = new Set<LandingIconName>([
+  "dungeon-master", "combat", "multiplayer", "voice", "portrait", "controller",
+]);
+
 export function LandingIcon({ name, size = 64, className, style }: { name: LandingIconName } & IconProps) {
+  if (PAINTED_ICONS.has(name)) {
+    return (
+      <img
+        src={`/landing/${name}.png`}
+        alt=""
+        aria-hidden
+        width={size}
+        height={size}
+        loading="lazy"
+        className={className}
+        style={{ width: size, height: size, objectFit: "contain", display: "block", filter: "drop-shadow(0 3px 7px rgba(0,0,0,0.45))", ...style }}
+      />
+    );
+  }
   switch (name) {
     case "dungeon-master": return <DungeonMasterIcon size={size} className={className} style={style}/>;
     case "combat":         return <CombatIcon         size={size} className={className} style={style}/>;
