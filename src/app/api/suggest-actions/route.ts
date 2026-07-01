@@ -165,6 +165,7 @@ CRITICAL SPELL-SLOT RULE: "Prepared spells" are LEVELED — each one costs a spe
         },
       ],
     });
+    { const u = response.usage; console.log(`[api/suggest-actions] tokens in=${u.input_tokens} cacheRead=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens}`); }
 
     const raw   = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     const match = raw.match(/\[[\s\S]*?\]/);

@@ -215,6 +215,7 @@ export async function POST(req: NextRequest) {
       system:     buildSceneSystem(currentScene.replace(/_combat$/, "")),
       messages:   [{ role: "user", content: `${contextPrefix}${narrative.slice(0, 900)}` }],
     });
+    { const u = detect.usage; console.log(`[api/detect-scene] tokens in=${u.input_tokens} cacheRead=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens}`); }
 
     const raw = detect.content[0].type === "text" ? detect.content[0].text.trim() : "";
 

@@ -1056,8 +1056,14 @@ export async function POST(req: NextRequest) {
     const staticRules = hasRules ? VOICE_AND_RULES : fullSystem;
     const dynamicTail = hasRules ? fullSystem.slice(VOICE_AND_RULES.length) : "";
 
+    // 1-HOUR cache on the static rules (extended-cache-ttl beta): the ~19.5k rules
+    // are byte-identical for the whole session, so a 1h TTL keeps them warm across
+    // player pauses (bathroom, rules lookups, AFK) instead of re-warming every 5min
+    // — that re-warm is a ~$0.15 cache-WRITE spike on each resume. SDK 0.52 doesn't
+    // type `ttl`, so cast; the beta header on the request enables it.
+    const rulesCacheControl = { type: "ephemeral", ttl: "1h" } as unknown as Anthropic.CacheControlEphemeral;
     const systemBlocks: Anthropic.TextBlockParam[] = [
-      { type: "text", text: staticRules, cache_control: { type: "ephemeral" } },
+      { type: "text", text: staticRules, cache_control: rulesCacheControl },
     ];
 
     const lastIdx = claudeMessages.length - 1;
@@ -1082,7 +1088,7 @@ export async function POST(req: NextRequest) {
       system:     systemBlocks,
       messages:   outMessages,
       stream:     true,
-    });
+    }, { headers: { "anthropic-beta": "extended-cache-ttl-2025-04-11" } });
 
     const encoder = new TextEncoder();
     const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
@@ -1092,7 +1098,7 @@ export async function POST(req: NextRequest) {
       // Capture cache usage so we can confirm the rules block is being cached.
       // message_start carries input + cache_creation/cache_read counts; the
       // delta carries output. Logged once per turn for cost observability.
-      let cacheCreate = 0, cacheRead = 0, inputTok = 0, outputTok = 0;
+      let cacheCreate = 0, cacheRead = 0, inputTok = 0, outputTok = 0, cacheTtl = "";
       try {
         for await (const event of stream) {
           if (event.type === "message_start") {
@@ -1100,13 +1106,16 @@ export async function POST(req: NextRequest) {
             inputTok    = u.input_tokens ?? 0;
             cacheCreate = u.cache_creation_input_tokens ?? 0;
             cacheRead   = u.cache_read_input_tokens ?? 0;
+            // Confirm which TTL the cache write landed in (1h beta vs 5m default).
+            const cc = (u as { cache_creation?: { ephemeral_1h_input_tokens?: number; ephemeral_5m_input_tokens?: number } }).cache_creation;
+            if (cc) cacheTtl = ` (1h=${cc.ephemeral_1h_input_tokens ?? 0} 5m=${cc.ephemeral_5m_input_tokens ?? 0})`;
           } else if (event.type === "message_delta") {
             outputTok = event.usage?.output_tokens ?? outputTok;
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             await writer.write(encoder.encode(event.delta.text));
           }
         }
-        console.log(`[api/chat] tokens in=${inputTok} cacheWrite=${cacheCreate} cacheRead=${cacheRead} out=${outputTok}`);
+        console.log(`[api/chat] tokens in=${inputTok} cacheWrite=${cacheCreate}${cacheTtl} cacheRead=${cacheRead} out=${outputTok}`);
       } finally {
         try { await writer.close(); } catch { /* already closed */ }
       }

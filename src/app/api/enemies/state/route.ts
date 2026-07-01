@@ -81,6 +81,7 @@ ${narrative.slice(0, 1200)}`;
       system:     SYSTEM,
       messages:   [{ role: "user", content: prompt }],
     });
+    { const u = res.usage; console.log(`[api/enemies-state] tokens in=${u.input_tokens} cacheRead=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens}`); }
 
     const raw   = res.content[0].type === "text" ? res.content[0].text : "";
     const match = raw.match(/\{[\s\S]*\}/);
