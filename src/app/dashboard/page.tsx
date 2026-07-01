@@ -196,9 +196,9 @@ function CharacterModal({
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "clamp(14px, 2vw, 24px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "clamp(18px, 2.5vw, 26px)" }}>
           {/* Ability Scores */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: "1.28rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Ability Scores</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
               {ABILITY_LABELS.map(([label, key]) => {
@@ -240,7 +240,7 @@ function CharacterModal({
           </div>
 
           {/* Inventory */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: "1.28rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Inventory</div>
             <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "14px", fontSize: "1.41rem", display: "flex", flexDirection: "column", gap: "14px" }}>
               {/* Currency */}
