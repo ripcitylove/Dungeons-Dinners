@@ -679,8 +679,17 @@ function partyScaleHint(partySize: number, avgLevel: number): string {
   // swarm, and it keeps the on-screen enemy count in a sane range (the engine caps
   // spawned enemy cards near 12). Total force should land roughly between party size
   // and ~12, never a wall of 15–20 trivial bodies.
+  // LOW-LEVEL SWARM GUARD (avg level 1–2). Level 1–2 heroes have single-digit HP,
+  // so being outnumbered is FAR deadlier than raw CR suggests — 5e's encounter
+  // multiplier turns a "medium" body count into a Deadly fight. Cap the number of
+  // foes ON SCREEN at once to roughly one-per-hero, hold CR low, and push any bigger
+  // force into later WAVES. This takes priority over the party-size structures below.
+  const lowLevel = avgLevel <= 2;
+  const lowCap   = Math.max(2, partySize + 1);
   let scaleNote: string;
-  if (partySize >= 8) {
+  if (lowLevel) {
+    scaleNote = `a LOW-LEVEL party (avg level ${avgLevel}) — these heroes have very few hit points, so being outnumbered is lethal. Field AT MOST ${lowCap} foes ON SCREEN at once, at CR 1/8–1/2 (a single CR 1 "mini-boss" may lead one or two weak minions, but no higher at this level). Aim for roughly ONE foe per hero — never two. If the story calls for a larger force, bring it in as later WAVES across rounds, NOT all at once. A pack of ${partySize + 3}+ enemies against level ${avgLevel} characters is a party wipe, not a fair fight.`;
+  } else if (partySize >= 8) {
     scaleNote = `a large, organized force — lead it from the front: 1 ELITE leader (CR ${Math.max(4, avgLevel + 1)}) or a pair of lieutenants, backed by ${partySize} to ${partySize + 3} minions (whole force ~${partySize + 1}–12 enemies, NOT a 15–20 swarm). The leader is the real fight — give it strong HP, AC, and a signature ability — while the minions pressure the flanks. NEVER pit this many adventurers against just 2–3 weak enemies.`;
   } else if (partySize >= 5) {
     scaleNote = `a strong party — field a LEADER (CR ${Math.max(2, avgLevel)}) backed by ${partySize}–${partySize + 2} minions, OR ${partySize}–${partySize + 2} equal foes at appropriate CR. NEVER pit ${partySize} adventurers against just 2–3 weak enemies — that is a non-encounter, not a fight.`;
@@ -690,10 +699,13 @@ function partyScaleHint(partySize: number, avgLevel: number): string {
     scaleNote = `a small party — 1–3 foes near their level, or one meaningful solo threat (an elite leader-type works well).`;
   }
 
+  const budgetLine = lowLevel
+    ? `Total XP budget for a fair encounter: ~${totalBudget} XP RAW — but remember many foes multiply the real danger, so keep it modest and lean on ONE fair fight over a swarm.`
+    : `Total XP budget for a medium-hard encounter: ~${totalBudget} XP.`;
   return `ENCOUNTER SCALING (${partySize} adventurers, avg level ${avgLevel})
 This is ${scaleNote}
-Total XP budget for a medium-hard encounter: ~${totalBudget} XP.
-Scale up enemy AC, HP, damage, and numbers proportional to party size. Use environmental hazards and varied enemy roles (archer + melee + caster) to challenge all party members.
+${budgetLine}
+Scale enemy AC, HP, damage, and numbers to the party — but MORE ENEMIES ≠ FAIRER: each extra body sharply raises real difficulty (5e's group multiplier), so prefer fewer, well-built foes and varied roles (archer + melee + caster) plus environmental hazards over a large body count. Never field so many foes that low-HP heroes are overwhelmed by sheer number of attacks.
 XP from defeated enemies splits evenly among all surviving party members.`;
 }
 

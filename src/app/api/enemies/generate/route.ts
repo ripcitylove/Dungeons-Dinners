@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
+import { maxEnemiesForParty, boardCapForParty, capToToughest } from "../../../../lib/encounterScaling";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 const supabase  = createClient(
@@ -83,8 +84,14 @@ export async function POST(req: NextRequest) {
     // a big party never faces a lone foe, and a ceiling of 12 so a leader + a full
     // band of minions (the intended large-party structure) all fit as cards without
     // the prose ever describing more foes than the engine can spawn.
-    const maxEnemies = Math.min(12, Math.max(2, Math.ceil(partySize * 1.5)));
+    const maxEnemies = maxEnemiesForParty(partySize);
     const minEnemies = Math.min(maxEnemies, Math.max(1, Math.round(partySize * 0.75)));
+    // LOW-LEVEL SWARM GUARD (deterministic, applies to EVERY campaign). Regardless of
+    // how many foes the DM prose describes, hard-cap the number of enemy CARDS on the
+    // board to ~one-per-hero at low levels; surplus foes are simply not spawned (the
+    // story can bring them back as a later wave via an additive spawn). See
+    // src/lib/encounterScaling.ts for the rationale.
+    const boardCap = boardCapForParty(partySize, avgLevel);
     const crMin = Math.max(0.125, avgLevel - 2);
     const crMax = avgLevel + 1;
 
@@ -145,7 +152,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Schema per enemy:
       if (additive) return Response.json({ enemies: [] });
       throw new Error("No parseable enemies in response");
     }
-    const rows = parsed.map(e => ({
+    let rows = parsed.map(e => ({
       campaign_id,
       name:           String(e.name          ?? "Unknown Enemy"),
       enemy_type:     String(e.enemy_type     ?? "Humanoid"),
@@ -169,9 +176,13 @@ Return ONLY a valid JSON array, no markdown, no explanation. Schema per enemy:
     // the model echoed that already exist by name (case-insensitive) as a safety net.
     if (!additive) {
       await supabase.from("campaign_enemies").delete().eq("campaign_id", campaign_id);
+      rows = capToToughest(rows, boardCap);              // low-level swarm guard
     } else {
       const have = new Set(existing!.map(n => n.toLowerCase()));
       for (let i = rows.length - 1; i >= 0; i--) if (have.has(rows[i].name.toLowerCase())) rows.splice(i, 1);
+      // Cap across the WHOLE board: only admit as many reinforcements as fit under the
+      // cap alongside foes already present, so later waves can't silently re-swarm.
+      rows = capToToughest(rows, Math.max(0, boardCap - existing!.length));
       if (rows.length === 0) return Response.json({ enemies: [] });
     }
 
