@@ -496,6 +496,7 @@ export type LandingIconName =
 // (scripts/gen-landing-icons.mjs is resumable — it only fills in the missing files).
 const PAINTED_ICONS = new Set<LandingIconName>([
   "dungeon-master", "combat", "multiplayer", "voice", "portrait", "controller",
+  "forge", "map", "spellbook",
 ]);
 
 export function LandingIcon({ name, size = 64, className, style }: { name: LandingIconName } & IconProps) {
