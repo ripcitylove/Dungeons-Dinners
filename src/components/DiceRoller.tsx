@@ -12,6 +12,13 @@ function getQuality(r: number, s: number): Quality {
   const x = r/s;
   return x>=.9?"excellent":x>=.55?"good":x>=.3?"fair":"poor";
 }
+// Quality for a multi-die SUM (e.g. 3d6): scaled between the min (count) and max
+// (count×sides) possible totals. No crit/fumble — those are single-d20 concepts.
+function getSumQuality(sum: number, count: number, sides: number): Quality {
+  const min = count, max = count * sides;
+  const x = max > min ? (sum - min) / (max - min) : 0.5;
+  return x>=.9?"excellent":x>=.55?"good":x>=.3?"fair":"poor";
+}
 
 // Quality result themes — face colors are solid enough to clearly show the die shape
 const QUALITY: Record<Quality,{
@@ -399,11 +406,12 @@ const CRYSTAL_GLOW = "rgba(139,92,246,0.82)";
 const CRYSTAL_FACE = "rgba(88,28,196,0.62)";   // solid enough to see the shape clearly
 
 export default function DiceRoller({
-  onRollComplete, onCancel, requiredDice, requiredRollMode, rollContext, narVolume, narMuted,
+  onRollComplete, onCancel, requiredDice, requiredCount, requiredRollMode, rollContext, narVolume, narMuted,
 }: {
   onRollComplete: (result: number, diceType: number, description?: string) => void;
   onCancel?: () => void;
   requiredDice?: number | null;
+  requiredCount?: number | null;
   requiredRollMode?: "normal"|"advantage"|"disadvantage"|null;
   rollContext?: string | null;
   narVolume?: number;
@@ -414,9 +422,15 @@ export default function DiceRoller({
   const [result,       setResult]       = useState<number|null>(null);
   const [altResult,    setAltResult]    = useState<number|null>(null);
   const [displayNum,   setDisplayNum]   = useState<number|null>(null);
+  const [rolls,        setRolls]        = useState<number[]>([]);
   const [wrongDie,     setWrongDie]     = useState(false);
   const [showFlash,    setShowFlash]    = useState(false);
   const [flashColor,   setFlashColor]   = useState("transparent");
+
+  // How many dice of the required type to throw at once (Sneak Attack, Divine
+  // Smite, multi-die heals, multi-die weapons/crits). 1 = the classic single roll.
+  const count = Math.max(1, Math.min(12, requiredCount ?? 1));
+  const isMulti = count > 1;
 
   const countupRef   = useRef<ReturnType<typeof setInterval>|null>(null);
   const didRoll      = useRef(false);
@@ -432,8 +446,12 @@ export default function DiceRoller({
     return () => { document.body.classList.remove("dice-modal-open"); };
   }, []);
 
-  const isAdvDis = !!requiredRollMode && requiredRollMode !== "normal";
-  const quality  = result !== null && selectedDie !== null ? getQuality(result, selectedDie) : null;
+  // Advantage/disadvantage is a single-d20 concept — never applies to a multi-die
+  // damage/heal throw.
+  const isAdvDis = !isMulti && !!requiredRollMode && requiredRollMode !== "normal";
+  const quality  = result !== null && selectedDie !== null
+    ? (isMulti ? getSumQuality(result, count, selectedDie) : getQuality(result, selectedDie))
+    : null;
   const qs       = quality ? QUALITY[quality] : null;
 
   const executeRoll = useCallback((sides: DieSides) => {
@@ -441,8 +459,28 @@ export default function DiceRoller({
     didRoll.current = true;
     setSelectedDie(sides);
     setPhase("rolling");
-    setResult(null); setAltResult(null); setDisplayNum(null);
+    setResult(null); setAltResult(null); setDisplayNum(null); setRolls([]);
     playRollSound();
+
+    // ── Multi-die throw (e.g. 3d6 Sneak Attack) — roll them all, sum, report ──
+    if (isMulti) {
+      const dice = Array.from({ length: count }, () => Math.floor(Math.random()*sides)+1);
+      const sum  = dice.reduce((a,b)=>a+b,0);
+      setTimeout(() => {
+        countupRef.current = setInterval(() =>
+          setDisplayNum(count + Math.floor(Math.random()*(count*sides - count + 1))), 60);
+      }, 620);
+      setTimeout(() => {
+        if (countupRef.current) { clearInterval(countupRef.current); countupRef.current=null; }
+        setRolls(dice); setResult(sum); setDisplayNum(sum);
+        setPhase("result");
+        const q = getSumQuality(sum, count, sides);
+        playResultSound(q);
+        const desc = `Rolled ${count}d${sides}: ${dice.join(" + ")} = ${sum}`;
+        setTimeout(() => onRollComplete(sum, sides, desc), 2800);
+      }, 1380);
+      return;
+    }
 
     const r1 = Math.floor(Math.random()*sides)+1;
     const r2 = isAdvDis ? Math.floor(Math.random()*sides)+1 : null;
@@ -471,7 +509,7 @@ export default function DiceRoller({
         : undefined;
       setTimeout(() => onRollComplete(kept, sides, desc), 2800);
     }, 1380);
-  }, [requiredRollMode, isAdvDis, onRollComplete]);
+  }, [requiredRollMode, isAdvDis, isMulti, count, onRollComplete]);
 
   // Do NOT auto-roll — always require the player to click the die.
 
@@ -539,14 +577,14 @@ export default function DiceRoller({
       {phase==="idle" && (
         <p style={{ fontSize:"1.6rem",fontWeight:800,color:"white",marginBottom:"40px",letterSpacing:"-0.01em" }}>
           {requiredDice
-            ? <>Roll a <span style={{color:"#a78bfa",textShadow:"0 0 24px rgba(139,92,246,0.8)"}}>{DIE_LABEL[requiredDice] ?? `D${requiredDice}`}</span>
+            ? <>Roll {isMulti ? "" : "a "}<span style={{color:"#a78bfa",textShadow:"0 0 24px rgba(139,92,246,0.8)"}}>{isMulti ? `${count}${DIE_LABEL[requiredDice] ?? `D${requiredDice}`}` : (DIE_LABEL[requiredDice] ?? `D${requiredDice}`)}</span>
                 {isAdvDis && <span style={{fontSize:"1rem",color:"#64748b",marginLeft:"12px",fontWeight:600}}>({requiredRollMode})</span>}</>
             : "Choose your die"}
         </p>
       )}
       {phase==="rolling" && requiredDice && (
         <p style={{ fontSize:"1.4rem",fontWeight:800,color:"white",marginBottom:"32px",letterSpacing:"-0.01em" }}>
-          Rolling <span style={{color:"#a78bfa",textShadow:"0 0 20px rgba(139,92,246,0.8)"}}>{DIE_LABEL[requiredDice] ?? `D${requiredDice}`}</span>
+          Rolling <span style={{color:"#a78bfa",textShadow:"0 0 20px rgba(139,92,246,0.8)"}}>{isMulti ? `${count}${DIE_LABEL[requiredDice] ?? `D${requiredDice}`}` : (DIE_LABEL[requiredDice] ?? `D${requiredDice}`)}</span>
           {isAdvDis && <span style={{fontSize:"0.9rem",color:"#64748b",marginLeft:"10px"}}>({requiredRollMode})</span>}
         </p>
       )}
@@ -709,23 +747,39 @@ export default function DiceRoller({
 
           <div style={{ textAlign:"center" }}>
             <p style={{ fontSize:"0.8rem",fontWeight:600,color:"#64748b",letterSpacing:"0.08em",
-              textTransform:"uppercase",marginBottom:"6px" }}>{DIE_LABEL[selectedDie]}</p>
-            <p style={{
-              fontSize:quality==="crit"||quality==="fumble"?"1.6rem":"1.3rem",
-              fontWeight:800,color:qs.edge,
-              textShadow:quality==="crit"||quality==="excellent"?`0 0 20px ${qs.glow}`:"none",
-              letterSpacing:quality==="crit"?"0.06em":"-0.01em",
-              animation:quality==="crit"||quality==="fumble"?"resultReveal 0.4s cubic-bezier(0.34,1.56,0.64,1) 0.1s both":"none",
-            }}>{qs.label||result}</p>
-            {qs.sub && (
-              <p style={{ fontSize:"0.82rem",color:qs.edge,opacity:0.7,marginTop:"4px",fontStyle:"italic" }}>
-                {qs.sub}
-              </p>
-            )}
-            {!qs.label && (
-              <p style={{ fontSize:"0.78rem",color:"#475569",marginTop:"4px" }}>
-                {result} on a {DIE_LABEL[selectedDie]}
-              </p>
+              textTransform:"uppercase",marginBottom:"6px" }}>
+              {isMulti ? `${count}${DIE_LABEL[selectedDie]}` : DIE_LABEL[selectedDie]}
+            </p>
+            {isMulti ? (
+              <>
+                <p style={{ fontSize:"1.5rem",fontWeight:800,color:qs.edge,
+                  textShadow:quality==="excellent"?`0 0 20px ${qs.glow}`:"none",letterSpacing:"-0.01em" }}>
+                  Total {result}
+                </p>
+                <p style={{ fontSize:"0.9rem",color:"#94a3b8",marginTop:"6px",fontWeight:600,letterSpacing:"0.02em" }}>
+                  {rolls.join("  +  ")} = <span style={{color:qs.edge}}>{result}</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{
+                  fontSize:quality==="crit"||quality==="fumble"?"1.6rem":"1.3rem",
+                  fontWeight:800,color:qs.edge,
+                  textShadow:quality==="crit"||quality==="excellent"?`0 0 20px ${qs.glow}`:"none",
+                  letterSpacing:quality==="crit"?"0.06em":"-0.01em",
+                  animation:quality==="crit"||quality==="fumble"?"resultReveal 0.4s cubic-bezier(0.34,1.56,0.64,1) 0.1s both":"none",
+                }}>{qs.label||result}</p>
+                {qs.sub && (
+                  <p style={{ fontSize:"0.82rem",color:qs.edge,opacity:0.7,marginTop:"4px",fontStyle:"italic" }}>
+                    {qs.sub}
+                  </p>
+                )}
+                {!qs.label && (
+                  <p style={{ fontSize:"0.78rem",color:"#475569",marginTop:"4px" }}>
+                    {result} on a {DIE_LABEL[selectedDie]}
+                  </p>
+                )}
+              </>
             )}
           </div>
 

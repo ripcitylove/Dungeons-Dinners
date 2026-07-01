@@ -58,7 +58,7 @@ check("invalid-action block requires the response to end with a redirect questio
 check(
   "trigger list covers non-prepared spells, exhausted slots, missing class features, exhausted resources, missing items, OOC questions",
   /NOT in their Cantrips or Prepared spells/.test(chat)
-  && /spell slots for that level are exhausted/.test(chat)
+  && /that level shows 0 remaining/.test(chat)
   && /class feature their class doesn't have, or that their level doesn't yet grant/.test(chat)
   && /class resource that's already exhausted/.test(chat)
   && /item the character doesn't have in their inventory/.test(chat)

@@ -11,12 +11,14 @@
 //   3. Last resort: a bare "dN" anywhere in the text.
 
 const ALLOWED = [4, 6, 8, 10, 12, 20, 100];
+const MAX_COUNT = 12;   // safety clamp — no legit prompt rolls more than 12 like dice at once
 
 // "roll" / "rolls" then up to 3 connector words (a, an, me, your, for, with…)
-// then an optional dice count and "dN". The {0,3} words let "roll a d20" and
+// then an optional dice COUNT and "dN". The {0,3} words let "roll a d20" and
 // "roll me a perception d20" match while keeping the die tied to the roll verb.
-const ROLL_PHRASE = /\broll(?:s)?\s+(?:[a-z]+\s+){0,3}?(?:\d+)?d(\d+)\b/i;
-const BARE_DIE    = /\bd(\d+)\b/i;
+// Group 1 = optional count (e.g. the "3" in "roll 3d6"), group 2 = die sides.
+const ROLL_PHRASE = /\broll(?:s)?\s+(?:[a-z]+\s+){0,3}?(\d+)?d(\d+)\b/i;
+const BARE_DIE    = /\b(\d+)?d(\d+)\b/i;
 
 const CHECK_D20: RegExp[] = [
   /\broll\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|attack roll|attack|initiative)\b/i,
@@ -25,21 +27,40 @@ const CHECK_D20: RegExp[] = [
   /\broll\s+(?:for\s+)?(?:initiative|stealth|perception|athletics|acrobatics|persuasion|deception|insight|investigation|arcana|history|nature|religion|survival|medicine|performance|intimidation)\b/i,
 ];
 
-export function detectRequiredDieFromText(narrative: string): number | null {
+export type RequiredRoll = { sides: number; count: number };
+
+const clampCount = (raw: string | undefined): number => {
+  if (!raw) return 1;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(MAX_COUNT, n);
+};
+
+// Detects the full roll the DM is asking for: the die SIDES and how MANY of them
+// (e.g. "roll 3d6 for your Sneak Attack" → { sides: 6, count: 3 }). A plain
+// "roll a d20" (attack, save, check) is always count 1. Bonus-damage dice and
+// multi-die heals are the reason count exists — the roller throws them together.
+export function detectRequiredRoll(narrative: string): RequiredRoll | null {
   if (!narrative) return null;
-  // 1. The die named in the roll phrase wins.
+  // 1. The die named in the roll phrase wins — carry its count too.
   const phrase = ROLL_PHRASE.exec(narrative);
   if (phrase) {
-    const n = parseInt(phrase[1], 10);
-    if (ALLOWED.includes(n)) return n;
+    const sides = parseInt(phrase[2], 10);
+    if (ALLOWED.includes(sides)) return { sides, count: clampCount(phrase[1]) };
   }
-  // 2. A check/save/attack/initiative phrased without an explicit die → d20.
-  if (CHECK_D20.some(p => p.test(narrative))) return 20;
-  // 3. Last resort: any bare "dN" in the text.
+  // 2. A check/save/attack/initiative phrased without an explicit die → single d20.
+  if (CHECK_D20.some(p => p.test(narrative))) return { sides: 20, count: 1 };
+  // 3. Last resort: any bare "NdN" in the text.
   const bare = BARE_DIE.exec(narrative);
   if (bare) {
-    const n = parseInt(bare[1], 10);
-    if (ALLOWED.includes(n)) return n;
+    const sides = parseInt(bare[2], 10);
+    if (ALLOWED.includes(sides)) return { sides, count: clampCount(bare[1]) };
   }
   return null;
+}
+
+// Back-compat helper — the die sides only (count ignored). Kept for callers/tests
+// that only care which die face is required.
+export function detectRequiredDieFromText(narrative: string): number | null {
+  return detectRequiredRoll(narrative)?.sides ?? null;
 }

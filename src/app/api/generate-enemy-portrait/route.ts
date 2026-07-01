@@ -70,8 +70,12 @@ export async function POST(req: NextRequest) {
 
     const slug = enemyType.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
-    // Check storage cache first
-    const { data: files } = await supabase.storage.from("portraits").list("enemies");
+    // Check storage cache first. Pass { search: slug } so the lookup is server-side
+    // filtered — without it, list() returns only the first 100 files and a cache
+    // check would MISS an existing portrait once the folder grows past 100, then
+    // regenerate a brand-new face (upsert) over the cached one. The character
+    // portrait route uses this same guard.
+    const { data: files } = await supabase.storage.from("portraits").list("enemies", { search: slug });
     const cached = files?.find(f => f.name === `${slug}.png`);
     if (cached) {
       const { data: { publicUrl } } = supabase.storage.from("portraits").getPublicUrl(`enemies/${slug}.png`);

@@ -2,7 +2,7 @@
 // regex to a broad fallback that grabbed the FIRST "dN" anywhere in the prose —
 // so a stray "d6" earlier in the message made the dice screen show a d6 instead
 // of the requested d20. Run: node scripts/test-dice-request.ts
-import { detectRequiredDieFromText } from "../src/lib/diceRequest.ts";
+import { detectRequiredDieFromText, detectRequiredRoll } from "../src/lib/diceRequest.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -10,6 +10,15 @@ const eq = (action: string, want: number | null) => {
   const got = detectRequiredDieFromText(action);
   if (got === want) pass++;
   else fails.push(`  ✗ ${JSON.stringify(action)} → expected ${want}, got ${got}`);
+};
+// Full roll (sides + count) — the multi-die path for Sneak Attack, Divine Smite,
+// multi-die heals/weapons/crits.
+const eqRoll = (action: string, sides: number | null, count: number) => {
+  const got = detectRequiredRoll(action);
+  const okSides = (got?.sides ?? null) === sides;
+  const okCount = sides === null ? true : (got?.count ?? 1) === count;
+  if (okSides && okCount) pass++;
+  else fails.push(`  ✗ ${JSON.stringify(action)} → expected ${sides === null ? "null" : `${count}d${sides}`}, got ${got ? `${got.count}d${got.sides}` : "null"}`);
 };
 
 // ── The reported bug: a stray earlier dN must NOT override the roll-phrase die ──
@@ -45,6 +54,20 @@ eq("", null);
 // ── Invalid die numbers are ignored ──
 eq("roll a d7", null);      // d7 isn't a real die; no other phrase → null
 eq("roll a d3 check", 20);  // d3 invalid, but "check" → d20
+
+// ── Multi-die counts (sides + count together) ──
+eqRoll("Roll a d20.", 20, 1);                              // to-hit stays single
+eqRoll("Roll a d8.", 8, 1);                                // single-die damage
+eqRoll("Roll 3d6 for your Sneak Attack.", 6, 3);           // rogue L5-6
+eqRoll("Roll 6d6 for your Sneak Attack.", 6, 6);           // rogue L11+
+eqRoll("Now roll 2d8 for your Divine Smite.", 8, 2);       // paladin 1st-level slot
+eqRoll("Roll a d6 for your Hunter's Mark.", 6, 1);         // ranger +1d6
+eqRoll("Roll 2d8.", 8, 2);                                 // crit longsword / upcast Cure Wounds
+eqRoll("Roll 4d6.", 6, 4);                                 // crit greatsword
+eqRoll("Roll a d10.", 10, 1);                              // Second Wind
+eqRoll("Make a Strength check.", 20, 1);                   // check → single d20
+eqRoll("The door creaks open.", null, 1);                  // no roll
+eqRoll("Roll 99d6.", 6, 12);                               // clamp runaway counts to 12
 
 console.log(`\nDice-request detection battery: ${pass} passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }

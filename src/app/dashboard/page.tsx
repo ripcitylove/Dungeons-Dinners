@@ -769,7 +769,7 @@ export default function Dashboard() {
                   className="btn-cta"
                   style={{ flexShrink: 0 }}
                 >
-                  <span className="btn-cta-plus">+</span> New Campaign
+                  <span className="btn-cta-plus">+</span> Bake A New Campaign
                 </button>
               )}
             </div>
@@ -861,7 +861,7 @@ export default function Dashboard() {
                         )}
                         <Link href={`/campaign/${camp.id}`} style={{ marginLeft: "auto", textDecoration: "none" }}>
                           <button className="btn-primary" style={{ padding: "10px 22px" }}>
-                            {completed ? "View" : "Resume"}
+                            {completed ? "View" : "Leftovers"}
                           </button>
                         </Link>
                       </div>
@@ -922,7 +922,7 @@ export default function Dashboard() {
                 ) : (
                   <Link href="/create-character" style={{ textDecoration: "none" }}>
                     <button className="btn-cta">
-                      <span className="btn-cta-plus">+</span> New Character
+                      <span className="btn-cta-plus">+</span> Cook Up A New Character
                     </button>
                   </Link>
                 )

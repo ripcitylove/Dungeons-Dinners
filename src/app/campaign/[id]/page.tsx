@@ -26,7 +26,7 @@ import { resolveWildShapeForm, FALLBACK_BEAST_EMOJI, wildShapeImagePath } from "
 import { parseStatusEffect, getDominantEffect, getCardEffectGlow, resolveStatusEffect, dedupeStatusEffects } from "../../../lib/statusEffects";
 import { parseHpTag, damageTagShouldBeSuppressed } from "../../../lib/damageRouting";
 import { stripTrailingTurnPrompt, isTurnPromptSentence } from "../../../lib/turnPrompt";
-import { detectRequiredDieFromText } from "../../../lib/diceRequest";
+import { detectRequiredDieFromText, detectRequiredRoll } from "../../../lib/diceRequest";
 import { detectTurnAddressee } from "../../../lib/turnAddressee";
 import { detectActiveEffects } from "../../../lib/activeEffects";
 import { StatusGlyph, hasStatusGlyph } from "../../../components/StatusGlyph";
@@ -1614,6 +1614,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [diceRollTarget,      setDiceRollTarget]      = useState<string | null>(null);
   // Which die type the DM is requesting (4, 6, 8, 10, 12, 20, 100 — null = player's choice)
   const [requiredDiceType,    setRequiredDiceType]    = useState<number | null>(null);
+  // How many of that die to throw at once (Sneak Attack, Divine Smite, multi-die
+  // heals/weapons/crits). 1 = the classic single roll. Detected from the DM's "NdX".
+  const [requiredDiceCount,   setRequiredDiceCount]   = useState<number>(1);
   // Roll mode requested by DM (advantage/disadvantage/normal)
   const [requiredRollMode,    setRequiredRollMode]    = useState<"normal" | "advantage" | "disadvantage" | null>(null);
   // userId of the player the DM explicitly called on to roll — gates isMyTurn
@@ -2527,11 +2530,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
         setMessages(prev => [...prev, { role: "dm", content: payload.content }]);
         setLogEntries(prev => [...prev, { id: makeLogId("rt"), timestamp: new Date(), role: "dm", content: payload.content }]);
         // Suppress entirely if the DM's roll is for an enemy (players never roll those).
-        const dmDieType  = rollIsForEnemy(payload.content as string) ? null : detectRequiredDiceType(payload.content as string);
+        const dmRoll     = rollIsForEnemy(payload.content as string) ? null : detectRequiredRoll(payload.content as string);
+        const dmDieType  = dmRoll?.sides ?? null;
         const rollTarget = dmDieType !== null ? detectDiceRollTarget(payload.content as string) : null;
         const dmRollMode = rollTarget ? detectRollMode(payload.content as string) : "normal";
         setDiceRollTarget(rollTarget);
         setRequiredDiceType(dmDieType);
+        setRequiredDiceCount(dmDieType !== null ? (dmRoll?.count ?? 1) : 1);
         setRequiredRollMode(dmRollMode !== "normal" ? dmRollMode : null);
         // Proactively clear roll state for non-roll responses; roll_request broadcast confirms it
         if (!rollTarget && dmDieType === null) {
@@ -5215,7 +5220,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       // DM resolving an enemy's roll, treat it as NO player roll request at all.
       const enemyRoll       = rollIsForEnemy(full);
       const rollTarget      = enemyRoll ? null : detectDiceRollTarget(full);
-      const detectedDieType = enemyRoll ? null : detectRequiredDiceType(full);
+      const detectedRoll    = enemyRoll ? null : detectRequiredRoll(full);
+      const detectedDieType = detectedRoll?.sides ?? null;
+      const detectedDieCount= detectedRoll?.count ?? 1;
       let targetChar        = rollTarget ? campaignPartyRef.current.find(c => c.name === rollTarget) : null;
 
       // Unnamed roll request (DM says "Roll a DEX save" without naming anyone):
@@ -5244,6 +5251,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       const detectedRollMode = (validRollTarget || detectedDieType) ? detectRollMode(full) : "normal";
       setDiceRollTarget(validRollTarget ?? null);
       setRequiredDiceType(detectedDieType);
+      setRequiredDiceCount(detectedDieType !== null ? detectedDieCount : 1);
       setRequiredRollMode(detectedRollMode !== "normal" ? detectedRollMode : null);
       setRollRequestedUserId(targetUserId);
       rollRequestedUserIdRef.current = targetUserId;
@@ -5454,6 +5462,31 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             roundActionsRef.current = trimmed;
             setRoundActions(trimmed);
           }
+          // FORCE the turn BACK to the player whose action was rejected. A [NO-TURN]
+          // means THIS player retries with a viable option — they must NOT be skipped.
+          // The addressee routing above (dmTurnChar / bare-name / follow-up) may have
+          // already moved the turn AWAY if the DM wrongly named a different player in
+          // its redirect (e.g. rejecting Grog's invalid move but asking "What do you do
+          // instead, Jana?"). Re-anchor the turn on the rejected player so their turn is
+          // preserved regardless of who the DM addressed, and re-broadcast so peers follow.
+          const prevIdx = turnOrderRef.current.indexOf(prevChar.id);
+          if (prevIdx >= 0 && prevIdx !== currentTurnIndexRef.current) {
+            setCurrentTurnIndex(prevIdx);
+            currentTurnIndexRef.current = prevIdx;
+            shouldPersistTurnRef.current = true;
+            const partyIdx = campaignPartyRef.current.findIndex(c => c.id === prevChar.id);
+            if (partyIdx >= 0) setActiveCharIdx(partyIdx);
+            channelRef.current?.send({ type: "broadcast", event: "turn_taken", payload: { userId, newIndex: prevIdx } });
+            turnBroadcastedThisCycleRef.current = true;
+          }
+          // A rejection is never a roll request — clear any roll target the addressee
+          // routing set, so the rejected player gets the normal action input back
+          // (not a phantom dice prompt aimed at the wrong player).
+          setRollRequestedUserId(null);
+          rollRequestedUserIdRef.current = null;
+          setDiceRollTarget(null);
+          setRequiredDiceType(null);
+          setRequiredDiceCount(1);
         }
       }
 
@@ -6787,6 +6820,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     narPlaySlotRef.current = 0;
     setShowDice(false);
     setRequiredDiceType(null);
+    setRequiredDiceCount(1);
     setRequiredRollMode(null);
     setDiceRollContext(null);
     const msg = description ?? `Rolled a ${result} on a d${diceType}`;
@@ -7096,7 +7130,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           </div>
         );
       })()}
-      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredRollMode={requiredRollMode} rollContext={diceRollContext} narVolume={narVolume} narMuted={narMuted} />}
+      {showDice && <DiceRoller onRollComplete={handleDiceResult} onCancel={handleDiceCancel} requiredDice={requiredDiceType} requiredCount={requiredDiceCount} requiredRollMode={requiredRollMode} rollContext={diceRollContext} narVolume={narVolume} narMuted={narMuted} />}
 
       {/* New-objective announcement — full-screen, above everything, plays with the
           chime: golden fantasy text animates in, holds ~2s, then fades out. */}

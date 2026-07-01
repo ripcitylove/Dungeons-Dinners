@@ -32,8 +32,12 @@ export async function POST(req: NextRequest) {
     const slug = slugify(name);
     if (!slug) return Response.json({ portraitUrl: null });
 
-    // Cache check — reuse this NPC's existing portrait if we've made one.
-    const { data: files } = await supabase.storage.from("portraits").list("npcs");
+    // Cache check — reuse this NPC's existing portrait if we've made one. Pass
+    // { search: slug } so the lookup is server-side filtered: without it, list()
+    // returns only the first 100 files and would MISS an existing portrait once the
+    // folder grows past 100, regenerating a brand-new face (upsert) over the cached
+    // one. The character portrait route uses this same guard.
+    const { data: files } = await supabase.storage.from("portraits").list("npcs", { search: slug });
     if (files?.some(f => f.name === `${slug}.png`)) {
       const { data: { publicUrl } } = supabase.storage.from("portraits").getPublicUrl(`npcs/${slug}.png`);
       return Response.json({ portraitUrl: publicUrl });
