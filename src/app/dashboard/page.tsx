@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { CLASS_STAT_GUIDES, getTierStyle } from "../../lib/spellData";
-import { computeInventoryBonuses } from "../../lib/lootData";
+import { computeInventoryBonuses, getItemByName, RARITY_COLORS, RARITY_LABELS, ITEM_ICONS } from "../../lib/lootData";
 import { useTooltip, tipBox, tipBoxNode } from "../../hooks/useTooltip";
 import { AdventureGlyph, HeroGlyph } from "../../components/EmptyStateIcons";
 import { getTheme, onThemeChange } from "../../lib/theme";
@@ -101,6 +101,37 @@ function CharacterModal({
     const { error } = await supabase.from("characters").update(patch).eq("id", char.id);
     setEditSaving(false);
     if (!error) { onUpdate(char.id, patch); setEditMode(false); }
+  };
+
+  // One inventory line — rarity-colored name, type icon, and a hover tooltip with
+  // description/effects when the item is a known catalog entry.
+  const invEntry = (name: string, fallbackIcon: string, key: string) => {
+    const meta  = getItemByName(name);
+    const color = meta ? RARITY_COLORS[meta.rarity] : "#cbd5e1";
+    const icon  = meta ? (ITEM_ICONS[meta.type] ?? fallbackIcon) : fallbackIcon;
+    return (
+      <div
+        key={key}
+        style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", borderRadius: "7px", background: "rgba(255,255,255,0.03)", border: `1px solid ${color}22`, cursor: meta ? "help" : "default" }}
+        onMouseEnter={meta ? e => showTooltip(
+          <div style={{ background: "#12101f", border: `1px solid ${color}66`, borderRadius: "8px", padding: "10px 13px", fontSize: "1.28rem", color: "#e2e8f0", lineHeight: 1.55, boxShadow: "0 6px 28px rgba(0,0,0,0.85)", minWidth: "190px", maxWidth: "260px" }}>
+            <div style={{ fontWeight: 700, color, marginBottom: "3px", fontSize: "1.41rem" }}>{meta!.name}</div>
+            <div style={{ color, fontSize: "1.22rem", marginBottom: "5px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{RARITY_LABELS[meta!.rarity]} {meta!.type}</div>
+            <div style={{ color: "#94a3b8" }}>{meta!.description}</div>
+            {meta!.effects.filter(ef => ef.description).map((ef, i) => (
+              <div key={i} style={{ color: "#a5b4fc", fontSize: "1.22rem", marginTop: "4px" }}>▸ {ef.description}</div>
+            ))}
+          </div>, e
+        ) : undefined}
+        onMouseLeave={meta ? hideTooltip : undefined}
+      >
+        <span style={{ fontSize: "1.46rem", flexShrink: 0 }}>{icon}</span>
+        <span style={{ color, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+        {meta && (
+          <span style={{ marginLeft: "auto", flexShrink: 0, fontSize: "1.05rem", color, opacity: 0.75, textTransform: "uppercase", letterSpacing: "0.04em" }}>{RARITY_LABELS[meta.rarity]}</span>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -211,22 +242,30 @@ function CharacterModal({
           {/* Inventory */}
           <div>
             <div style={{ fontSize: "1.28rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "12px" }}>Inventory</div>
-            <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "14px", fontSize: "1.41rem", display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span>🪙</span>
-                <span style={{ color: "#f59e0b", fontWeight: "bold" }}>{inv?.gold ?? 0} gold</span>
+            <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "8px", padding: "14px", fontSize: "1.41rem", display: "flex", flexDirection: "column", gap: "14px" }}>
+              {/* Currency */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "7px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                <span style={{ fontSize: "1.53rem" }}>🪙</span>
+                <span style={{ color: "#f59e0b", fontWeight: "bold" }}>{(inv?.gold ?? 0).toLocaleString()}</span>
+                <span style={{ color: "#f59e0b", opacity: 0.7 }}>gold</span>
               </div>
+
               {(inv?.weapons?.length ?? 0) > 0 && (
-                <div>
-                  <div style={{ fontSize: "1.28rem", color: "#475569", marginBottom: "4px" }}>WEAPONS</div>
-                  {inv!.weapons.map((w, i) => <div key={i} style={{ color: "#e2e8f0", marginBottom: "2px" }}>⚔ {w}</div>)}
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  <div style={{ fontSize: "1.2rem", color: "var(--muted)", letterSpacing: "0.08em", fontWeight: 600 }}>WEAPONS · {inv!.weapons.length}</div>
+                  {inv!.weapons.map((w, i) => invEntry(w, "⚔", `w${i}`))}
                 </div>
               )}
+
               {(inv?.items?.length ?? 0) > 0 && (
-                <div>
-                  <div style={{ fontSize: "1.28rem", color: "#475569", marginBottom: "4px" }}>ITEMS</div>
-                  {inv!.items.map((item, i) => <div key={i} style={{ color: "var(--subtle)", marginBottom: "2px" }}>· {item}</div>)}
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  <div style={{ fontSize: "1.2rem", color: "var(--muted)", letterSpacing: "0.08em", fontWeight: 600 }}>ITEMS · {inv!.items.length}</div>
+                  {inv!.items.map((item, i) => invEntry(item, "🎒", `i${i}`))}
                 </div>
+              )}
+
+              {inv && (inv.weapons?.length ?? 0) === 0 && (inv.items?.length ?? 0) === 0 && (
+                <div style={{ color: "var(--muted)", fontStyle: "italic", fontSize: "1.28rem" }}>No weapons or items carried.</div>
               )}
               {!inv && <div style={{ color: "var(--muted)" }}>No inventory data</div>}
             </div>
