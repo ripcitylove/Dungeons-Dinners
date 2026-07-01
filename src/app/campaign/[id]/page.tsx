@@ -36,6 +36,7 @@ import { parseNpcTags, sameNpcName, dedupeEnteredNpcs, resetNpcRoster, mergeNpcR
 import { endsOnCompleteSentence, lastCompleteSentence, trimSavedDangling } from "../../../lib/narrationTrim";
 import { inferSkillCheck, SKILL_ABILITY } from "../../../lib/skillCheck";
 import { findFastSpellCast, parseCastTags } from "../../../lib/spellCast";
+import { adjudicateDeathSave, rollD20, REVIVE_HP, DEATH_FAIL_CAP, skullsRemaining, isOutOfBattle, failsFromDamageWhileDown } from "../../../lib/deathSaves";
 import { isFullyTagCovered } from "../../../lib/extractorGate";
 import { planHistoryWindow, MIN_TO_SUMMARIZE, type HistorySummary } from "../../../lib/historyWindow";
 import { detectAmbianceMood } from "../../../lib/ambianceMood";
@@ -333,6 +334,20 @@ function reconcileUnconscious(statuses: string[], newHp: number, hpDelta: number
   if (newHp > 0 && has) return statuses.filter(s => s !== "Unconscious");
   if (newHp === 0 && hpDelta < 0 && !has) return [...statuses, "Unconscious"];
   return statuses;
+}
+
+// Depleting death-save skulls for a character card. Shows DEATH_FAIL_CAP skulls;
+// the first `remaining` glow, spent ones dim — so each failure (a nat 1 costs two)
+// visibly removes a skull. Only rendered while a character is in saving-throw mode.
+function DeathSkulls({ fails, size = 14 }: { fails: number; size?: number }) {
+  const remaining = skullsRemaining(fails);
+  return (
+    <span title={`Death saves — ${remaining} of ${DEATH_FAIL_CAP} remaining`} style={{ display: "inline-flex", gap: "2px", alignItems: "center" }}>
+      {Array.from({ length: DEATH_FAIL_CAP }).map((_, i) => (
+        <span key={i} aria-hidden style={{ fontSize: `${size}px`, lineHeight: 1, opacity: i < remaining ? 1 : 0.2, filter: i < remaining ? "drop-shadow(0 0 3px rgba(239,68,68,0.75))" : "grayscale(1)", transition: "opacity 0.25s" }}>💀</span>
+      ))}
+    </span>
+  );
 }
 
 // Deterministic NPC-departure backstop. True when the narrative plainly shows the
@@ -1585,6 +1600,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
   const [completionRewards, setCompletionRewards] = useState<Array<{ name: string; rewards: string[] }>>([]);
   const [restarting, setRestarting] = useState(false);
   const campaignCompleteRef = useRef(false);
+  const [rollingDeathSave, setRollingDeathSave] = useState(false);
   const [claimLeaderOpen,  setClaimLeaderOpen]    = useState(false);
   const [claimingLeaderId, setClaimingLeaderId]   = useState<string | null>(null);
   const [partyLeaderId,    setPartyLeaderId]       = useState<string | null>(null);
@@ -2790,7 +2806,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           enemiesRef.current = updated;
           return updated;
         });
-        if (combat_ended) setCombatActive(false);
+        if (combat_ended) { setCombatActive(false); reviveOutCharacters(); }
       })
       .on("broadcast", { event: "item_dropped" }, ({ payload }) => {
         setDroppedItems(prev => [...prev, payload as DroppedItem]);
@@ -3293,7 +3309,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       adjustedHpDelta = -(dmg - absorbed);
     }
 
-    const newHp          = Math.max(0, Math.min(effectiveMaxHp, char.hp + adjustedHpDelta));
+    let newHp            = Math.max(0, Math.min(effectiveMaxHp, char.hp + adjustedHpDelta));
     // Loot follows the same effective-target rule HP uses: "you find a potion" (no name) lands on
     // the acting player; "Thorin finds a potion" lands on Thorin. Without this, items the DM awards
     // to "you" silently disappear because target_name is null.
@@ -3336,6 +3352,35 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     } else if (adjustedHpDelta !== 0) {
       if (newHp === 0 && !newStatuses.includes("Unconscious")) newStatuses.push("Unconscious");
       if (newHp > 0) newStatuses = newStatuses.filter(s => s !== "Unconscious");
+    }
+
+    // ── Death saves (D&D 5e) while a character is at 0 HP ────────────────────────
+    // Damage taken while downed burns a death save (a hit ≥ max HP is instant death);
+    // healing revives a downed-but-NOT-out hero at the healed HP and resets their
+    // saves; an OUT hero (already at the failure cap / Dead) cannot be healed back
+    // mid-battle — they stay down until combat ends.
+    let newDeathFails = Number(char.class_resources?.death_fails ?? 0);
+    if (isEffectiveTarget) {
+      const wasOut    = (char.status_effects ?? []).includes("Dead") || newDeathFails >= DEATH_FAIL_CAP;
+      const wasDowned = char.hp === 0 || (char.status_effects ?? []).includes("Unconscious");
+      if (wasOut && adjustedHpDelta > 0) {
+        // Healing is wasted on an out character — they remain down for the battle.
+        newHp = 0;
+        newStatuses = newStatuses.filter(s => s !== "Unconscious");
+        if (!newStatuses.includes("Dead")) newStatuses.push("Dead");
+      } else if (adjustedHpDelta > 0 && char.hp === 0 && !wasOut) {
+        // Revived by a teammate's healing — back at the healed HP, saves reset.
+        newDeathFails = 0;
+        newStatuses = newStatuses.filter(s => s !== "Unconscious" && s !== "Dead");
+      } else if (adjustedHpDelta < 0 && wasDowned && !wasOut) {
+        // Struck while down — a failed death save (helper handles massive-damage death).
+        newDeathFails = Math.min(DEATH_FAIL_CAP, newDeathFails + failsFromDamageWhileDown(adjustedHpDelta, effectiveMaxHp));
+        if (newDeathFails >= DEATH_FAIL_CAP) {
+          newHp = 0;
+          newStatuses = newStatuses.filter(s => s !== "Unconscious");
+          if (!newStatuses.includes("Dead")) newStatuses.push("Dead");
+        }
+      }
     }
 
     // Spell slots — consume when named explicitly OR this is the acting character.
@@ -3448,10 +3493,12 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // (newHp above was clamped to the OLD max; without this they'd read e.g. 12/19.)
     const finalHp = leveledUp ? Math.min(newMaxHp + charIb.hpMaxAdd, newHp + totalHpGain) : newHp;
 
-    // Rebuild class_resources with updated temp HP
-    const classResChanged = newTempHp !== currentTempHp;
+    // Rebuild class_resources with updated temp HP + death-save failures.
+    const priorDeathFails = Number(char.class_resources?.death_fails ?? 0);
+    const classResChanged = newTempHp !== currentTempHp || newDeathFails !== priorDeathFails;
     const newClassRes = { ...(char.class_resources ?? {}) };
     if (newTempHp > 0) { newClassRes.temp_hp = newTempHp; } else { delete newClassRes.temp_hp; }
+    if (newDeathFails > 0) { newClassRes.death_fails = newDeathFails; } else { delete newClassRes.death_fails; }
 
     // Preserve any existing item_meta — and strip entries for items that were lost
     const survivingItemNames = new Set<string>([...newItems, ...newWeapons]);
@@ -4635,6 +4682,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       }
       if (combat_ended) {
         setCombatActive(false);
+        reviveOutCharacters();
         // Return to ambient scene music when combat ends
         const ambientScene = currentSceneRef.current.replace(/_combat$/, "");
         (window as Window).__dndSetMusicScene?.(ambientScene);
@@ -5821,15 +5869,34 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
           const tHp0 = member.class_resources?.temp_hp ?? 0;
           let tHp = tHp0, dd = mDelta;
           if (mDelta < 0 && tHp > 0) { const dmg = Math.abs(mDelta); const ab = Math.min(tHp, dmg); tHp -= ab; dd = -(dmg - ab); }
-          const newHp = Math.max(0, Math.min(member.max_hp + ib.hpMaxAdd, member.hp + dd));
-          const res = tHp !== tHp0 ? { ...(member.class_resources ?? {}), temp_hp: tHp } : (member.class_resources ?? {});
+          const effMax = member.max_hp + ib.hpMaxAdd;
+          let newHp = Math.max(0, Math.min(effMax, member.hp + dd));
           const baseSt = member.status_effects ?? [];
-          const newSt = reconcileUnconscious(baseSt, newHp, dd);
-          const stChanged = newSt !== baseSt;
-          setCampaignParty(prev => prev.map(c => c.id === member.id ? { ...c, hp: newHp, class_resources: res, ...(stChanged && { status_effects: newSt }) } : c));
-          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === member.id ? { ...c, hp: newHp, class_resources: res, ...(stChanged && { status_effects: newSt }) } : c);
-          charWriteRef.current?.(member.id, { hp: newHp, ...(tHp !== tHp0 && { class_resources: res }), ...(stChanged && { status_effects: newSt }) });
-          channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: member.id, hp: newHp, ...(tHp !== tHp0 && { class_resources: res }), ...(stChanged && { status_effects: newSt }) } });
+          let newSt = reconcileUnconscious(baseSt, newHp, dd);
+          // Death saves for this non-acting member (mirrors applyStateChange): heal
+          // revives a downed-not-out hero (resets saves); damage while down burns a
+          // save (massive = death); healing an OUT hero is wasted.
+          let fails = Number(member.class_resources?.death_fails ?? 0);
+          const wasOut    = baseSt.includes("Dead") || fails >= DEATH_FAIL_CAP;
+          const wasDowned = member.hp === 0 || baseSt.includes("Unconscious");
+          if (wasOut && dd > 0) {
+            newHp = 0; newSt = baseSt.filter(s => s !== "Unconscious"); if (!newSt.includes("Dead")) newSt = [...newSt, "Dead"];
+          } else if (dd > 0 && member.hp === 0 && !wasOut) {
+            fails = 0; newSt = newSt.filter(s => s !== "Dead" && s !== "Unconscious");
+          } else if (dd < 0 && wasDowned && !wasOut) {
+            fails = Math.min(DEATH_FAIL_CAP, fails + failsFromDamageWhileDown(dd, effMax));
+            if (fails >= DEATH_FAIL_CAP) { newHp = 0; newSt = newSt.filter(s => s !== "Unconscious"); if (!newSt.includes("Dead")) newSt = [...newSt, "Dead"]; }
+          }
+          const cr: Record<string, number> = { ...(member.class_resources ?? {}) };
+          if (tHp > 0) { cr.temp_hp = tHp; } else { delete cr.temp_hp; }
+          if (fails > 0) { cr.death_fails = fails; } else { delete cr.death_fails; }
+          const crChanged = JSON.stringify(cr) !== JSON.stringify(member.class_resources ?? {});
+          const stChanged = JSON.stringify(newSt) !== JSON.stringify(baseSt);
+          const patch: Record<string, unknown> = { hp: newHp, ...(crChanged && { class_resources: cr }), ...(stChanged && { status_effects: newSt }) };
+          setCampaignParty(prev => prev.map(c => c.id === member.id ? { ...c, hp: newHp, ...(crChanged && { class_resources: cr }), ...(stChanged && { status_effects: newSt }) } : c));
+          campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === member.id ? { ...c, hp: newHp, ...(crChanged && { class_resources: cr }), ...(stChanged && { status_effects: newSt }) } : c);
+          charWriteRef.current?.(member.id, patch);
+          channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: member.id, ...patch } });
         }
       }
 
@@ -6155,12 +6222,18 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
     // a turn_order_swap or player_action broadcast may have arrived; the
     // captured snapshot would route the turn against stale data. Refs give us
     // the freshest possible view at call time.
+    // Out (Dead) characters are skipped in the turn order until they're revived.
+    const isOutById = (charId: string) => {
+      const c = campaignPartyRef.current.find(m => m.id === charId);
+      return isOutOfBattle(c?.status_effects, Number(c?.class_resources?.death_fails ?? 0));
+    };
     const findNextUnactedIdx = (fromIdx: number) => {
       const o = turnOrderRef.current;
       const acted = roundActionsRef.current;
       if (o.length === 0) return 0;
       for (let i = 1; i < o.length; i++) {
         const candidateIdx = (fromIdx + i) % o.length;
+        if (isOutById(o[candidateIdx])) continue; // never hand the turn to an out character
         if (!acted.some(a => a.characterId === o[candidateIdx])) return candidateIdx;
       }
       return (fromIdx + 1) % o.length; // fallback: all acted (reconciliation will catch this)
@@ -6296,6 +6369,78 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
       await triggerReconciliation(pending.messages, pending.summary);
     }
   };
+
+  // ── Death saving throw (engine-tracked) ──────────────────────────────────────
+  // A downed character (0 HP, Unconscious) rolls a straight d20 on their turn.
+  // The engine deterministically applies the outcome (revive at 2 HP on 10+, else a
+  // failure; 3 failures = Dead), then hands off to the DM to NARRATE the moment and
+  // advance the turn — the DM never changes HP for a death save.
+  const rollDeathSave = async () => {
+    const char = characterRef.current;
+    if (!char || rollingDeathSave) return;
+    if ((char.hp ?? 0) > 0 || (char.status_effects ?? []).includes("Dead")) return;
+    setRollingDeathSave(true);
+    const roll = rollD20();
+    const outcome = adjudicateDeathSave(roll, Number(char.class_resources?.death_fails ?? 0));
+    const cr = { ...(char.class_resources ?? {}) };
+    let newStatuses = [...(char.status_effects ?? [])];
+    let newHp = char.hp;
+    if (outcome.success) {
+      newHp = REVIVE_HP;
+      cr.death_fails = 0;
+      newStatuses = newStatuses.filter(s => s !== "Unconscious");
+    } else {
+      cr.death_fails = outcome.newFails;
+      if (outcome.dead) {
+        newStatuses = newStatuses.filter(s => s !== "Unconscious");
+        if (!newStatuses.includes("Dead")) newStatuses.push("Dead");
+      }
+    }
+    const updated: Character = { ...char, hp: newHp, class_resources: cr, status_effects: newStatuses };
+    setCharacter(updated); characterRef.current = updated;
+    setCampaignParty(prev => prev.map(c => c.id === char.id ? updated : c));
+    campaignPartyRef.current = campaignPartyRef.current.map(c => c.id === char.id ? updated : c);
+    await charWrite(char.id, { hp: newHp, class_resources: cr, status_effects: newStatuses });
+    channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: char.id, hp: newHp, class_resources: cr, status_effects: newStatuses } });
+
+    const first = char.name.split(" ")[0];
+    const note = outcome.success
+      ? `🎲 Death save: ${roll} — SUCCESS! ${first} rallies and rises with ${REVIVE_HP} HP.`
+      : outcome.dead
+        ? `🎲 Death save: ${roll} — ${first}'s final failure. ${first} is OUT for this battle. 💀`
+        : `🎲 Death save: ${roll} — failure (${outcome.newFails}/${DEATH_FAIL_CAP}). ${first} clings to life.`;
+    setLogEntries(prev => [...prev, { id: makeLogId("death"), timestamp: new Date(), role: "system", content: note }]);
+    setStateNotice(note); setTimeout(() => setStateNotice(null), 6000);
+    setRollingDeathSave(false);
+
+    // Hand to the DM to narrate + advance the turn (the death save was this turn).
+    const cue = outcome.success
+      ? `${first} makes a death saving throw and SUCCEEDS — waking with a gasp, dragged back from the brink with a sliver of life.`
+      : outcome.dead
+        ? `${first} makes their final death saving throw and FAILS — they collapse, out of the fight for the rest of this battle.`
+        : `${first} makes a death saving throw and FAILS, still unconscious and slipping away.`;
+    handleSend(cue);
+  };
+
+  // When combat ends, any character still OUT (down for the battle) auto-stabilizes
+  // at 1 HP — so the party (and especially a solo hero with no one to revive them) is
+  // never permanently stranded. Clears Dead/Unconscious and resets their death saves.
+  const reviveOutCharacters = useCallback(async () => {
+    const out = campaignPartyRef.current.filter(c => isOutOfBattle(c.status_effects, Number(c.class_resources?.death_fails ?? 0)));
+    if (!out.length) return;
+    for (const c of out) {
+      const cr = { ...(c.class_resources ?? {}) }; delete cr.death_fails;
+      const st = (c.status_effects ?? []).filter(s => s !== "Dead" && s !== "Unconscious");
+      const hp = Math.max(1, c.hp ?? 0);
+      const updated: Character = { ...c, hp, class_resources: cr, status_effects: st };
+      setCampaignParty(prev => prev.map(p => p.id === c.id ? updated : p));
+      campaignPartyRef.current = campaignPartyRef.current.map(p => p.id === c.id ? updated : p);
+      if (characterRef.current?.id === c.id) { setCharacter(updated); characterRef.current = updated; }
+      await charWrite(c.id, { hp, class_resources: cr, status_effects: st });
+      channelRef.current?.send({ type: "broadcast", event: "character_sync", payload: { charId: c.id, hp, class_resources: cr, status_effects: st } });
+      setLogEntries(prev => [...prev, { id: makeLogId("revive"), timestamp: new Date(), role: "system", content: `✨ ${c.name} comes to as the battle ends — stabilized at 1 HP.` }]);
+    }
+  }, [charWrite]);
 
   // ── Inventory exchange ────────────────────────────────────────────────────────
   const dropItem = useCallback(async (itemName: string, itemType: "item" | "weapon") => {
@@ -7770,6 +7915,30 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
 
         {/* Input bar */}
         <div style={{ padding: "12px 16px 16px", borderTop: "1px solid var(--border)", background: "var(--card-bg)", overflow: "hidden" }}>
+          {(character && (character.status_effects ?? []).includes("Dead")) ? (
+            /* Out of the fight — down for the battle, recovers when combat ends */
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "5px", padding: "8px 4px" }}>
+              <span style={{ fontSize: "1.05rem", color: "#94a3b8", fontWeight: "bold" }}>💀 {character.name.split(" ")[0]} is out of the fight</span>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-on-canvas-dim)", textAlign: "center" }}>Down for this battle — they recover when combat ends.</span>
+            </div>
+          ) : (character && (character.hp ?? 1) <= 0 && (character.status_effects ?? []).includes("Unconscious") && !(character.status_effects ?? []).includes("Dead") && isMyTurn && !showDice && !pendingDiceShow && !isTyping && !narrating) ? (
+            /* Death Saving Throw — a downed character's turn (engine-tracked) */
+            <div style={{ display: "flex", flexDirection: "column", gap: "9px", alignItems: "center", padding: "4px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
+                <span style={{ fontSize: "1.05rem", color: "#fca5a5", fontWeight: "bold" }}>💀 {character.name.split(" ")[0]} is dying — make a Death Saving Throw</span>
+                <span style={{ display: "flex", gap: "5px", alignItems: "center" }} title={`${Number(character.class_resources?.death_fails ?? 0)} of ${DEATH_FAIL_CAP} failures`}>
+                  {Array.from({ length: DEATH_FAIL_CAP }).map((_, i) => (
+                    <span key={i} style={{ width: "13px", height: "13px", borderRadius: "50%", border: "1.5px solid rgba(239,68,68,0.6)", background: i < Number(character.class_resources?.death_fails ?? 0) ? "#ef4444" : "transparent", boxShadow: i < Number(character.class_resources?.death_fails ?? 0) ? "0 0 8px rgba(239,68,68,0.6)" : "none" }} />
+                  ))}
+                </span>
+              </div>
+              <button onClick={rollDeathSave} disabled={rollingDeathSave}
+                style={{ padding: "12px 26px", borderRadius: "10px", border: "1.5px solid rgba(239,68,68,0.7)", background: "linear-gradient(180deg, rgba(239,68,68,0.28), rgba(153,27,27,0.35))", color: "#fee2e2", fontWeight: 800, fontSize: "1.05rem", cursor: rollingDeathSave ? "wait" : "pointer", boxShadow: "0 0 18px rgba(239,68,68,0.4)", opacity: rollingDeathSave ? 0.6 : 1 }}>
+                {rollingDeathSave ? "Rolling…" : "🎲 Roll Death Save (d20)"}
+              </button>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-on-canvas-dim)", textAlign: "center" }}>10+ succeeds — regain {REVIVE_HP} HP and wake. Under 10 is a failure; {DEATH_FAIL_CAP} failures is death.</span>
+            </div>
+          ) : (
           <div style={{ display: "flex", gap: "10px" }}>
             {(() => {
               const dmCallingForRoll = (pendingDiceShow || rollRequestedUserId === userId) && isMyTurn;
@@ -7826,6 +7995,7 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
             />
             <button className="btn-primary" onClick={() => handleSend()} disabled={isTyping || narrating || !isMyTurn || !input.trim() || showDice || pendingDiceShow} style={{ flexShrink: 0, padding: "14px 28px", fontSize: "1.1rem" }}>Send</button>
           </div>
+          )}
         </div>
       </div>
 
@@ -8238,6 +8408,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                         </div>
                       );
                     })()}
+                    {(char.status_effects ?? []).includes("Unconscious") && (
+                      <div style={{ marginTop: "6px" }}><DeathSkulls fails={Number(char.class_resources?.death_fails ?? 0)} size={13} /></div>
+                    )}
                     {(char.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
                         {char.status_effects!.map(raw => {
@@ -8477,6 +8650,9 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                       <div style={{ fontWeight: "bold", fontSize: fs(1.1), color: vcColor }}>{vc.name}</div>
                       <div style={{ color: "#94a3b8", fontSize: fs(0.75) }}>{vc.race} {vc.class} · Lvl {vc.level}</div>
                     </div>
+                    {(vc.status_effects ?? []).includes("Unconscious") && (
+                      <div style={{ marginTop: "4px" }}><DeathSkulls fails={Number(vc.class_resources?.death_fails ?? 0)} size={13} /></div>
+                    )}
                     {(vc.status_effects?.length ?? 0) > 0 && (
                       <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                         {vc.status_effects!.map(raw => {
@@ -8735,6 +8911,13 @@ export default function CampaignSession(props: { params: Promise<{ id: string }>
                   </div>
                 </div>
 
+                {/* Death saves (saving-throw mode) */}
+                {(character.status_effects ?? []).includes("Unconscious") && (
+                  <div style={{ marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: fs(0.7), color: "#fca5a5", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em" }}>Death Saves</span>
+                    <DeathSkulls fails={Number(character.class_resources?.death_fails ?? 0)} size={16} />
+                  </div>
+                )}
                 {/* Status effects */}
                 {(character.status_effects?.length ?? 0) > 0 && (
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
