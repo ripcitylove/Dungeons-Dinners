@@ -1,6 +1,7 @@
 // Behavioral probe against the LIVE dev /api/chat — verifies the DM-prompt changes
-// actually take effect end to end. Run: node scripts/probe-combat-fixes.mjs
+// actually take effect end to end. Run: npx tsx scripts/probe-combat-fixes.mjs
 // (dev server must be running on :3000)
+import { detectRequiredRoll } from "../src/lib/diceRequest.ts";
 const BASE = "http://localhost:3000";
 
 const mkChar = (o) => ({
@@ -138,8 +139,52 @@ async function scenarioRegression() {
   ]);
 }
 
+// ── Scenario 6: player saving throw → roller die type actually resolves ───────
+// The reported bug: clicking the dice button showed no dice because the save's die
+// type never resolved. Assert the DM calls for the save AND that detectRequiredRoll
+// (the exact fn the client uses) resolves it to a d20 → the roller WILL open.
+async function scenarioSave() {
+  const aria = mkChar({ id: "aria", name: "Aria", class: "Ranger", level: 4, max_hp: 30, sex: "female", pronouns: "she/her" });
+  const text = await ask({
+    messages: [
+      { role: "dm", content: "The cultist thrusts a bony hand toward Aria, chanting Hold Person.", sender: null },
+      { role: "player", content: "I try to resist the spell!", sender: "Aria" },
+    ],
+    character: aria, party: [aria],
+    campaignContext: { title: "The Crypt", description: "A cult ritual in an old crypt." },
+    enemies: [{ name: "Cultist", condition: "healthy" }],
+    currentTurnPlayerName: "Aria", prevActingPlayerName: "Aria", turnOrder: ["aria"],
+  });
+  const roll = detectRequiredRoll(text);
+  judge("6. Player save → die type resolves (roller opens)", text, [
+    { label: "DM calls for a save / d20", ok: t => /sav(?:e|ing)|\bd20\b/i.test(t) },
+    { label: "detectRequiredRoll resolves a d20 (roller shows dice)", ok: () => roll?.sides === 20 && roll?.count === 1 },
+    { label: "not misrouted as a death save", ok: t => !/death sav/i.test(t) },
+  ]);
+}
+
+// ── Scenario 7: finishing blow on a CRITICAL enemy still needs the to-hit roll ──
+async function scenarioFinishingBlow() {
+  const grog = mkChar({ id: "grog", name: "Grog", class: "Barbarian", level: 3, max_hp: 30, strength: 18,
+    inventory: { gold: 0, items: [], weapons: ["Greataxe"] } });
+  const text = await ask({
+    messages: [
+      { role: "dm", content: "The last goblin reels, barely standing, blood streaming down its face. Your move, Grog.", sender: null },
+      { role: "player", content: "I finish it off with my greataxe — swing for the kill.", sender: "Grog" },
+    ],
+    character: grog, party: [grog],
+    campaignContext: { title: "The Warren", description: "Clearing a goblin warren." },
+    enemies: [{ name: "Goblin", condition: "critical" }],
+    currentTurnPlayerName: "Grog", prevActingPlayerName: "Grog", turnOrder: ["grog"],
+  });
+  judge("7. Finishing blow on critical enemy → still calls for the roll", text, [
+    { label: "calls for a d20 to hit", ok: t => /roll\s+(?:a\s+)?d20/i.test(t) },
+    { label: "does NOT narrate the kill before the roll", ok: t => !/\b(?:kills?|slain|dead|dies|beheads?|ends? it|finishes? it|crumples|collapses)\b/i.test(t) },
+  ]);
+}
+
 const [, , only] = process.argv;
-const all = { 1: scenarioNoTurn, 2: scenarioSneak, 3: scenarioDeathSave, 4: scenarioHeal, 5: scenarioRegression };
+const all = { 1: scenarioNoTurn, 2: scenarioSneak, 3: scenarioDeathSave, 4: scenarioHeal, 5: scenarioRegression, 6: scenarioSave, 7: scenarioFinishingBlow };
 const run = only ? [all[only]] : Object.values(all);
 for (const fn of run) { try { await fn(); } catch (e) { results.push({ name: fn.name, ok: false, fails: [String(e)], text: "" }); } }
 

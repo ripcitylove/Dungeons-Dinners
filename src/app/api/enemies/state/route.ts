@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
+import { DEFEAT_WORDS, defeatNamePattern } from "../../../../lib/enemyDefeat";
 
 const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY ?? "").replace(/^﻿/, "") });
 const supabase  = createClient(
@@ -119,14 +120,13 @@ ${narrative.slice(0, 1200)}`;
     // "drops to one knee" / "falls back" are NOT defeats (they require a death/
     // ground context). Erring toward leaving a card up one extra turn is far better
     // than removing a still-fighting enemy.
-    const DEFEAT = "die[sd]?|dying|dead|slain|slay[s]?|kill(?:s|ed)?|fell(?!\\s+back)|falls?\\s+(?:dead|lifeless|limp|silent|still|to\\s+the\\s+(?:ground|floor|dirt))|drops?\\s+(?:dead|lifeless|limp|to\\s+the\\s+(?:ground|floor))|collapse[sd]?|crumple[sd]?|perish\\w*|destroy(?:s|ed)?|defeat\\w*|vanquish\\w*|cut\\s+down|struck\\s+down|lifeless|motionless|stops?\\s+moving|breathes?\\s+(?:its|his|her|their)\\s+last|flee[sd]?|flees|fled|rout(?:s|ed)?|surrender(?:s|ed)?|yield[sd]?|goes\\s+down|out\\s+of\\s+the\\s+fight";
-    const defeatAnywhere = new RegExp(`\\b(?:${DEFEAT})\\b`, "i");
+    const defeatAnywhere = new RegExp(`\\b(?:${DEFEAT_WORDS})\\b`, "i");
     const soleEnemy = enemies.length === 1;
     for (const c of changes) {
       if (!(c.is_defeated || c.condition === "defeated")) continue;
-      const esc = c.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const named = new RegExp(`\\b${esc}\\b[^.!?]{0,120}\\b(?:${DEFEAT})\\b|\\b(?:${DEFEAT})\\b[^.!?]{0,120}\\b${esc}\\b`, "i");
-      const explicitDefeat = soleEnemy ? defeatAnywhere.test(narrative) : named.test(narrative);
+      const explicitDefeat = soleEnemy
+        ? defeatAnywhere.test(narrative)
+        : new RegExp(defeatNamePattern(c.name), "i").test(narrative);
       if (!explicitDefeat) {
         c.is_defeated = false;
         if (c.condition === "defeated") c.condition = "critical";

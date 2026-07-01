@@ -233,7 +233,7 @@ export default async function Home() {
               {adventurers.map(({ name, race, cls, url }, i) => {
                 const color = CLASS_COLORS[cls] ?? "var(--primary)";
                 return (
-                  <div key={name} className="portrait-card" style={{ animationDelay: `${i * 0.3}s` }}>
+                  <div key={`${url}-${i}`} className="portrait-card" style={{ animationDelay: `${i * 0.3}s` }}>
                     <div style={{
                       position: "relative",
                       width: "100%",

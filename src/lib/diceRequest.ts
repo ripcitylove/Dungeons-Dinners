@@ -25,6 +25,18 @@ const CHECK_D20: RegExp[] = [
   /\bmake\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|roll)\b/i,
   /\bgive me\s+(?:a\s+)?(?:\w[\w\s]{0,20})?\b(?:check|save|saving throw|roll)\b/i,
   /\broll\s+(?:for\s+)?(?:initiative|stealth|perception|athletics|acrobatics|persuasion|deception|insight|investigation|arcana|history|nature|religion|survival|medicine|performance|intimidation)\b/i,
+  // BARE NOUN-PHRASE saves/checks with NO leading verb — the DM often calls for a
+  // save this way ("Constitution save.", "Wisdom saving throw.", "DEX saving throw
+  // to catch yourself"). Without these the die type never resolves and the roller
+  // opens empty / force-closes, so the player can't roll their save (the reported bug).
+  // "saving throw" is unambiguously a d20; a bare "save"/"check" must be qualified by
+  // an ability or a named skill so ordinary prose ("save the villagers", "check the
+  // door") never trips it. Death saves are excluded earlier — the engine's dedicated
+  // death-save button owns those, not this generic roller.
+  /\bsaving throw\b/i,
+  /\b(?:str|dex|con|int|wis|cha|strength|dexterity|constitution|intelligence|wisdom|charisma)\s+save\b/i,
+  /\b(?:ability|skill)\s+check\b/i,
+  /\b(?:str|dex|con|int|wis|cha|strength|dexterity|constitution|intelligence|wisdom|charisma|perception|stealth|athletics|acrobatics|persuasion|deception|insight|investigation|arcana|history|nature|religion|survival|medicine|performance|intimidation|sleight of hand|animal handling)\s+check\b/i,
 ];
 
 export type RequiredRoll = { sides: number; count: number };
@@ -42,6 +54,11 @@ const clampCount = (raw: string | undefined): number => {
 // multi-die heals are the reason count exists — the roller throws them together.
 export function detectRequiredRoll(narrative: string): RequiredRoll | null {
   if (!narrative) return null;
+  // 0. DEATH saving throws are NOT a generic roll — the engine's dedicated
+  //    death-save button (deterministic adjudication) owns them. Never let a
+  //    "death saving throw" announcement open the ordinary dice roller, or the
+  //    player would roll a plain d20 that bypasses the death-save logic.
+  if (/\bdeath\s+sav(?:e|es|ing)?\b/i.test(narrative)) return null;
   // 1. The die named in the roll phrase wins — carry its count too.
   const phrase = ROLL_PHRASE.exec(narrative);
   if (phrase) {

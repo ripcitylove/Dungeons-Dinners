@@ -69,6 +69,20 @@ eqRoll("Make a Strength check.", 20, 1);                   // check → single d
 eqRoll("The door creaks open.", null, 1);                  // no roll
 eqRoll("Roll 99d6.", 6, 12);                               // clamp runaway counts to 12
 
+// ── Saving throws — including BARE noun-phrase saves with no leading verb ──
+// (the reported bug: clicking the dice button showed nothing because these
+// resolved to no die type). All are d20; death saves are EXCLUDED (engine owns them).
+eq("The poison courses through you — Constitution save.", 20);
+eq("The ground gives way — DEX saving throw to catch yourself.", 20);
+eq("A wave of fear washes over you. Wisdom saving throw.", 20);
+eq("The trap triggers — saving throw!", 20);
+eq("Perception check to spot the ambush.", 20);
+eq("Aria, make a Wisdom save.", 20);
+eq("Roll a d20 for your DEX save.", 20);
+eq("You must save the villagers from the fire.", null);  // ordinary prose must NOT trip
+eq("Kael, make a death saving throw.", null);             // death save → engine button, not the roller
+eq("You're dying — death save.", null);
+
 console.log(`\nDice-request detection battery: ${pass} passed, ${fails.length} failed.`);
 if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
 else console.log("✓ The die in the roll phrase wins; a stray earlier dN never overrides it.");
